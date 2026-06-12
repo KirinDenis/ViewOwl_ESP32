@@ -41,7 +41,7 @@ Connect your display to the ESP32 using SPI. The firmware uses these GPIO pins:
 
 ## Step 1 — Pick a template
 
-Open the ViewOwl gallery at **[static.175.107.181.135.clients.your-server.de](https://static.175.107.181.135.clients.your-server.de)** in Chrome or Edge.
+Open the ViewOwl gallery at **[view.owlos.sk](https://view.owlos.sk)** in Chrome or Edge.
 
 Browse the template gallery. Use the **Class** and **Category** filters on the left to narrow things down.
 
@@ -98,7 +98,7 @@ Most templates update every few minutes. Animated templates (Class C) run a loop
 
 ## Changing the template later
 
-You don't need to reflash to change templates. Open [static.175.107.181.135.clients.your-server.de](https://static.175.107.181.135.clients.your-server.de), pick a new template, and use the **PUSH** button in the preview panel. The new frame is sent to your device over the network within seconds.
+You don't need to reflash to change templates. Open [view.owlos.sk](https://view.owlos.sk), pick a new template, and use the **PUSH** button in the preview panel. The new frame is sent to your device over the network within seconds.
 
 For a permanent change — one that survives a reboot — use **FLASH** again. The new template is written to the device the same way as the first time.
 

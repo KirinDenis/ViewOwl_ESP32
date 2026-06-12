@@ -8,6 +8,8 @@
 
 *Part of the [OWLOS](https://github.com/KirinDenis/owlos) open-source IoT family (ESP32 / ESP8266 firmware & tools) — ViewOwl is its next step, not a from-scratch experiment.*
 
+**Try it live → [view.owlos.sk](https://view.owlos.sk)** — explore the dashboard and the template gallery right in your browser. *(Public demo — beta, not for production; see the on-site notice.)*
+
 ---
 
 ## In one sentence

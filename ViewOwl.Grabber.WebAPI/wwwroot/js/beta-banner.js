@@ -17,18 +17,19 @@
       position: fixed;
       top: 0; left: 0; right: 0;
       z-index: 99999;
-      background: #2a1f00;
-      border-bottom: 1px solid rgba(255, 200, 0, 0.4);
+      background: #332600;
+      border-bottom: 2px solid rgba(255, 200, 0, 0.55);
       color: #ffd54f;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-      font-size: 12px;
-      line-height: 1.4;
-      padding: 7px 48px 7px 16px;
+      font-size: 14px;
+      line-height: 1.45;
+      padding: 12px 52px 12px 20px;
       display: flex;
       align-items: center;
-      gap: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      gap: 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
     }
+    #vo-beta-banner .vo-beta-icon { font-size: 18px; flex-shrink: 0; }
     #vo-beta-banner a {
       color: #ffe082;
       text-decoration: underline;
@@ -50,17 +51,21 @@
     }
     #vo-beta-banner-close:hover { color: #ffd54f; }
     /* Push page content down by the banner height */
-    body.vo-has-banner { padding-top: 34px !important; }
+    body.vo-has-banner { padding-top: 52px !important; }
+    @media (max-width: 640px) {
+      #vo-beta-banner { font-size: 13px; }
+      body.vo-has-banner { padding-top: 78px !important; }
+    }
   `;
   document.head.appendChild(style);
 
   const banner = document.createElement('div');
   banner.id = 'vo-beta-banner';
   banner.innerHTML = `
-    <span>⚠️</span>
+    <span class="vo-beta-icon">⚠️</span>
     <span>
-      <strong>Development Preview</strong> — This is a beta project.
-      Not for production use. Do not store sensitive data.
+      <strong>Development Preview — public demo, not for production.</strong>
+      Don't store sensitive data here. IP addresses are logged to detect and block abuse.
       &nbsp;·&nbsp;
       <a href="/legal/privacy.html">Privacy</a>
       &nbsp;·&nbsp;
