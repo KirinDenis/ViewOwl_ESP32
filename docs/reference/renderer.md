@@ -2,7 +2,7 @@
 
 The ViewOwl render pipeline turns any HTML page into a raw BGR565 bitmap ready for direct SPI transmission to an LCD. A full-featured browser — headless Chromium — does the rendering, which means the display supports everything a modern browser supports: CSS animations, web fonts, canvas 2D, fetch(), external APIs, shadows, gradients, WebGL.
 
-This is the part of the project that surprised most people: a $5 microcontroller displaying live, browser-rendered content updated from the internet.
+This is the part of the project that surprised most people: an inexpensive microcontroller displaying live, browser-rendered content updated from the internet.
 
 ---
 

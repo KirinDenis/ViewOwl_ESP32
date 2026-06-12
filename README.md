@@ -112,37 +112,15 @@ Updates: you edit the spreadsheet — the screen updates itself
 
 ## How it works
 
+```mermaid
+flowchart TD
+    A["Your HTML page<br/>CSS · JavaScript · fetch() any API"]
+    B["Grabber — server<br/>renders the page in a real browser,<br/>screenshots it, converts to the display's format"]
+    C["UDP Server<br/>sends the frame to each device,<br/>and skips it when nothing has changed"]
+    D["ESP32 + display<br/>receives the frame and draws it"]
+    A --> B --> C -->|UDP / Wi-Fi| D
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        YOUR HTML                                │
-│  <html> + CSS + JavaScript + fetch("any API") = beautiful UI    │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    GRABBER (server, .NET 8)                     │
-│  • Opens your URL in a headless browser                         │
-│  • Takes a screenshot with full rendering                       │
-│  • Serves the PNG via HTTP                                      │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    UDP SERVER (.NET 8)                          │
-│  • Receives PNG from Grabber                                    │
-│  • Converts to BGR565 (native format for TFT displays)          │
-│  • Compresses and broadcasts to all connected clients via UDP   │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │ UDP / Wi-Fi
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    ESP32 + LCD DISPLAY                          │
-│  • Receives the compressed frame                                │
-│  • Decompresses it                                              │
-│  • Draws on screen (ST7796 / ILI9341 and others)                │
-│  • Waits for the next frame                                     │
-└─────────────────────────────────────────────────────────────────┘
-```
+
 
 **As a user, only the first and last parts matter:**
 - You write HTML → take an ESP32 with a display → connect to the network → done.
@@ -155,17 +133,22 @@ ViewOwl doesn't blast raw images over the air. Each frame is **compressed** befo
 
 ---
 
-## Why a custom protocol (and not MQTT / WebSocket)?
+## Why a custom protocol — and what it taught us
 
-ViewOwl streams full-screen frames — hundreds of kilobytes each — to microcontrollers with only a few hundred kilobytes of RAM. That workload breaks the usual IoT answers:
+ViewOwl streams full-screen frames to microcontrollers with only a few hundred kilobytes of RAM. That workload breaks the usual IoT answers:
 
-- **MQTT** is built for small pub/sub telemetry, not bulk binary frames. Pushing big images through a broker fights payload limits and buffering, adds a broker as an extra moving part, and the common ESP32 MQTT clients are fragile over multi-day uptimes.
-- **WebSocket / TCP** carry connection state and socket buffers the device can't spare — buffering and head-of-line blocking cost RAM a frame-pusher doesn't have.
-- Neither gives **frame dedup or atomic offline animation** out of the box — you'd end up rebuilding exactly this on top of them.
+- **MQTT** is built for small pub/sub telemetry, not bulk binary frames — a broker hop, payload and buffering limits, and ESP32 MQTT clients that get flaky over multi-day uptimes.
+- **WebSocket / TCP** carry connection state and socket buffers the device can't spare; head-of-line blocking costs RAM a frame-pusher doesn't have.
 
-So ViewOwl speaks a small, purpose-built protocol over UDP: a fixed-size, one-packet-at-a-time `HELLO / AUTH / DATA / ACK / DONE` flow with retransmit and session recovery. The device never holds more than a single packet in memory, reports its last frame's checksum so the server can skip unchanged frames, and keeps animating from flash if Wi-Fi drops. Devices run for **weeks** without watchdog reboots.
+So the transport is small and purpose-built: a **stop-and-wait** flow over UDP (`HELLO / AUTH / DATA / ACK / DONE`) with retransmit and session recovery. Stop-and-wait is the point — the device never holds more than one packet, so memory stays bounded. It's closer to "reliable file copy, one packet at a time" than to a TCP reimplementation. Devices run for **weeks** without watchdog reboots.
 
-It isn't a shortcut around MQTT — it's the part that makes streaming display frames to a cheap microcontroller actually reliable.
+The non-obvious details are scar tissue from real failures, not preference:
+
+- **The frame checksum must match byte-for-byte across server and firmware.** One mismatched CRC variant silently disables "skip unchanged frames" and makes every device re-download its identical frame forever — a freeze every few minutes until it's found.
+- **Every frame is rendered at the device's exact resolution.** A 480×320 frame on a 320×240 panel crops; it doesn't scale.
+- **Animated templates must be deterministic** — frame N must always produce identical pixels (no `Math.random()` / clock), or the dedup checksum never matches and the device re-downloads endlessly.
+
+In practice the transport is the stable part; the hard, evolving engineering is the rendering side.
 
 ---
 
@@ -174,20 +157,6 @@ It isn't a shortcut around MQTT — it's the part that makes streaming display f
 ViewOwl is more than a renderer for one screen. **User accounts and roles already work today**, alongside a real-time management dashboard, guest devices, and built-in security (rate limiting, IP auto-blocking). That's why the server does more than a lone weather clock strictly needs — it's designed to host many people's devices, not one.
 
 We deliberately run the live instance on **modest hardware**. It's a standing stress test: pushing a small box on purpose surfaces limits early and keeps the system honest about what it can take. The heavier stack pays off the moment you run a fleet, let several people manage their own screens, or change content as often as you edit a web page. For a single static screen it's more than you need — but it still runs on a small VPS or single-board computer.
-
----
-
-## Design decisions (learned the hard way)
-
-ViewOwl's shape comes from real failures, not preference. The non-obvious choices:
-
-- **A custom stop-and-wait protocol over UDP, not MQTT/TCP.** Bulk frames to devices with a few hundred KB of RAM. Stop-and-wait means the device buffers one packet at a time — no reassembly window, bounded memory. It's closer to "reliable file copy, one packet at a time" than to a TCP reimplementation.
-- **The device reports a checksum of its last frame; the server skips unchanged ones.** Early versions re-sent identical frames every cycle — that wears flash, stalls playback, and shows as a visible flicker. Dedup turned a stuttering wall of screens into a quiet one. (It also taught us the checksum must match *byte-for-byte* across server and firmware — one mismatched CRC variant silently disables the whole thing.)
-- **Animations are pre-rendered to flash and played locally.** Streaming an animation live dies the moment Wi-Fi hiccups. Render once, play from flash — motion becomes independent of the network.
-- **Every frame is rendered at the device's exact resolution.** A 480×320 frame on a 320×240 panel doesn't scale — it crops. The server renders per device.
-- **Animated templates must be deterministic.** Frame N must always produce identical pixels (no `Math.random()` / clock), or the dedup checksum never matches and the device re-downloads forever.
-
-These aren't things you'd guess from a clean-slate design — they're what's left after the failures. **In practice the transport is the stable part; the hard engineering lives in rendering.**
 
 ---
 

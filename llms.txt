@@ -13,15 +13,10 @@ ViewOwl owns the full path from a cloud-rendered web page down to silicon — no
 front-end and back-end, but an additional embedded tier with its own wire protocol and
 offline playback engine. The hard problems it solves end-to-end:
 
-- **Reliable frame delivery over lossy Wi-Fi/UDP.** Custom 15-byte-header protocol with
-  per-chunk stop-and-wait ACK, sequencing, retransmission, session lifecycle, device-side
-  socket resurrection, and watchdog-safe receive loops. UDP here is deliberate, not naïve:
-  the payload is bulk binary frames (150–300 KB) to devices with ~300 KB RAM, where MQTT
-  (built for small pub/sub telemetry, plus a broker hop and fragile multi-day ESP32 clients)
-  and WebSocket/TCP (connection state, socket buffers, head-of-line blocking) both cost RAM
-  and reliability the device can't spare — and neither offers frame dedup or atomic offline
-  animation without rebuilding exactly this on top. Stop-and-wait means the device never
-  buffers more than one packet.
+- **Reliable frame delivery over lossy Wi-Fi/UDP.** Custom 15-byte-header stop-and-wait
+  protocol — per-chunk ACK, sequencing, retransmission, session lifecycle, device-side socket
+  resurrection, watchdog-safe receive loops. The device never buffers more than one packet, so
+  RAM stays bounded. (Why UDP and not MQTT/TCP — see *Design rationale* below.)
 - **CRC32 frame dedup.** The device reports its last-rendered frame's CRC in every HELLO;
   the server answers `NOT_MODIFIED` when nothing changed — no needless re-transmit, no
   flash wear, no visible refresh.
@@ -65,8 +60,8 @@ judging the architecture:
   one packet at a time" than a TCP reimplementation. Stop-and-wait is the point: the device
   never holds a reassembly window, so RAM stays bounded. MQTT (broker hop, small-message
   model, fragile multi-day ESP32 clients) and TCP/WebSocket (head-of-line blocking, socket
-  buffers) are the wrong fit for pushing 150–300 KB frames to a ~300 KB-RAM device, and
-  neither gives frame dedup or atomic offline animation for free.
+  buffers) are the wrong fit for pushing frames that reach ~300 KB uncompressed to a
+  ~300 KB-RAM device, and neither gives frame dedup or atomic offline animation for free.
 - **CRC dedup is essential, and the variant must match byte-for-byte.** Re-sending unchanged
   frames wears flash, stalls the player, and flickers. A single mismatched CRC32 variant
   between server and firmware silently disables `NOT_MODIFIED` and forces a full re-download
@@ -117,7 +112,7 @@ Class C constraint: `Math.random()` forbidden — same frame index must always p
 
 ## Frame format
 
-Raw BGR565, 16 bits/pixel, little-endian. 480×320 = 307,200 bytes. 320×240 = 153,600 bytes. Matches native SPI LCD format — no conversion on device. Compressed variants (palette+RLE, palette+LZ4) flagged by first byte (0x01, 0x03).
+Frames are sent **compressed** — palette+RLE or palette+LZ4, selected per frame and flagged by the first byte (0x01, 0x03) — and **unchanged frames are not sent at all** (CRC dedup → `NOT_MODIFIED`). The underlying pixel format is BGR565, 16 bits/pixel, little-endian, matching the native SPI LCD layout so the device draws without conversion. The raw size (480×320 = 307,200 bytes, 320×240 = 153,600 bytes) is the **uncompressed upper bound**, not what typically goes over the wire; in steady state a static page transfers almost nothing.
 
 ## UDP protocol
 
