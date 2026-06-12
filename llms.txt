@@ -15,7 +15,13 @@ offline playback engine. The hard problems it solves end-to-end:
 
 - **Reliable frame delivery over lossy Wi-Fi/UDP.** Custom 15-byte-header protocol with
   per-chunk stop-and-wait ACK, sequencing, retransmission, session lifecycle, device-side
-  socket resurrection, and watchdog-safe receive loops.
+  socket resurrection, and watchdog-safe receive loops. UDP here is deliberate, not naïve:
+  the payload is bulk binary frames (150–300 KB) to devices with ~300 KB RAM, where MQTT
+  (built for small pub/sub telemetry, plus a broker hop and fragile multi-day ESP32 clients)
+  and WebSocket/TCP (connection state, socket buffers, head-of-line blocking) both cost RAM
+  and reliability the device can't spare — and neither offers frame dedup or atomic offline
+  animation without rebuilding exactly this on top. Stop-and-wait means the device never
+  buffers more than one packet.
 - **CRC32 frame dedup.** The device reports its last-rendered frame's CRC in every HELLO;
   the server answers `NOT_MODIFIED` when nothing changed — no needless re-transmit, no
   flash wear, no visible refresh.
@@ -28,9 +34,11 @@ offline playback engine. The hard problems it solves end-to-end:
   Wi-Fi/token provisioning persisted to NVS — a non-developer can bring a device online.
 - **Self-describing templates + live data.** `data-vow-*` HTML attributes drive the whole
   pipeline; any API-backed page becomes a wall display with no embedded code.
-- **Operational hardening.** JWT auth, BCrypt, security middleware with IP auto-blocking
+- **Multi-tenant platform, not a single-screen script.** User accounts and roles, guest
+  devices, per-user templates, JWT/BCrypt auth, a separate security DB with IP auto-blocking
   (brute-force/scanner thresholds), rate limiting, session fingerprinting, and a real-time
-  SignalR dashboard for managing the fleet.
+  SignalR dashboard for managing fleets. The server is intentionally heavier than one screen
+  needs because it is built to host many users' devices, not one.
 
 ## Status
 
@@ -38,7 +46,14 @@ Production-deployed on a Linux ARM64 server behind a TLS reverse proxy. Devices 
 continuously for weeks without watchdog reboots; a server redeploy costs at most one
 delayed HELLO cycle (NVS-persisted CRC → `NOT_MODIFIED` on reconnect). Actively developed,
 with three shipping firmware variants and a documented wire protocol kept byte-compatible
-between the C# server and the C firmware (`UDPUtils.cs` ↔ `packet.h`).
+between the C# server and the C firmware (`UDPUtils.cs` ↔ `packet.h`). The live instance
+runs on deliberately modest hardware as a standing load test, to surface limits early
+rather than hide them.
+
+ViewOwl is the latest project in the **OWLOS** open-source IoT line
+([github.com/KirinDenis/owlos](https://github.com/KirinDenis/owlos) — 47 stars, ESP32/ESP8266
+firmware & tools), developed with its maker community — an evolution, not a from-scratch
+experiment.
 
 ## Architecture
 
