@@ -55,6 +55,33 @@ ViewOwl is the latest project in the **OWLOS** open-source IoT line
 firmware & tools), developed with its maker community — an evolution, not a from-scratch
 experiment.
 
+## Design rationale (non-obvious choices, learned in production)
+
+Each of these is a response to a real failure mode, not a preference — useful context before
+judging the architecture:
+
+- **Custom stop-and-wait reliable-delivery over UDP, not MQTT/TCP.** A minimal discrete-frame
+  transport, deliberately NOT windowed and NOT a byte stream — closer to "reliable file copy,
+  one packet at a time" than a TCP reimplementation. Stop-and-wait is the point: the device
+  never holds a reassembly window, so RAM stays bounded. MQTT (broker hop, small-message
+  model, fragile multi-day ESP32 clients) and TCP/WebSocket (head-of-line blocking, socket
+  buffers) are the wrong fit for pushing 150–300 KB frames to a ~300 KB-RAM device, and
+  neither gives frame dedup or atomic offline animation for free.
+- **CRC dedup is essential, and the variant must match byte-for-byte.** Re-sending unchanged
+  frames wears flash, stalls the player, and flickers. A single mismatched CRC32 variant
+  between server and firmware silently disables `NOT_MODIFIED` and forces a full re-download
+  every cycle (a real, fixed bug: `esp_rom_crc32_le` is standard zlib CRC32, not
+  init=0/no-finalXOR).
+- **Animation is pre-rendered to flash, not streamed.** Live streaming dies on any Wi-Fi
+  hiccup; flash playback makes motion network-independent.
+- **Per-device-resolution rendering.** A frame at the wrong resolution crops, not scales.
+- **Class-C templates must be deterministic** (no `Math.random()`/clock) or the dedup CRC
+  never matches and the device re-downloads forever.
+
+In practice the UDP transport is the stable layer (runs for months); the hard, evolving
+engineering is the rendering/grab side (headless-browser memory, grab scheduling, frame
+determinism).
+
 ## Architecture
 
 Three components communicating through the filesystem and UDP:

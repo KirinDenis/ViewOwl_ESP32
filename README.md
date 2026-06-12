@@ -114,38 +114,38 @@ Updates: you edit the spreadsheet — the screen updates itself
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        YOUR HTML                                │
-│  <html> + CSS + JavaScript + fetch("any API") = beautiful UI    │
+│                        YOUR HTML                                  │
+│  <html> + CSS + JavaScript + fetch("any API") = beautiful UI     │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    GRABBER (server, .NET 8)                     │
-│  • Opens your URL in a headless browser                         │
-│  • Takes a screenshot with full rendering                       │
-│  • Serves the PNG via HTTP                                      │
+│                    GRABBER (server, .NET 8)                       │
+│  • Opens your URL in a headless browser                          │
+│  • Takes a screenshot with full rendering                        │
+│  • Serves the PNG via HTTP                                        │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    UDP SERVER (.NET 8)                          │
-│  • Receives PNG from Grabber                                    │
+│                    UDP SERVER (.NET 8)                            │
+│  • Receives PNG from Grabber                                     │
 │  • Converts to BGR565 (native format for TFT displays)          │
-│  • Compresses and broadcasts to all connected clients via UDP   │
+│  • Compresses and broadcasts to all connected clients via UDP    │
 └──────────────────────────────┬──────────────────────────────────┘
                                │ UDP / Wi-Fi
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    ESP32 + LCD DISPLAY                          │
-│  • Receives the compressed frame                                │
-│  • Decompresses it                                              │
+│                    ESP32 + LCD DISPLAY                            │
+│  • Receives the compressed frame                                 │
+│  • Decompresses it                                               │
 │  • Draws on screen (ST7796 / ILI9341 and others)                │
-│  • Waits for the next frame                                     │
+│  • Waits for the next frame                                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **As a user, only the first and last parts matter:**
-- You write HTML take an ESP32 with a display connect to the network done.
+- You write HTML → take an ESP32 with a display → connect to the network → done.
 
 ---
 
@@ -174,6 +174,20 @@ It isn't a shortcut around MQTT — it's the part that makes streaming display f
 ViewOwl is more than a renderer for one screen. **User accounts and roles already work today**, alongside a real-time management dashboard, guest devices, and built-in security (rate limiting, IP auto-blocking). That's why the server does more than a lone weather clock strictly needs — it's designed to host many people's devices, not one.
 
 We deliberately run the live instance on **modest hardware**. It's a standing stress test: pushing a small box on purpose surfaces limits early and keeps the system honest about what it can take. The heavier stack pays off the moment you run a fleet, let several people manage their own screens, or change content as often as you edit a web page. For a single static screen it's more than you need — but it still runs on a small VPS or single-board computer.
+
+---
+
+## Design decisions (learned the hard way)
+
+ViewOwl's shape comes from real failures, not preference. The non-obvious choices:
+
+- **A custom stop-and-wait protocol over UDP, not MQTT/TCP.** Bulk frames to devices with a few hundred KB of RAM. Stop-and-wait means the device buffers one packet at a time — no reassembly window, bounded memory. It's closer to "reliable file copy, one packet at a time" than to a TCP reimplementation.
+- **The device reports a checksum of its last frame; the server skips unchanged ones.** Early versions re-sent identical frames every cycle — that wears flash, stalls playback, and shows as a visible flicker. Dedup turned a stuttering wall of screens into a quiet one. (It also taught us the checksum must match *byte-for-byte* across server and firmware — one mismatched CRC variant silently disables the whole thing.)
+- **Animations are pre-rendered to flash and played locally.** Streaming an animation live dies the moment Wi-Fi hiccups. Render once, play from flash — motion becomes independent of the network.
+- **Every frame is rendered at the device's exact resolution.** A 480×320 frame on a 320×240 panel doesn't scale — it crops. The server renders per device.
+- **Animated templates must be deterministic.** Frame N must always produce identical pixels (no `Math.random()` / clock), or the dedup checksum never matches and the device re-downloads forever.
+
+These aren't things you'd guess from a clean-slate design — they're what's left after the failures. **In practice the transport is the stable part; the hard engineering lives in rendering.**
 
 ---
 
