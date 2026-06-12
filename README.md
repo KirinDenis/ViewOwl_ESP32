@@ -114,33 +114,33 @@ Updates: you edit the spreadsheet — the screen updates itself
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        YOUR HTML                                  │
-│  <html> + CSS + JavaScript + fetch("any API") = beautiful UI     │
+│                        YOUR HTML                                │
+│  <html> + CSS + JavaScript + fetch("any API") = beautiful UI    │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    GRABBER (server, .NET 8)                       │
-│  • Opens your URL in a headless browser                          │
-│  • Takes a screenshot with full rendering                        │
-│  • Serves the PNG via HTTP                                        │
+│                    GRABBER (server, .NET 8)                     │
+│  • Opens your URL in a headless browser                         │
+│  • Takes a screenshot with full rendering                       │
+│  • Serves the PNG via HTTP                                      │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    UDP SERVER (.NET 8)                            │
-│  • Receives PNG from Grabber                                     │
+│                    UDP SERVER (.NET 8)                          │
+│  • Receives PNG from Grabber                                    │
 │  • Converts to BGR565 (native format for TFT displays)          │
-│  • Compresses and broadcasts to all connected clients via UDP    │
+│  • Compresses and broadcasts to all connected clients via UDP   │
 └──────────────────────────────┬──────────────────────────────────┘
                                │ UDP / Wi-Fi
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    ESP32 + LCD DISPLAY                            │
-│  • Receives the compressed frame                                 │
-│  • Decompresses it                                               │
+│                    ESP32 + LCD DISPLAY                          │
+│  • Receives the compressed frame                                │
+│  • Decompresses it                                              │
 │  • Draws on screen (ST7796 / ILI9341 and others)                │
-│  • Waits for the next frame                                      │
+│  • Waits for the next frame                                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
