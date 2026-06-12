@@ -1,0 +1,8 @@
+{
+    "idf.portWin": "COM4",
+    "idf.flashType": "UART",
+    "files.associations": {
+        "wifi_sta.h": "c"
+    },
+    "idf.currentSetup": "C:\\Users\\YOUR_USER\\esp\\v5.5\\esp-idf"
+}

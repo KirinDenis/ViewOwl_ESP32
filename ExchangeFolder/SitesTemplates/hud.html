@@ -1,0 +1,288 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tactical HUD — Amsterdam</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; width: 480px; height: 320px; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="HUD" data-vow-category="scifi" data-vow-description="Sci-fi heads-up display overlay">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+function quantChannel(v, bits) {
+    const shift = 8 - bits;
+    const q = Math.min((1 << bits) - 1, v >> shift);
+    return (q << shift) | (q >> (bits - shift));
+}
+function snap565(r, g, b) {
+    return { r: quantChannel(r,5), g: quantChannel(g,6), b: quantChannel(b,5) };
+}
+function css(r, g, b) {
+    const q = snap565(r, g, b);
+    return `rgb(${q.r},${q.g},${q.b})`;
+}
+
+function dither() {
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const oR = d[i], oG = d[i+1], oB = d[i+2];
+            const q = snap565(oR, oG, oB);
+            d[i] = q.r; d[i+1] = q.g; d[i+2] = q.b;
+            const eR = oR-q.r, eG = oG-q.g, eB = oB-q.b;
+            if (x+1<W){const j=i+4;d[j]=clamp(d[j]+((eR*7)>>4));d[j+1]=clamp(d[j+1]+((eG*7)>>4));d[j+2]=clamp(d[j+2]+((eB*7)>>4));}
+            if (y+1<H){
+                if (x>0){const j=((y+1)*W+(x-1))*4;d[j]=clamp(d[j]+((eR*3)>>4));d[j+1]=clamp(d[j+1]+((eG*3)>>4));d[j+2]=clamp(d[j+2]+((eB*3)>>4));}
+                {const j=((y+1)*W+x)*4;d[j]=clamp(d[j]+((eR*5)>>4));d[j+1]=clamp(d[j+1]+((eG*5)>>4));d[j+2]=clamp(d[j+2]+((eB*5)>>4));}
+                if (x+1<W){const j=((y+1)*W+(x+1))*4;d[j]=clamp(d[j]+(eR>>4));d[j+1]=clamp(d[j+1]+(eG>>4));d[j+2]=clamp(d[j+2]+(eB>>4));}
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
+const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pad(n) { return String(n).padStart(2,'0'); }
+function pad3(n) { return String(n).padStart(3,'0'); }
+let clockStr = '00:00:00', dateStr = 'Mon 01 Jan';
+function tickClock() {
+    const now = new Date();
+    clockStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    dateStr = `${DAY[now.getDay()]} ${pad(now.getDate())} ${MON[now.getMonth()]}`;
+}
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
+function line(x1,y1,x2,y2,c,t){
+    ctx.strokeStyle=c;ctx.lineWidth=t||1;
+    const ox=(y1===y2)?0:0.5,oy=(x1===x2)?0:0.5;
+    ctx.beginPath();ctx.moveTo(x1+ox,y1+oy);ctx.lineTo(x2+ox,y2+oy);ctx.stroke();
+}
+function drawText(s,x,y,sz,c,align,bold){
+    ctx.fillStyle=c;
+    ctx.font=`${bold===false?'':'bold '}${sz}px Arial,Helvetica,sans-serif`;
+    ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';
+    ctx.fillText(String(s),x,y);
+}
+
+// --- Weather fetch for Amsterdam ---
+const LAT = 52.37, LON = 4.90;
+let wx = { temp: null, humidity: null, wind: null, pressure: null, code: null };
+
+function wLabel(code) {
+    if (code === 0) return 'CLEAR';
+    if (code <= 2) return 'P.CLOUDY';
+    if (code <= 3) return 'CLOUDY';
+    if (code <= 48) return 'FOGGY';
+    if (code <= 67) return 'RAINY';
+    if (code <= 77) return 'SNOWY';
+    if (code <= 82) return 'SHOWERS';
+    return 'STORMY';
+}
+
+function fetchWeather() {
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,relativehumidity_2m,windspeed_10m,surface_pressure,weathercode&timezone=Europe%2FAmsterdam`)
+        .then(r => r.json())
+        .then(data => {
+            const c = data.current;
+            wx.temp     = c.temperature_2m;
+            wx.humidity = c.relativehumidity_2m;
+            wx.wind     = c.windspeed_10m;
+            wx.pressure = c.surface_pressure;
+            wx.code     = c.weathercode;
+        })
+        .catch(() => {});
+}
+
+// --- Animation state ---
+let ringAngle = 0;        // current rotation of outer ring (radians)
+const RING_PERIOD = 30;   // seconds per full rotation
+const RING_R = 60;        // ring radius
+const CX = 240, CY = 160; // reticle center
+
+// Draw the rotating outer ring with tick marks
+function drawRing(angle) {
+    const G    = css(0, 248, 68);
+    const GDIM = css(0, 64, 20);
+    const GMID = css(0, 160, 44);
+
+    // Outer ring circle
+    ctx.strokeStyle = GMID;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(CX, CY, RING_R, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner ring
+    ctx.strokeStyle = GDIM;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(CX, CY, RING_R - 8, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Rotating tick marks (12 major, 36 minor)
+    for (let t = 0; t < 36; t++) {
+        const a = angle + (t / 36) * Math.PI * 2;
+        const isMajor = (t % 3 === 0);
+        const r0 = RING_R - (isMajor ? 10 : 6);
+        const r1 = RING_R;
+        const cos = Math.cos(a), sin = Math.sin(a);
+        line(
+            Math.round(CX + cos * r0), Math.round(CY + sin * r0),
+            Math.round(CX + cos * r1), Math.round(CY + sin * r1),
+            isMajor ? G : GDIM, isMajor ? 2 : 1
+        );
+    }
+}
+
+// Draw static inner crosshair
+function drawCrosshair() {
+    const G  = css(0, 248, 68);
+    const arm = 24;
+    const gap = 8;
+    // Horizontal arms
+    line(CX - RING_R + 4, CY, CX - gap, CY, G, 1);
+    line(CX + gap, CY, CX + RING_R - 4, CY, G, 1);
+    // Vertical arms
+    line(CX, CY - RING_R + 4, CX, CY - gap, G, 1);
+    line(CX, CY + gap, CX, CY + RING_R - 4, G, 1);
+    // Center diamond
+    ctx.strokeStyle = G;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(CX, CY - 5);
+    ctx.lineTo(CX + 5, CY);
+    ctx.lineTo(CX, CY + 5);
+    ctx.lineTo(CX - 5, CY);
+    ctx.closePath();
+    ctx.stroke();
+    // Cardinal labels (static, outside ring)
+    drawText('N', CX, CY - RING_R - 6, 10, css(0, 248, 68), 'center', true);
+    drawText('S', CX, CY + RING_R + 14, 10, css(0, 248, 68), 'center', true);
+    drawText('W', CX - RING_R - 8, CY + 4, 10, css(0, 248, 68), 'right', true);
+    drawText('E', CX + RING_R + 4, CY + 4, 10, css(0, 248, 68), 'left', true);
+}
+
+// Draw corner L-brackets (40x40 each)
+function drawCorners() {
+    const G = css(0, 248, 68);
+    const SZ = 40, T = 3;
+    // Top-left
+    fillRect(0, 0, SZ, T, G);
+    fillRect(0, 0, T, SZ, G);
+    // Top-right
+    fillRect(W - SZ, 0, SZ, T, G);
+    fillRect(W - T, 0, T, SZ, G);
+    // Bottom-left
+    fillRect(0, H - T, SZ, T, G);
+    fillRect(0, H - SZ, T, SZ, G);
+    // Bottom-right
+    fillRect(W - SZ, H - T, SZ, T, G);
+    fillRect(W - T, H - SZ, T, SZ, G);
+}
+
+// Top bar: ALT / HDG / SPD
+function drawTopBar() {
+    const BAR_H = 22;
+    fillRect(0, 0, W, BAR_H, css(0, 10, 0));
+    line(0, BAR_H, W, BAR_H, css(0, 80, 20));
+    const spdVal = wx.wind === null ? '---' : pad3(Math.round(wx.wind * 0.54)); // km/h → knots
+    const barStr = `ALT: 00250m    HDG: 270°    SPD: ${spdVal}kts`;
+    drawText(barStr, W / 2, 15, 11, css(0, 248, 68), 'center', false);
+}
+
+// Bottom bar
+function drawBottomBar() {
+    const BAR_H = 20;
+    const BY = H - BAR_H;
+    fillRect(0, BY, W, BAR_H, css(0, 10, 0));
+    line(0, BY, W, BY, css(0, 80, 20));
+    drawText('SYS:OK  GPS:LOCK  LINK:ACTIVE', W / 2, BY + 14, 10, css(0, 200, 44), 'center', false);
+}
+
+// Left panel: 3 weather readout rows
+function drawLeftPanel() {
+    const PX = 4, PY = 28;
+    const G  = css(0, 248, 68);
+    const GD = css(0, 160, 44);
+    const W2 = css(248, 248, 248);
+    drawText('WEATHER DATA', PX, PY + 10, 9, GD, 'left', false);
+    line(PX, PY + 13, 110, PY + 13, GD);
+
+    const rows = [
+        { lbl: 'TEMP', val: wx.temp     === null ? '---' : wx.temp.toFixed(1) + '°C' },
+        { lbl: 'HMD',  val: wx.humidity === null ? '---' : wx.humidity.toFixed(0) + '%' },
+        { lbl: 'WND',  val: wx.wind     === null ? '---' : wx.wind.toFixed(1) + 'km/h' },
+    ];
+    rows.forEach((r, i) => {
+        const ry = PY + 28 + i * 22;
+        drawText(r.lbl + ':', PX, ry, 10, GD, 'left', false);
+        drawText(r.val, PX + 36, ry, 11, G, 'left', true);
+    });
+}
+
+// Right panel: city, condition, time
+function drawRightPanel() {
+    const PX = W - 4;
+    const PY = 28;
+    const G  = css(0, 248, 68);
+    const GD = css(0, 160, 44);
+    const Y  = css(248, 232, 0);
+    drawText('AMSTERDAM', PX, PY + 10, 9, GD, 'right', false);
+    line(370, PY + 13, PX, PY + 13, GD);
+    const cond = wx.code === null ? '---' : wLabel(wx.code);
+    drawText(cond,    PX, PY + 28, 11, G, 'right', true);
+    drawText(dateStr, PX, PY + 44, 10, GD, 'right', false);
+    drawText(clockStr, PX, PY + 58, 12, Y, 'right', true);
+    // Pressure
+    const pStr = wx.pressure === null ? '---' : Math.round(wx.pressure) + ' hPa';
+    drawText('BARO: ' + pStr, PX, PY + 74, 10, GD, 'right', false);
+}
+
+function render() {
+    fillRect(0, 0, W, H, css(0, 4, 0));
+    drawTopBar();
+    drawBottomBar();
+    drawRing(ringAngle);
+    drawCrosshair();
+    drawCorners();
+    drawLeftPanel();
+    drawRightPanel();
+}
+
+let lastTime = null;
+function frame(ts) {
+    if (lastTime === null) lastTime = ts;
+    const dt = (ts - lastTime) / 1000;
+    lastTime = ts;
+    // Advance ring rotation: one full revolution in RING_PERIOD seconds
+    ringAngle += (Math.PI * 2 / RING_PERIOD) * dt;
+    if (ringAngle > Math.PI * 2) ringAngle -= Math.PI * 2;
+
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.lineWidth = 1; ctx.lineCap = 'butt';
+    render();
+    dither();
+    requestAnimationFrame(frame);
+}
+
+fetchWeather();
+setInterval(fetchWeather, 600000);
+tickClock();
+setInterval(tickClock, 1000);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

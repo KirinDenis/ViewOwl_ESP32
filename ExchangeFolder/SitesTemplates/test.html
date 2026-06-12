@@ -1,0 +1,103 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ViewOwl Test</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 480px; height: 320px; overflow: hidden; background: #000; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="Test" data-vow-category="other" data-vow-description="Development test template">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+// Counter increments every second — if the display updates you will see it change
+let frameCount = 0;
+
+// Solid colors — no gradients, no anti-aliasing tricks
+const BLACK  = '#000000';
+const WHITE  = '#ffffff';
+const RED    = '#f80000';
+const GREEN  = '#00fc00';
+const BLUE   = '#0080f8';
+const YELLOW = '#f8fc00';
+const CYAN   = '#00fcf8';
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+function render() {
+    const now = new Date();
+    const timeStr  = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const frameStr = String(frameCount).padStart(5, '0');
+
+    // ── Background: white so we know the LCD is receiving data ──────────
+    ctx.fillStyle = WHITE;
+    ctx.fillRect(0, 0, W, H);
+
+    // ── Top bar: solid red ───────────────────────────────────────────────
+    ctx.fillStyle = RED;
+    ctx.fillRect(0, 0, W, 40);
+
+    // ── Title in top bar ─────────────────────────────────────────────────
+    ctx.fillStyle = WHITE;
+    ctx.font = 'bold 22px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('VIEWOWL TEST', W / 2, 20);
+
+    // ── Large frame counter — changes every second ───────────────────────
+    ctx.fillStyle = BLACK;
+    ctx.font = 'bold 72px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(frameStr, W / 2, 150);
+
+    // ── Clock ────────────────────────────────────────────────────────────
+    ctx.fillStyle = BLUE;
+    ctx.font = 'bold 28px Arial';
+    ctx.fillText(timeStr, W / 2, 230);
+
+    // ── Bottom bar: 5 color blocks to verify color rendering ─────────────
+    const colors = [RED, GREEN, BLUE, YELLOW, CYAN];
+    const bw = W / colors.length;
+    colors.forEach((c, i) => {
+        ctx.fillStyle = c;
+        ctx.fillRect(i * bw, H - 30, bw, 30);
+    });
+
+    // ── Frame label in bottom bar ─────────────────────────────────────────
+    ctx.fillStyle = BLACK;
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`FRAME #${frameStr}`, W / 2, H - 15);
+
+    // ── Left stripe: green so we can see left edge ────────────────────────
+    ctx.fillStyle = GREEN;
+    ctx.fillRect(0, 40, 8, H - 70);
+
+    // ── Right stripe: blue so we can see right edge ───────────────────────
+    ctx.fillStyle = BLUE;
+    ctx.fillRect(W - 8, 40, 8, H - 70);
+
+    frameCount++;
+}
+
+function tick() {
+    render();
+    // No dithering — keep it simple for this test
+}
+
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,275 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FX Terminal</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #030804; width: 480px; height: 320px; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body id="body"
+      data-vow-name="FX Terminal"
+      data-vow-category="rates"
+      data-vow-description="EUR forex pairs and crypto prices — Frankfurter.app + CoinGecko">
+  <canvas id="screen" width="480" height="320"></canvas>
+  <script>
+    'use strict';
+    const canvas = document.getElementById('screen');
+    const ctx    = canvas.getContext('2d', { alpha: false });
+    const W = 480, H = 320;
+
+    /* ── Palette ─────────────────────────────────────────────────────── */
+    const BG   = '#030804';
+    const BG2  = '#060f06';
+    const HDR  = '#006622';
+    const AMB  = '#88cc00';
+    const DIM  = '#224422';
+    const UP   = '#00ee44';
+    const DN   = '#ff2244';
+    const FLAT = '#88aaaa';
+    const GLD  = '#ffd700';
+    const WHT  = '#ccddcc';
+    const CYN  = '#00e8cc';
+    const DIV  = '#115511';
+
+    /* ── Seed data (updated from API) ───────────────────────────────── */
+    const PAIRS = [
+      { pair: 'EUR/USD', code: 'USD', rate: 1.0856, prev: 1.0843 },
+      { pair: 'EUR/GBP', code: 'GBP', rate: 0.8587, prev: 0.8591 },
+      { pair: 'EUR/CHF', code: 'CHF', rate: 0.9382, prev: 0.9375 },
+      { pair: 'EUR/JPY', code: 'JPY', rate: 161.23, prev: 160.87 },
+      { pair: 'EUR/PLN', code: 'PLN', rate:  4.325, prev:  4.331 },
+      { pair: 'EUR/CZK', code: 'CZK', rate:  24.87, prev:  24.82 },
+      { pair: 'EUR/HUF', code: 'HUF', rate: 390.45, prev: 391.20 },
+    ];
+
+    const CRYPTO = [
+      { sym: 'BTC', id: 'bitcoin',  price:  43_250, chg:  2.34 },
+      { sym: 'ETH', id: 'ethereum', price:   2_580, chg: -1.12 },
+      { sym: 'SOL', id: 'solana',   price:    98.5, chg:  5.67 },
+      { sym: 'XRP', id: 'ripple',   price:   0.567, chg: -0.89 },
+      { sym: 'BNB', id: 'binancecoin', price: 312.4, chg:  0.45 },
+    ];
+
+    let tickerX = W;
+    let tickerStr = '';
+
+    /* ── API fetch (GDPR-safe, no auth) ─────────────────────────────── */
+    async function fetchFX() {
+      try {
+        const r = await fetch('https://api.frankfurter.app/latest?from=EUR');
+        if (!r.ok) return;
+        const d = await r.json();
+        PAIRS.forEach(p => {
+          if (d.rates[p.code] !== undefined) {
+            p.prev = p.rate;
+            p.rate = d.rates[p.code];
+          }
+        });
+      } catch (_) {}
+    }
+
+    async function fetchCrypto() {
+      try {
+        const ids = CRYPTO.map(c => c.id).join(',');
+        const r   = await fetch(
+          `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`
+        );
+        if (!r.ok) return;
+        const d = await r.json();
+        CRYPTO.forEach(c => {
+          const entry = d[c.id];
+          if (entry) { c.price = entry.usd; c.chg = entry.usd_24h_change ?? c.chg; }
+        });
+      } catch (_) {}
+    }
+
+    function buildTicker() {
+      tickerStr = [
+        ...PAIRS.map(p => {
+          const chg = ((p.rate - p.prev) / p.prev * 100);
+          const arr = chg > 0.001 ? '▲' : chg < -0.001 ? '▼' : '─';
+          return `${p.pair}  ${p.rate.toFixed(4)}  ${arr}${Math.abs(chg).toFixed(2)}%`;
+        }),
+        ...CRYPTO.map(c => {
+          const arr = c.chg > 0 ? '▲' : c.chg < 0 ? '▼' : '─';
+          const px  = c.price >= 1000 ? c.price.toLocaleString('en', {maximumFractionDigits:0})
+                    : c.price >= 1    ? c.price.toFixed(2)
+                    :                   c.price.toFixed(3);
+          return `${c.sym}  $${px}  ${arr}${Math.abs(c.chg).toFixed(2)}%`;
+        }),
+      ].join('    •    ');
+    }
+
+    /* ── Helpers ─────────────────────────────────────────────────────── */
+    function px(size, bold) {
+      ctx.font = `${bold ? 'bold ' : ''}${size}px "Courier New",monospace`;
+    }
+
+    function arrow(chg) {
+      if (chg > 0.0001) return { sym: '▲', col: UP };
+      if (chg < -0.0001) return { sym: '▼', col: DN };
+      return { sym: '─', col: FLAT };
+    }
+
+    function fmtRate(r) {
+      if (r >= 100) return r.toFixed(2);
+      if (r >= 10)  return r.toFixed(3);
+      return r.toFixed(4);
+    }
+
+    /* ── Render ──────────────────────────────────────────────────────── */
+    function render() {
+      ctx.fillStyle = BG;
+      ctx.fillRect(0, 0, W, H);
+
+      /* Header */
+      ctx.fillStyle = HDR;
+      ctx.fillRect(0, 0, W, 22);
+      ctx.fillStyle = AMB;
+      px(12, true);
+      ctx.fillText('◈ FX TERMINAL  EUR BASE', 8, 15);
+      const now = new Date();
+      const ts  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      px(10, false);
+      ctx.fillStyle = CYN;
+      ctx.fillText(ts, 418, 15);
+
+      /* Divider between columns */
+      ctx.fillStyle = DIV;
+      ctx.fillRect(237, 22, 1, H - 44);
+
+      /* Column labels */
+      ctx.fillStyle = DIM;
+      ctx.fillRect(0, 22, W, 14);
+      ctx.fillStyle = AMB;
+      px(8, false);
+      ctx.fillText('PAIR       RATE      CHG%', 6, 33);
+      ctx.fillText('CRYPTO     PRICE      24H%', 244, 33);
+
+      /* ── Left: forex pairs ─────────────────────────────────────────── */
+      PAIRS.forEach((p, i) => {
+        const y   = 36 + i * 38;
+        ctx.fillStyle = (i & 1) ? BG : BG2;
+        ctx.fillRect(0, y, 237, 37);
+
+        const chg = (p.rate - p.prev) / p.prev * 100;
+        const ar  = arrow(chg);
+
+        /* Pair label */
+        ctx.fillStyle = WHT;
+        px(10, true);
+        ctx.fillText(p.pair, 6, y + 13);
+
+        /* Rate */
+        ctx.fillStyle = GLD;
+        px(11, true);
+        ctx.fillText(fmtRate(p.rate), 6, y + 29);
+
+        /* Change */
+        ctx.fillStyle = ar.col;
+        px(9, true);
+        ctx.fillText(`${ar.sym} ${Math.abs(chg).toFixed(3)}%`, 115, y + 13);
+
+        /* Mini bar */
+        const barW = Math.min(Math.abs(chg) * 20, 80);
+        ctx.fillStyle = ar.col + '44';
+        ctx.fillRect(115, y + 18, barW, 6);
+        ctx.fillStyle = ar.col;
+        ctx.fillRect(115, y + 18, barW, 2);
+
+        /* Bottom rule */
+        ctx.fillStyle = DIV;
+        ctx.fillRect(0, y + 36, 237, 1);
+      });
+
+      /* ── Right: crypto ─────────────────────────────────────────────── */
+      CRYPTO.forEach((c, i) => {
+        const y   = 36 + i * 50;
+        ctx.fillStyle = (i & 1) ? BG : BG2;
+        ctx.fillRect(238, y, W - 238, 49);
+
+        const ar = arrow(c.chg);
+
+        /* Symbol */
+        ctx.fillStyle = CYN;
+        px(13, true);
+        ctx.fillText(c.sym, 244, y + 16);
+
+        /* Price */
+        const pStr = c.price >= 1000
+          ? '$' + c.price.toLocaleString('en', {maximumFractionDigits: 0})
+          : c.price >= 1
+            ? '$' + c.price.toFixed(2)
+            : '$' + c.price.toFixed(3);
+        ctx.fillStyle = GLD;
+        px(12, true);
+        ctx.fillText(pStr, 244, y + 34);
+
+        /* 24h change */
+        ctx.fillStyle = ar.col;
+        px(10, true);
+        ctx.fillText(`${ar.sym} ${Math.abs(c.chg).toFixed(2)}%`, 360, y + 16);
+
+        ctx.fillStyle = DIV;
+        ctx.fillRect(238, y + 48, W - 238, 1);
+      });
+
+      /* ── Scrolling ticker ──────────────────────────────────────────── */
+      ctx.fillStyle = '#020602';
+      ctx.fillRect(0, H - 22, W, 22);
+      ctx.fillStyle = DIV;
+      ctx.fillRect(0, H - 22, W, 1);
+
+      ctx.save();
+      ctx.rect(0, H - 21, W, 21);
+      ctx.clip();
+      px(9, false);
+      let x = tickerX;
+      PAIRS.forEach((p, i) => {
+        const chg = (p.rate - p.prev) / p.prev * 100;
+        const ar  = arrow(chg);
+        const seg = `  ${p.pair}  ${fmtRate(p.rate)}  ${ar.sym}${Math.abs(chg).toFixed(2)}%  `;
+        ctx.fillStyle = ar.col;
+        ctx.fillText(seg, x, H - 8);
+        x += ctx.measureText(seg).width;
+      });
+      CRYPTO.forEach(c => {
+        const ar  = arrow(c.chg);
+        const pStr = c.price >= 1000 ? c.price.toLocaleString('en', {maximumFractionDigits:0}) : c.price.toFixed(2);
+        const seg = `  ${c.sym} $${pStr} ${ar.sym}${Math.abs(c.chg).toFixed(2)}%  `;
+        ctx.fillStyle = ar.col;
+        ctx.fillText(seg, x, H - 8);
+        x += ctx.measureText(seg).width;
+      });
+      if (x < W) {
+        // reset ticker
+        tickerX = W;
+      }
+      ctx.restore();
+
+      tickerX -= 0.8;
+      if (tickerX < -2000) tickerX = W;
+    }
+
+    let frame = 0;
+    function loop() {
+      render();
+      frame++;
+      if (frame % 600 === 0) buildTicker();
+      requestAnimationFrame(loop);
+    }
+
+    async function init() {
+      await Promise.all([fetchFX(), fetchCrypto()]);
+      buildTicker();
+    }
+
+    init();
+    setInterval(() => { fetchFX(); fetchCrypto(); buildTicker(); }, 600_000);
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

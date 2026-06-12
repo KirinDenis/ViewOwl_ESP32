@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="Cheyenne Descent"
+  data-vow-description="UD-4L Cheyenne dropship descent — vector wireframe ship over planet horizon, altitude/velocity readouts"
+  data-vow-category="scifi"
+  data-vow-tags="dropship,cheyenne,descent,aliens,vector,80s"
+  data-vow-frames="16"
+  data-vow-fps="6"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+const FRAMES = 16;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+let N = ((parseInt(frameParam ?? '0', 10) % FRAMES) + FRAMES) % FRAMES;
+let T = N / FRAMES;
+
+const C = {
+  bg:    '#020618',
+  grid:  '#0E2A55',
+  blue1: '#103E78',
+  blue2: '#1F70C8',
+  blue3: '#3FA8FF',
+  bright:'#9FD8FF',
+  phos:  '#E8F4FF',
+  amber: '#FFB000',
+  red:   '#FF3030',
+  redD:  '#7C1010',
+};
+
+function vstroke(c, lw, glow) {
+  ctx.shadowColor = c; ctx.shadowBlur = glow ?? 4;
+  ctx.strokeStyle = c; ctx.lineWidth = lw ?? 1.4;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+function vline(x1,y1,x2,y2,c,lw){ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); vstroke(c,lw); }
+function vpoly(pts,c,lw,closed){ ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]); for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]); if(closed!==false) ctx.closePath(); vstroke(c,lw); }
+function vellipse(cx,cy,rx,ry,c,lw){ ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); vstroke(c,lw); }
+
+/* ── Descent state ───────────────────────────────────────────────────────── *
+ *  Altitude: 12000m → 0m over 16 frames (ease-out)                            *
+ *  Velocity: peaks mid-descent then drops as we slow for landing              *
+ *  Ship Y: starts upper, descends as altitude drops                           */
+function descent() {
+  const u = T;
+  const ease = 1 - Math.pow(1 - u, 2);
+  const altitude = Math.round(12000 * (1 - ease));
+  /* Velocity: bell curve — accelerates then brakes for landing */
+  const vel = Math.round(40 + 380 * Math.sin(u * Math.PI));
+  /* Ship Y: descends across screen, planet horizon rises */
+  const shipY = 90 + ease * 100;
+  const horizonY = 200 - ease * 30;     /* horizon visually grows closer    */
+  const machWarn = vel > 350;            /* RED warning over Mach            */
+  return { altitude, vel, shipY, horizonY, machWarn, u, ease };
+}
+
+function drawBackground(d) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, VW, VH);
+
+  /* Star field — deterministic */
+  const seedRng = mulberry32(0xCAFEBABE);
+  for (let i = 0; i < 40; i++) {
+    const sx = seedRng() * VW;
+    const sy = seedRng() * d.horizonY;
+    const tw = (Math.sin(i * 11 + N * 7) + 1) / 2;
+    ctx.fillStyle = `rgba(159,216,255,${0.3 + 0.5 * tw})`;
+    ctx.fillRect(sx, sy, 1, 1);
+  }
+
+  /* Planet horizon — large arc curving across the bottom */
+  const planetCY = d.horizonY + 600;
+  const planetR  = 600;
+  ctx.beginPath();
+  ctx.ellipse(VW / 2, planetCY, planetR, planetR * 0.82, 0, 0, Math.PI * 2);
+  vstroke(C.blue3, 1.6, 6);
+
+  /* Atmospheric layer arcs above the planet — 3 thinner concentric strokes */
+  for (let i = 1; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.ellipse(VW / 2, planetCY, planetR + i * 14, (planetR + i * 14) * 0.82, 0, Math.PI * 1.05, Math.PI * 1.95);
+    vstroke(C.blue1, 1);
+  }
+
+  /* Surface texture lines on planet visible above horizon */
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  for (let i = 0; i < 6; i++) {
+    const y = d.horizonY + 8 + i * 14;
+    if (y > VH - 26) break;
+    ctx.beginPath();
+    ctx.ellipse(VW / 2, planetCY, planetR - i * 6, (planetR - i * 6) * 0.82, 0, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+  }
+}
+function mulberry32(seed) {
+  let s = seed >>> 0;
+  return function () {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), 1 | t);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ── UD-4L Cheyenne dropship — front-quarter side view, nose pointing R ─── */
+function drawShip(d) {
+  const cx = VW / 2 - 30;
+  const cy = d.shipY;
+  const sc = 1 - d.ease * 0.18;          /* slight shrink as we descend     */
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(sc, sc);
+
+  /* Main fuselage — chunky body with chin and tail */
+  vpoly([
+    [  90,   0],          /* nose tip                                       */
+    [  60, -16],
+    [  20, -24],
+    [ -50, -24],
+    [ -78, -16],
+    [ -90,  -8],
+    [ -90,  18],
+    [ -78,  26],
+    [ -50,  30],
+    [  20,  30],
+    [  60,  16],
+  ], C.phos, 1.6);
+
+  /* Cockpit window */
+  vpoly([[60, -10], [80, -2], [80, 6], [60, 12], [50, 6], [50, -2]], C.blue2, 1.2);
+
+  /* Forward chin gun pod */
+  vpoly([[40, 16], [55, 28], [25, 32], [10, 22]], C.blue3, 1.3, true);
+
+  /* Wings (stubby) — top wing extending from upper hull */
+  vpoly([[-20, -24], [10, -50], [-20, -50], [-50, -24]], C.blue3, 1.3, true);
+
+  /* Engine pods — twin under each wing */
+  vellipse(-30, -42, 18, 4, C.blue2, 1.2);
+  vellipse(-65, -35, 12, 3, C.blue2, 1.2);
+
+  /* Vertical stabilizer at tail */
+  vpoly([[-78, -16], [-92, -36], [-72, -36], [-72, -16]], C.blue3, 1.2, true);
+
+  /* Tail engine nozzle (rear) */
+  vellipse(-92, 4, 4, 14, C.amber, 1.3);
+  vellipse(-90, 4, 2, 8,  C.bright, 1);
+
+  /* Engine flare — only visible when descending fast */
+  if (d.vel > 200) {
+    const fl = (d.vel - 200) * 0.15;
+    ctx.beginPath();
+    ctx.moveTo(-92, -2);
+    ctx.lineTo(-92 - fl, 4);
+    ctx.lineTo(-92, 10);
+    vstroke(C.amber, 1.4, 8);
+    ctx.beginPath();
+    ctx.moveTo(-92, 1);
+    ctx.lineTo(-92 - fl * 0.6, 4);
+    ctx.lineTo(-92, 7);
+    vstroke(C.phos, 1.2, 6);
+  }
+
+  /* Landing gear — extends only in final descent (last 3 frames) */
+  if (T > 0.78) {
+    vline(-30, 30, -30, 46, C.amber, 1.4);
+    vline(-30, 46, -38, 46, C.amber, 1.4);
+    vline( 20, 30,  20, 46, C.amber, 1.4);
+    vline( 20, 46,  28, 46, C.amber, 1.4);
+  }
+
+  /* Hull marking */
+  ctx.font         = 'bold 7px "Courier New", monospace';
+  ctx.fillStyle    = C.amber;
+  ctx.shadowColor  = C.amber; ctx.shadowBlur = 2;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign    = 'left';
+  ctx.fillText('UD-4L', -30, 0);
+  ctx.shadowBlur   = 0;
+
+  ctx.restore();
+}
+
+/* ── Reticle / target marker on horizon (landing zone) ──────────────────── */
+function drawReticle(d) {
+  if (T < 0.3) return;
+  const rx = VW / 2 + 60;
+  const ry = d.horizonY + 18;
+  ctx.strokeStyle = C.amber; ctx.lineWidth = 1;
+  ctx.shadowColor = C.amber; ctx.shadowBlur = 4;
+  ctx.beginPath(); ctx.arc(rx, ry, 8, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(rx - 12, ry); ctx.lineTo(rx - 6, ry);
+  ctx.moveTo(rx + 6,  ry); ctx.lineTo(rx + 12, ry);
+  ctx.moveTo(rx, ry - 12); ctx.lineTo(rx, ry - 6);
+  ctx.moveTo(rx, ry + 6);  ctx.lineTo(rx, ry + 12);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.font = 'bold 8px "Courier New", monospace';
+  ctx.fillStyle = C.amber; ctx.textBaseline = 'top';
+  ctx.fillText('LZ-1', rx + 12, ry - 14);
+}
+
+function drawHud(d) {
+  /* Header */
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, 0, VW, 24);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  ctx.strokeRect(0, 0, VW, 24);
+
+  ctx.font         = 'bold 12px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle    = C.blue3;
+  ctx.shadowColor  = C.blue3; ctx.shadowBlur = 3;
+  ctx.fillText('UD-4L CHEYENNE // DESCENT', 8, 7);
+
+  ctx.textAlign = 'right';
+  const blinkOn = !d.machWarn || (N & 1) === 0;
+  ctx.fillStyle = d.machWarn ? (blinkOn ? C.red : C.redD) : C.amber;
+  ctx.shadowColor = ctx.fillStyle;
+  ctx.fillText(d.machWarn ? '⚠ EXIT VELOCITY' : 'INBOUND', VW - 8, 7);
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'left';
+
+  /* Left telemetry — ALT */
+  drawReadout(8, 36, 'ALT', String(d.altitude).padStart(5, '0') + ' m', d.altitude < 1000 ? C.amber : C.bright);
+  /* VEL */
+  drawReadout(8, 88, 'VEL', String(d.vel).padStart(3, '0') + ' m/s', d.machWarn ? C.red : C.bright);
+  /* PITCH (descending angle, fixed decline) */
+  drawReadout(8, 140, 'PITCH', '-' + (10 + Math.round(T * 18)) + '°', C.bright);
+
+  /* Footer */
+  const fy = VH - 18;
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, fy, VW, 18);
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(0, fy, VW, 18);
+  ctx.font = 'bold 10px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('LV-426 // ATMO 0.94', 8, fy + 4);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.blue3;
+  ctx.fillText('FR ' + String(N + 1).padStart(2, '0') + '/' + FRAMES, VW - 8, fy + 4);
+  ctx.textAlign = 'left';
+}
+function drawReadout(x, y, label, value, valueColor) {
+  ctx.fillStyle = 'rgba(8,28,72,0.6)';
+  ctx.fillRect(x, y, 90, 44);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  ctx.strokeRect(x, y, 90, 44);
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText(label, x + 6, y + 4);
+  ctx.font = 'bold 14px "Courier New", monospace';
+  ctx.fillStyle = valueColor;
+  ctx.shadowColor = valueColor; ctx.shadowBlur = 3;
+  ctx.fillText(value, x + 6, y + 18);
+  ctx.shadowBlur = 0;
+}
+
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW, VH) * 0.4,
+                                     VW/2, VH/2, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+
+function render() {
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+  const d = descent();
+  drawBackground(d);
+  drawReticle(d);
+  drawShip(d);
+  drawHud(d);
+  drawScanlines();
+  drawVignette();
+}
+
+render();
+
+if (frameParam === null) {
+  const FPS = 6;
+  let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) {
+      last = ts;
+      N = (N + 1) % FRAMES;
+      T = N / FRAMES;
+      render();
+    }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

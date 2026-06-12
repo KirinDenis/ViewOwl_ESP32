@@ -1,0 +1,293 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>World Clocks</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 480px; height: 320px; overflow: hidden; background: #000; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="Clock" data-vow-category="clock" data-vow-description="Digital HUD clock display">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+function quantChannel(v, bits) {
+    const shift = 8 - bits;
+    const q = Math.min((1 << bits) - 1, v >> shift);
+    return (q << shift) | (q >> (bits - shift));
+}
+function snap565(r, g, b) {
+    return { r: quantChannel(r,5), g: quantChannel(g,6), b: quantChannel(b,5) };
+}
+function css(r, g, b) {
+    const q = snap565(r, g, b);
+    return `rgb(${q.r},${q.g},${q.b})`;
+}
+
+function dither() {
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const oR = d[i], oG = d[i+1], oB = d[i+2];
+            const q = snap565(oR, oG, oB);
+            d[i] = q.r; d[i+1] = q.g; d[i+2] = q.b;
+            const eR = oR-q.r, eG = oG-q.g, eB = oB-q.b;
+            if (x+1<W){const j=i+4;d[j]=clamp(d[j]+((eR*7)>>4));d[j+1]=clamp(d[j+1]+((eG*7)>>4));d[j+2]=clamp(d[j+2]+((eB*7)>>4));}
+            if (y+1<H){
+                if (x>0){const j=((y+1)*W+(x-1))*4;d[j]=clamp(d[j]+((eR*3)>>4));d[j+1]=clamp(d[j+1]+((eG*3)>>4));d[j+2]=clamp(d[j+2]+((eB*3)>>4));}
+                {const j=((y+1)*W+x)*4;d[j]=clamp(d[j]+((eR*5)>>4));d[j+1]=clamp(d[j+1]+((eG*5)>>4));d[j+2]=clamp(d[j+2]+((eB*5)>>4));}
+                if (x+1<W){const j=((y+1)*W+(x+1))*4;d[j]=clamp(d[j]+(eR>>4));d[j+1]=clamp(d[j+1]+(eG>>4));d[j+2]=clamp(d[j+2]+(eB>>4));}
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
+const HEADER_H = 36, FOOTER_H = 24;
+const CONTENT_Y = HEADER_H, CONTENT_H = H - HEADER_H - FOOTER_H;
+const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pad(n) { return String(n).padStart(2,'0'); }
+let clockStr = '00:00:00', dateStr = 'Mon 01 Jan';
+function tickClock() {
+    const now = new Date();
+    clockStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    dateStr = `${DAY[now.getDay()]} ${pad(now.getDate())} ${MON[now.getMonth()]}`;
+}
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
+function line(x1,y1,x2,y2,c,t){
+    ctx.strokeStyle=c;ctx.lineWidth=t||1;
+    const ox=(y1===y2)?0:0.5,oy=(x1===x2)?0:0.5;
+    ctx.beginPath();ctx.moveTo(x1+ox,y1+oy);ctx.lineTo(x2+ox,y2+oy);ctx.stroke();
+}
+function drawText(s,x,y,sz,c,align,bold){
+    ctx.fillStyle=c;
+    ctx.font=`${bold===false?'':'bold '}${sz}px Arial,Helvetica,sans-serif`;
+    ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';
+    ctx.fillText(String(s),x,y);
+}
+
+function redraw() {
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.lineWidth=1;ctx.lineCap='butt';
+    render();
+    dither();
+}
+function tick() { tickClock(); redraw(); }
+
+// ---- Weather label helper ----
+function wLabel(code) {
+    if (code === 0) return 'CLEAR';
+    if (code <= 2) return 'P.CLOUDY';
+    if (code <= 3) return 'CLOUDY';
+    if (code <= 48) return 'FOGGY';
+    if (code <= 67) return 'RAINY';
+    if (code <= 77) return 'SNOWY';
+    if (code <= 82) return 'SHOWERS';
+    return 'STORMY';
+}
+
+// ---- Palette ----
+const C = {
+    bg:      css(  4,   8,  20),
+    cell:    css(  8,  16,  40),
+    divider: css( 18,  28,  66),
+    cyan:    css(  0, 220, 170),
+    white:   css(255, 255, 255),
+    gray:    css(128, 128, 128),
+    yellow:  css(248, 220,   0),
+    red:     css(248,   0,   0),
+    green:   css(  0, 220,   0),
+    blue:    css(  0, 128, 248),
+    ltGray:  css(192, 192, 192),
+};
+
+// ---- City definitions ----
+const CITIES = [
+    { name: 'TOKYO',    utc:  9, lat: 35.68, lon: 139.69 },
+    { name: 'LONDON',   utc:  0, lat: 51.51, lon:  -0.13 },
+    { name: 'NEW YORK', utc: -5, lat: 40.71, lon: -74.01 },
+    { name: 'SYDNEY',   utc: 11, lat:-33.87, lon: 151.21 },
+];
+
+// Weather state per city
+const weather = CITIES.map(() => ({ temp: '---', label: '---' }));
+
+function fetchCityWeather(idx) {
+    const c = CITIES[idx];
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m,weathercode&timezone=auto`;
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const cur = data.current;
+            weather[idx].temp  = Math.round(cur.temperature_2m) + '\u00b0C';
+            weather[idx].label = wLabel(cur.weathercode);
+        })
+        .catch(() => {});
+}
+
+// Fetch all cities on load, then refresh every 10 minutes
+CITIES.forEach((_, i) => fetchCityWeather(i));
+setInterval(() => CITIES.forEach((_, i) => fetchCityWeather(i)), 600000);
+
+// ---- Analog clock drawing ----
+function drawAnalogClock(cx, cy, r, utcOffsetHours) {
+    const now = new Date();
+    const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+    const local = new Date(utcMs + utcOffsetHours * 3600000);
+    const h = local.getHours() % 12 + local.getMinutes() / 60;
+    const m = local.getMinutes() + local.getSeconds() / 60;
+    const s = local.getSeconds();
+
+    // Clock face fill
+    ctx.fillStyle = C.cell;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Rim
+    ctx.strokeStyle = C.divider;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Hour tick marks
+    for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+        const isMajor = (i % 3 === 0);
+        const inner = isMajor ? r * 0.75 : r * 0.85;
+        ctx.strokeStyle = C.cyan;
+        ctx.lineWidth = isMajor ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+        ctx.lineTo(cx + Math.cos(a) * (r - 2), cy + Math.sin(a) * (r - 2));
+        ctx.stroke();
+    }
+
+    // Hour hand (thick, 55% radius)
+    const ha = (h / 12) * Math.PI * 2 - Math.PI / 2;
+    ctx.strokeStyle = C.white;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(ha) * r * 0.55, cy + Math.sin(ha) * r * 0.55);
+    ctx.stroke();
+
+    // Minute hand (medium, 75% radius)
+    const ma = (m / 60) * Math.PI * 2 - Math.PI / 2;
+    ctx.strokeStyle = C.white;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(ma) * r * 0.75, cy + Math.sin(ma) * r * 0.75);
+    ctx.stroke();
+
+    // Second hand (thin, red, 85% radius)
+    const sa = (s / 60) * Math.PI * 2 - Math.PI / 2;
+    ctx.strokeStyle = C.red;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(sa) * r * 0.85, cy + Math.sin(sa) * r * 0.85);
+    ctx.stroke();
+
+    // Center dot
+    ctx.fillStyle = C.red;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.lineCap = 'butt';
+}
+
+// ---- Digital time string for a given UTC offset ----
+function digitalTime(utcOffset) {
+    const now = new Date();
+    const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+    const local = new Date(utcMs + utcOffset * 3600000);
+    return `${pad(local.getHours())}:${pad(local.getMinutes())}:${pad(local.getSeconds())}`;
+}
+
+// ---- 2x2 cell layout (each cell 240x160) ----
+const CELLS = [
+    { x: 0,   y: 0,   cx: 120, cy: 80  },  // top-left
+    { x: 240, y: 0,   cx: 360, cy: 80  },  // top-right
+    { x: 0,   y: 160, cx: 120, cy: 240 },  // bottom-left
+    { x: 240, y: 160, cx: 360, cy: 240 },  // bottom-right
+];
+
+function drawCell(cellIdx) {
+    const cell = CELLS[cellIdx];
+    const city = CITIES[cellIdx];
+    const w = weather[cellIdx];
+    const cw = 240, ch = 160;
+
+    // Cell background
+    fillRect(cell.x, cell.y, cw, ch, C.bg);
+
+    // City name — top center in monospace cyan
+    ctx.fillStyle = C.cyan;
+    ctx.font = 'bold 13px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(city.name, cell.cx, cell.y + 16);
+
+    // UTC offset label
+    const utcTag = city.utc >= 0 ? `UTC+${city.utc}` : `UTC${city.utc}`;
+    ctx.fillStyle = C.gray;
+    ctx.font = '10px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(utcTag, cell.cx, cell.y + 27);
+
+    // Analog clock centered in the cell
+    const clockCY = cell.y + 85;
+    drawAnalogClock(cell.cx, clockCY, 50, city.utc);
+
+    // Digital time below clock face
+    const dt = digitalTime(city.utc);
+    ctx.fillStyle = C.white;
+    ctx.font = 'bold 12px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(dt, cell.cx, cell.y + 143);
+
+    // Weather: temperature and condition on the same line
+    const tempColor = w.temp !== '---' ? (w.temp.startsWith('-') ? C.blue : C.green) : C.gray;
+    ctx.fillStyle = tempColor;
+    ctx.font = '10px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(w.temp, cell.cx - 28, cell.y + 156);
+    ctx.fillStyle = C.gray;
+    ctx.fillText(w.label, cell.cx + 20, cell.y + 156);
+}
+
+function render() {
+    // Full dark background
+    fillRect(0, 0, W, H, C.bg);
+
+    // Draw all 4 cells
+    for (let i = 0; i < 4; i++) drawCell(i);
+
+    // Grid divider lines
+    line(240, 0, 240, H, C.divider, 1);
+    line(0, 160, W, 160, C.divider, 1);
+}
+
+// Start
+tickClock();
+redraw();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

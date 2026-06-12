@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>warnings</Nullable>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+    <WarningLevel>5</WarningLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <Features>strict</Features>
+    <!-- CA1056: WebApiBaseUrl kept as string — PuppeteerSharp and string interpolation consume it -->
+    <!--          directly; changing to Uri would require conversions at every call site.           -->
+    <NoWarn>CA1056</NoWarn>
+  </PropertyGroup>
+
+</Project>

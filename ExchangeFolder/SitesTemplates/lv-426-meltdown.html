@@ -1,0 +1,300 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="LV-426 Meltdown"
+  data-vow-description="Atmosphere Processor reactor failure — top-down wireframe tower, expanding RED shockwave rings, countdown clock"
+  data-vow-category="scifi"
+  data-vow-tags="reactor,meltdown,lv426,aliens,countdown,topdown,80s"
+  data-vow-frames="16"
+  data-vow-fps="5"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+const FRAMES = 16;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+let N = ((parseInt(frameParam ?? '0', 10) % FRAMES) + FRAMES) % FRAMES;
+let T = N / FRAMES;
+
+const C = {
+  bg:    '#020618',
+  grid:  '#0E2A55',
+  blue1: '#103E78',
+  blue2: '#1F70C8',
+  blue3: '#3FA8FF',
+  bright:'#9FD8FF',
+  phos:  '#E8F4FF',
+  red:   '#FF3030',
+  redD:  '#7C1010',
+  amber: '#FFB000',
+};
+
+function vstroke(color, lw, glow) {
+  ctx.shadowColor = color; ctx.shadowBlur = glow ?? 4;
+  ctx.strokeStyle = color; ctx.lineWidth = lw ?? 1.4;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+function vline(x1,y1,x2,y2,c,lw){ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); vstroke(c,lw); }
+function vellipse(cx,cy,rx,ry,c,lw,glow){ ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); vstroke(c,lw,glow); }
+function vpoly(pts,c,lw,closed){ ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]); for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]); if(closed!==false) ctx.closePath(); vstroke(c,lw); }
+
+const CX = VW / 2;
+const CY = VH / 2 + 8;
+
+/* ── Countdown timer: T-04:00 → T-00:00 over 16 frames ──────────────────── */
+function timer() {
+  const totalSecs = 240 - Math.floor(T * 240);
+  const m = Math.floor(totalSecs / 60);
+  const s = totalSecs % 60;
+  return `T-${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+function phase() {
+  if (N <= 4)       return { label: 'NOMINAL',    col: C.blue3, warn: false };
+  if (N <= 8)       return { label: 'WARNING',    col: C.amber, warn: true  };
+  if (N <= 12)      return { label: 'CRITICAL',   col: C.red,   warn: true  };
+  if (N <= 14)      return { label: 'MELTDOWN',   col: C.red,   warn: true  };
+  return              { label: 'CATASTROPHIC',    col: C.red,   warn: true  };
+}
+
+function drawBackground() {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, VW, VH);
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  for (let x = 0; x <= VW; x += 24) { ctx.beginPath(); ctx.moveTo(x, 28); ctx.lineTo(x, VH - 24); ctx.stroke(); }
+  for (let y = 32; y <= VH - 24; y += 24) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VW, y); ctx.stroke(); }
+}
+
+/* ── Atmosphere Processor — top-down: octagonal tower + ring decks ──────── */
+function drawProcessor() {
+  /* Outer perimeter octagon */
+  const OUT = 110;
+  const oct = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 - Math.PI / 8;
+    oct.push([CX + OUT * Math.cos(a), CY + OUT * Math.sin(a)]);
+  }
+  vpoly(oct, C.blue3, 1.6, true);
+
+  /* Mid ring */
+  vellipse(CX, CY, 78, 78, C.blue2, 1.2);
+  /* Inner ring */
+  vellipse(CX, CY, 50, 50, C.blue2, 1.2);
+  /* Core reactor — pulses red on melt phases */
+  const ph = phase();
+  const corePulse = (Math.sin(N * 0.8) + 1) / 2;
+  const coreCol   = ph.warn ? C.red : C.blue3;
+  vellipse(CX, CY, 22, 22, coreCol, 1.6, ph.warn ? 8 : 4);
+  vellipse(CX, CY, 14, 14, coreCol, 1.4);
+  if (ph.warn) {
+    /* Hot core dot */
+    ctx.fillStyle = C.red;
+    ctx.shadowColor = C.red; ctx.shadowBlur = 8 + corePulse * 4;
+    ctx.beginPath(); ctx.arc(CX, CY, 6 + corePulse * 2, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  } else {
+    ctx.fillStyle = C.bright;
+    ctx.beginPath(); ctx.arc(CX, CY, 4, 0, Math.PI * 2); ctx.fill();
+  }
+
+  /* Vent stacks at 4 cardinal points (small rectangles outside outer ring) */
+  for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+    const sx = CX + dx * (OUT + 4);
+    const sy = CY + dy * (OUT + 4);
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(Math.atan2(dy, dx));
+    ctx.beginPath(); ctx.rect(-6, -10, 12, 20); vstroke(C.amber, 1.2);
+    ctx.restore();
+  }
+
+  /* Spokes connecting outer to mid ring */
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const x1 = CX + Math.cos(a) * 50;
+    const y1 = CY + Math.sin(a) * 50;
+    const x2 = CX + Math.cos(a) * 110;
+    const y2 = CY + Math.sin(a) * 110;
+    vline(x1, y1, x2, y2, C.blue1, 1);
+  }
+
+  /* Compass-style cardinal markers */
+  ctx.font = 'bold 8px "Courier New", monospace';
+  ctx.fillStyle = C.blue2; ctx.shadowBlur = 0;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const [lbl, dx, dy] of [['N', 0, -1], ['E', 1, 0], ['S', 0, 1], ['W', -1, 0]]) {
+    ctx.fillText(lbl, CX + dx * (OUT + 22), CY + dy * (OUT + 22));
+  }
+  ctx.textAlign = 'left';
+}
+
+/* ── Expanding red shockwave rings — emanate from core during warn phases ── */
+function drawShockwaves() {
+  const ph = phase();
+  if (!ph.warn) return;
+  /* 3 rings with phase offset; speed grows with criticality */
+  const intensity = N <= 8 ? 0.5 : (N <= 12 ? 1.0 : 1.5);
+  const RINGS = [
+    { phase: 0.00 },
+    { phase: 0.33 },
+    { phase: 0.66 },
+  ];
+  for (const r of RINGS) {
+    const prog = ((T * intensity) + r.phase) % 1;
+    const rad  = 14 + prog * 200;
+    const alpha = Math.max(0, 0.85 - prog * 0.95);
+    if (alpha < 0.03) continue;
+    ctx.strokeStyle = `rgba(255,48,48,${alpha})`;
+    ctx.lineWidth   = 2;
+    ctx.shadowColor = C.red;
+    ctx.shadowBlur  = 6;
+    ctx.beginPath(); ctx.arc(CX, CY, rad, 0, Math.PI * 2); ctx.stroke();
+    ctx.shadowBlur  = 0;
+  }
+}
+
+/* ── HUD ─────────────────────────────────────────────────────────────────── */
+function drawHud() {
+  const ph = phase();
+
+  /* Header */
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, 0, VW, 24);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  ctx.strokeRect(0, 0, VW, 24);
+
+  ctx.font         = 'bold 12px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle    = C.blue3;
+  ctx.shadowColor  = C.blue3; ctx.shadowBlur = 3;
+  ctx.fillText('LV-426 // ATMO-PROC #1', 8, 7);
+
+  /* Big RED countdown — center-right */
+  ctx.font         = 'bold 18px "Courier New", monospace';
+  ctx.textAlign    = 'right';
+  ctx.fillStyle    = C.red;
+  ctx.shadowColor  = C.red; ctx.shadowBlur = 9;
+  ctx.fillText(timer(), VW - 8, 4);
+  ctx.shadowBlur   = 0;
+  ctx.textAlign    = 'left';
+
+  /* Side phase block — left edge, vertical layout */
+  const tx = 8, ty = 40;
+  ctx.fillStyle = 'rgba(8,28,72,0.6)';
+  ctx.fillRect(tx, ty, 90, 70);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1;
+  ctx.strokeRect(tx, ty, 90, 70);
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('PHASE',  tx + 6, ty + 6);
+  ctx.fillText('CORE',   tx + 6, ty + 38);
+
+  ctx.font = 'bold 12px "Courier New", monospace';
+  const blinkOn = !ph.warn || (N & 1) === 0;
+  ctx.fillStyle   = blinkOn ? ph.col : C.redD;
+  ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = ph.warn ? 6 : 2;
+  ctx.fillText(ph.label, tx + 6, ty + 18);
+  const corePct = Math.min(100, 60 + Math.floor(T * 80)) + '%';
+  ctx.fillStyle = ph.warn ? C.red : C.bright;
+  ctx.shadowColor = ctx.fillStyle;
+  ctx.fillText(corePct, tx + 6, ty + 50);
+  ctx.shadowBlur = 0;
+
+  /* Right vital block — pressure/temp */
+  const rx = VW - 100, ry = 40;
+  ctx.fillStyle = 'rgba(8,28,72,0.6)';
+  ctx.fillRect(rx, ry, 92, 70);
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(rx, ry, 92, 70);
+  ctx.font = 'bold 9px "Courier News", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('PRESS',  rx + 6, ry + 6);
+  ctx.fillText('TEMP',   rx + 6, ry + 38);
+  ctx.font = 'bold 12px "Courier New", monospace';
+  const press = Math.round(120 + T * 380);
+  const temp  = Math.round(800 + T * 1200);
+  ctx.fillStyle = ph.warn ? C.red : C.bright;
+  ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = ph.warn ? 4 : 2;
+  ctx.fillText(press + ' kPa', rx + 6, ry + 18);
+  ctx.fillText(temp  + ' K',   rx + 6, ry + 50);
+  ctx.shadowBlur = 0;
+
+  /* Footer */
+  const fy = VH - 18;
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, fy, VW, 18);
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(0, fy, VW, 18);
+  ctx.font = 'bold 10px "Courier New", monospace';
+  ctx.fillStyle = ph.warn ? (blinkOn ? C.red : C.redD) : C.blue2;
+  ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = ph.warn ? 4 : 0;
+  ctx.fillText(ph.warn ? '⚠ EVACUATE — BLAST RADIUS 30km'
+                       : 'NOMINAL — REACTOR STABLE',
+               8, fy + 4);
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.blue3;
+  ctx.fillText('FR ' + String(N + 1).padStart(2, '0') + '/' + FRAMES, VW - 8, fy + 4);
+  ctx.textAlign = 'left';
+}
+
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW, VH) * 0.4,
+                                     VW/2, VH/2, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+
+function render() {
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+  drawBackground();
+  drawProcessor();
+  drawShockwaves();
+  drawHud();
+  drawScanlines();
+  drawVignette();
+}
+
+render();
+
+if (frameParam === null) {
+  const FPS = 5;
+  let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) {
+      last = ts;
+      N = (N + 1) % FRAMES;
+      T = N / FRAMES;
+      render();
+    }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

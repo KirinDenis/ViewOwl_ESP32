@@ -1,0 +1,169 @@
+[
+  {
+    "Source": "SitesTemplates/airlock.html",
+    "Targets": [
+      { "TokenGuid": "cf000001-0000-0000-0000-000000000001", "Width": 480, "Height": 320 },
+      { "TokenGuid": "cf000001-0000-0000-0000-000000000002", "Width": 320, "Height": 240 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/motion-tracker-m314.html",
+    "Targets": [
+      { "TokenGuid": "cf000002-0000-0000-0000-000000000001", "Width": 480, "Height": 320 },
+      { "TokenGuid": "cf000002-0000-0000-0000-000000000002", "Width": 320, "Height": 240 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/storm.html",
+    "Targets": [
+      { "TokenGuid": "cf000003-0000-0000-0000-000000000001", "Width": 480, "Height": 320 },
+      { "TokenGuid": "cf000003-0000-0000-0000-000000000002", "Width": 320, "Height": 240 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/matrix.html",
+    "Targets": [
+      { "TokenGuid": "cf000004-0000-0000-0000-000000000001", "Width": 480, "Height": 320 },
+      { "TokenGuid": "cf000004-0000-0000-0000-000000000002", "Width": 320, "Height": 240 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/reactor.html",
+    "Targets": [
+      { "TokenGuid": "cf000005-0000-0000-0000-000000000001", "Width": 480, "Height": 320 },
+      { "TokenGuid": "cf000005-0000-0000-0000-000000000002", "Width": 320, "Height": 240 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/ambient-aura.html",
+    "Targets": [
+      { "TokenGuid": "cf000006-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/neon.html",
+    "Targets": [
+      { "TokenGuid": "cf000007-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/prism.html",
+    "Targets": [
+      { "TokenGuid": "cf000008-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/trains.html",
+    "Targets": [
+      { "TokenGuid": "cf000009-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/departures.html",
+    "Targets": [
+      { "TokenGuid": "cf000010-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/fx-terminal.html",
+    "Targets": [
+      { "TokenGuid": "cf000011-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/promo.html",
+    "Targets": [
+      { "TokenGuid": "cf000012-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/radar.html",
+    "Targets": [
+      { "TokenGuid": "cf000013-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/ocean.html",
+    "Targets": [
+      { "TokenGuid": "cf000014-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/retro-clock.html",
+    "Targets": [
+      { "TokenGuid": "cf000015-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/minimal.html",
+    "Targets": [
+      { "TokenGuid": "cf000016-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/pulse.html",
+    "Targets": [
+      { "TokenGuid": "cf000017-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/gauge.html",
+    "Targets": [
+      { "TokenGuid": "cf000018-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/hud.html",
+    "Targets": [
+      { "TokenGuid": "cf000019-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/crypto.html",
+    "Targets": [
+      { "TokenGuid": "cf000020-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/space.html",
+    "Targets": [
+      { "TokenGuid": "cf000021-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/clock.html",
+    "Targets": [
+      { "TokenGuid": "cf000022-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/finance.html",
+    "Targets": [
+      { "TokenGuid": "cf000023-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/sectors.html",
+    "Targets": [
+      { "TokenGuid": "cf000024-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/star-map.html",
+    "Targets": [
+      { "TokenGuid": "cf000025-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/life-systems.html",
+    "Targets": [
+      { "TokenGuid": "cf000026-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  },
+  {
+    "Source": "SitesTemplates/weather-canvas.html",
+    "Targets": [
+      { "TokenGuid": "cf000027-0000-0000-0000-000000000001", "Width": 480, "Height": 320 }
+    ]
+  }
+]

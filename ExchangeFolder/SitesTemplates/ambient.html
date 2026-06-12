@@ -1,0 +1,220 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ambient Weather — Reykjavik</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; width: 480px; height: 320px; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="Ambient" data-vow-category="ambient" data-vow-description="Ambient particle background">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+function quantChannel(v, bits) {
+    const shift = 8 - bits;
+    const q = Math.min((1 << bits) - 1, v >> shift);
+    return (q << shift) | (q >> (bits - shift));
+}
+function snap565(r, g, b) {
+    return { r: quantChannel(r,5), g: quantChannel(g,6), b: quantChannel(b,5) };
+}
+function css(r, g, b) {
+    const q = snap565(r, g, b);
+    return `rgb(${q.r},${q.g},${q.b})`;
+}
+
+function dither() {
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const oR = d[i], oG = d[i+1], oB = d[i+2];
+            const q = snap565(oR, oG, oB);
+            d[i] = q.r; d[i+1] = q.g; d[i+2] = q.b;
+            const eR = oR-q.r, eG = oG-q.g, eB = oB-q.b;
+            if (x+1<W){const j=i+4;d[j]=clamp(d[j]+((eR*7)>>4));d[j+1]=clamp(d[j+1]+((eG*7)>>4));d[j+2]=clamp(d[j+2]+((eB*7)>>4));}
+            if (y+1<H){
+                if (x>0){const j=((y+1)*W+(x-1))*4;d[j]=clamp(d[j]+((eR*3)>>4));d[j+1]=clamp(d[j+1]+((eG*3)>>4));d[j+2]=clamp(d[j+2]+((eB*3)>>4));}
+                {const j=((y+1)*W+x)*4;d[j]=clamp(d[j]+((eR*5)>>4));d[j+1]=clamp(d[j+1]+((eG*5)>>4));d[j+2]=clamp(d[j+2]+((eB*5)>>4));}
+                if (x+1<W){const j=((y+1)*W+(x+1))*4;d[j]=clamp(d[j]+(eR>>4));d[j+1]=clamp(d[j+1]+(eG>>4));d[j+2]=clamp(d[j+2]+(eB>>4));}
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
+const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pad(n) { return String(n).padStart(2,'0'); }
+let clockStr = '00:00:00', dateStr = 'Mon 01 Jan';
+function tickClock() {
+    const now = new Date();
+    clockStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    dateStr = `${DAY[now.getDay()]} ${pad(now.getDate())} ${MON[now.getMonth()]}`;
+}
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
+function drawText(s,x,y,sz,c,align,bold){
+    ctx.fillStyle=c;
+    ctx.font=`${bold===false?'':'bold '}${sz}px Arial,Helvetica,sans-serif`;
+    ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';
+    ctx.fillText(String(s),x,y);
+}
+
+// --- Weather fetch for Reykjavik ---
+const LAT = 64.13, LON = -21.90;
+let wx = { temp: null, humidity: null, wind: null, code: null };
+
+function wLabel(code) {
+    if (code === 0) return 'CLEAR';
+    if (code <= 2) return 'P.CLOUDY';
+    if (code <= 3) return 'CLOUDY';
+    if (code <= 48) return 'FOGGY';
+    if (code <= 67) return 'RAINY';
+    if (code <= 77) return 'SNOWY';
+    if (code <= 82) return 'SHOWERS';
+    return 'STORMY';
+}
+
+function fetchWeather() {
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,relativehumidity_2m,windspeed_10m,weathercode&timezone=Atlantic%2FReykjavik`)
+        .then(r => r.json())
+        .then(data => {
+            const c = data.current;
+            wx.temp     = c.temperature_2m;
+            wx.humidity = c.relativehumidity_2m;
+            wx.wind     = c.windspeed_10m;
+            wx.code     = c.weathercode;
+            // Reinitialise particles when weather updates so speed/count reflects new data
+            initParticles();
+        })
+        .catch(() => {});
+}
+
+// --- Background color based on temperature ---
+function bgColor(temp) {
+    if (temp === null) return css(16, 16, 16);
+    if (temp < -10) return css(0, 0, 64);
+    if (temp <   0) return css(0, 0, 96);
+    if (temp <  10) return css(0, 32, 64);
+    if (temp <  20) return css(0, 48, 32);
+    if (temp <  30) return css(48, 32, 0);
+    return css(64, 0, 0);
+}
+
+// --- Particle color based on weather code ---
+function particleColor(code) {
+    if (code === null)  return [128, 128, 128];
+    if (code === 0)     return [248, 220, 0];   // sunny: yellow
+    if (code <= 3)      return [128, 128, 128]; // cloudy: gray
+    if (code <= 67)     return [0, 128, 248];   // rainy: blue
+    if (code <= 77)     return [248, 248, 248]; // snowy: white
+    if (code <= 82)     return [0, 128, 248];   // showers: blue
+    return [128, 0, 128];                        // stormy: purple
+}
+
+// --- Particle system ---
+// 30 particles, each: x, y, vx, vy, size
+const NUM_PARTICLES = 30;
+const particles = [];
+
+function initParticles() {
+    const windSpeed = wx.wind === null ? 5 : wx.wind;
+    const speedScale = Math.max(0.3, windSpeed / 50);
+    // Particle count influenced by humidity: more humidity → slightly more particles
+    particles.length = 0;
+    for (let i = 0; i < NUM_PARTICLES; i++) {
+        particles.push({
+            x:  Math.random() * W,
+            y:  Math.random() * H,
+            // Wind drives rightward drift; add small random component
+            vx: (0.4 + Math.random() * 0.6) * speedScale * (Math.random() > 0.1 ? 1 : -0.5),
+            vy: (Math.random() - 0.5) * speedScale * 0.5,
+            size: 1 + Math.floor(Math.random() * 3),
+        });
+    }
+}
+
+function updateParticles() {
+    for (const p of particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        // Wrap around edges
+        if (p.x > W + 4) p.x = -4;
+        if (p.x < -4)    p.x = W + 4;
+        if (p.y > H + 4) p.y = -4;
+        if (p.y < -4)    p.y = H + 4;
+    }
+}
+
+function drawParticles() {
+    const [pr, pg, pb] = particleColor(wx.code);
+    ctx.fillStyle = css(pr, pg, pb);
+    for (const p of particles) {
+        ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
+    }
+}
+
+// --- Render ---
+function render() {
+    // Solid background based on temperature
+    fillRect(0, 0, W, H, bgColor(wx.temp));
+
+    // Particles
+    drawParticles();
+
+    // Central temperature display (large, centered)
+    const tempStr = wx.temp === null ? '---' : (wx.temp > 0 ? '+' : '') + wx.temp.toFixed(1) + '°C';
+    drawText(tempStr, W / 2, 164, 72, css(248, 248, 248), 'center', true);
+
+    // Condition label below temperature
+    const condStr = wx.code === null ? '---' : wLabel(wx.code);
+    drawText(condStr, W / 2, 198, 16, css(200, 200, 200), 'center', false);
+
+    // Humidity line below condition
+    const hmStr = wx.humidity === null ? '' : 'HMD ' + wx.humidity.toFixed(0) + '%   WIND ' + (wx.wind === null ? '---' : wx.wind.toFixed(1)) + ' km/h';
+    drawText(hmStr, W / 2, 220, 12, css(160, 160, 160), 'center', false);
+
+    // Time in top-right corner
+    drawText(clockStr, W - 6, 20, 13, css(220, 220, 220), 'right', false);
+    drawText(dateStr,  W - 6, 34, 10, css(160, 160, 160), 'right', false);
+
+    // City name bottom-left
+    drawText('REYKJAVIK', 6, H - 8, 12, css(180, 180, 180), 'left', false);
+}
+
+// Target ~15 fps for particle animation using a frame time accumulator
+const TARGET_INTERVAL = 1000 / 15;
+let lastFrameTime = 0;
+
+function frame(ts) {
+    requestAnimationFrame(frame);
+    if (ts - lastFrameTime < TARGET_INTERVAL) return;
+    lastFrameTime = ts;
+
+    updateParticles();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.lineWidth = 1; ctx.lineCap = 'butt';
+    render();
+    dither();
+}
+
+initParticles();
+fetchWeather();
+setInterval(fetchWeather, 600000);
+tickClock();
+setInterval(tickClock, 1000);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

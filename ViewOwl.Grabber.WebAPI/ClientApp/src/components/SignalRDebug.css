@@ -1,0 +1,118 @@
+.signalr-debug-toggle {
+  position: fixed;
+  bottom: 2rem;
+  left: 2rem;
+  z-index: 999;
+  background: rgba(102, 126, 234, 0.2);
+  border: 2px solid rgba(102, 126, 234, 0.5);
+  color: #667eea;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.signalr-debug-toggle:hover {
+  background: rgba(102, 126, 234, 0.3);
+  transform: translateY(-2px);
+}
+
+.signalr-debug {
+  position: fixed;
+  bottom: 2rem;
+  left: 2rem;
+  z-index: 999;
+  width: 500px;
+  max-height: 400px;
+  background: rgba(10, 14, 39, 0.98);
+  border: 2px solid rgba(102, 126, 234, 0.5);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+.signalr-debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+.signalr-debug-header h3 {
+  margin: 0;
+  color: #667eea;
+  font-size: 1rem;
+}
+
+.signalr-debug-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-badge.connected {
+  background: rgba(72, 187, 120, 0.2);
+  color: #48bb78;
+}
+
+.status-badge.reconnecting {
+  background: rgba(237, 137, 54, 0.2);
+  color: #ed8936;
+}
+
+.status-badge.disconnected,
+.status-badge.failed {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.signalr-debug-actions button {
+  background: rgba(102, 126, 234, 0.2);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  color: #667eea;
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.signalr-debug-events {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.no-events {
+  padding: 2rem;
+  text-align: center;
+  color: #718096;
+}
+
+.event-item {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+  font-size: 0.85rem;
+}
+
+.event-time {
+  color: #718096;
+  flex-shrink: 0;
+}
+
+.event-message {
+  color: #e0e6ed;
+  flex: 1;
+}

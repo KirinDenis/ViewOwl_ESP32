@@ -1,0 +1,6 @@
+@ViewOwl.Grabber.WebAPI_HostAddress = http://localhost:5085
+
+GET {{ViewOwl.Grabber.WebAPI_HostAddress}}/swagger/
+Accept: application/json
+
+###

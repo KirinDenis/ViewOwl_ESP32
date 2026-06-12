@@ -1,0 +1,276 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Retro Terminal</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 480px; height: 320px; overflow: hidden; background: #000; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="Retro Clock" data-vow-category="clock" data-vow-description="Retro-style digital clock">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+function quantChannel(v, bits) {
+    const shift = 8 - bits;
+    const q = Math.min((1 << bits) - 1, v >> shift);
+    return (q << shift) | (q >> (bits - shift));
+}
+function snap565(r, g, b) {
+    return { r: quantChannel(r,5), g: quantChannel(g,6), b: quantChannel(b,5) };
+}
+function css(r, g, b) {
+    const q = snap565(r, g, b);
+    return `rgb(${q.r},${q.g},${q.b})`;
+}
+
+function dither() {
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const oR = d[i], oG = d[i+1], oB = d[i+2];
+            const q = snap565(oR, oG, oB);
+            d[i] = q.r; d[i+1] = q.g; d[i+2] = q.b;
+            const eR = oR-q.r, eG = oG-q.g, eB = oB-q.b;
+            if (x+1<W){const j=i+4;d[j]=clamp(d[j]+((eR*7)>>4));d[j+1]=clamp(d[j+1]+((eG*7)>>4));d[j+2]=clamp(d[j+2]+((eB*7)>>4));}
+            if (y+1<H){
+                if (x>0){const j=((y+1)*W+(x-1))*4;d[j]=clamp(d[j]+((eR*3)>>4));d[j+1]=clamp(d[j+1]+((eG*3)>>4));d[j+2]=clamp(d[j+2]+((eB*3)>>4));}
+                {const j=((y+1)*W+x)*4;d[j]=clamp(d[j]+((eR*5)>>4));d[j+1]=clamp(d[j+1]+((eG*5)>>4));d[j+2]=clamp(d[j+2]+((eB*5)>>4));}
+                if (x+1<W){const j=((y+1)*W+(x+1))*4;d[j]=clamp(d[j]+(eR>>4));d[j+1]=clamp(d[j+1]+(eG>>4));d[j+2]=clamp(d[j+2]+(eB>>4));}
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
+const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pad(n) { return String(n).padStart(2,'0'); }
+let clockStr = '00:00:00', dateStr = 'Mon 01 Jan';
+function tickClock() {
+    const now = new Date();
+    clockStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    dateStr = `${DAY[now.getDay()]} ${pad(now.getDate())} ${MON[now.getMonth()]}`;
+}
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
+function line(x1,y1,x2,y2,c,t){
+    ctx.strokeStyle=c;ctx.lineWidth=t||1;
+    const ox=(y1===y2)?0:0.5,oy=(x1===x2)?0:0.5;
+    ctx.beginPath();ctx.moveTo(x1+ox,y1+oy);ctx.lineTo(x2+ox,y2+oy);ctx.stroke();
+}
+
+function redraw() {
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.lineWidth=1;ctx.lineCap='butt';
+    render();
+    dither();
+}
+function tick() { tickClock(); cursorVisible = !cursorVisible; redraw(); }
+
+// ---- Weather label helper ----
+function wLabel(code) {
+    if (code === 0) return 'CLEAR';
+    if (code <= 2) return 'P.CLOUDY';
+    if (code <= 3) return 'CLOUDY';
+    if (code <= 48) return 'FOGGY';
+    if (code <= 67) return 'RAINY';
+    if (code <= 77) return 'SNOWY';
+    if (code <= 82) return 'SHOWERS';
+    return 'STORMY';
+}
+
+// ---- Palette: amber CRT tones only ----
+const C = {
+    bg:       css( 12,   6,   0),
+    darkBg:   css(  4,   2,   0),
+    amber:    css(255, 170,   0),   // standard text
+    bright:   css(255, 210,   0),   // headings / labels
+    dim:      css(180, 100,   0),   // de-emphasised text
+    vdim:     css( 80,  40,   0),   // box lines / borders
+    ok:       css(  0, 210,  60),   // [OK] status
+    warn:     css(255,  80,  40),   // [WARN] status
+};
+
+// ---- Terminal layout constants ----
+const FONT      = '"Courier New", monospace';
+const FONT_SZ   = 14;       // px — chosen so rows fit in 320px height
+const LINE_H    = 20;       // px per terminal row
+const LEFT_PAD  = 14;
+const COL_LABEL = LEFT_PAD;          // label column start x
+const COL_SEP   = 220;               // colon separator x
+const COL_VAL   = 234;               // value start x
+const COL_STATUS= 410;               // [STATUS] start x
+const BOX_X     = 8;
+const BOX_Y     = 36;
+const BOX_W     = W - 16;
+const BOX_H     = H - BOX_Y - 44;
+
+// ---- Weather state ----
+const wx = {
+    temp:     '---',
+    humidity: '---',
+    wind:     '---',
+    pressure: '----',
+    condition:'---',
+    vis:      '---',   // derived from weathercode
+};
+
+// Cursor blink state — toggled by tick() every 500ms
+let cursorVisible = true;
+
+function visLabel(code) {
+    if (code <= 1)  return 'EXCELLENT';
+    if (code <= 3)  return 'GOOD';
+    if (code <= 48) return 'POOR';
+    if (code <= 67) return 'MODERATE';
+    return 'GOOD';
+}
+
+function fetchWeather() {
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.40&current=temperature_2m,weathercode,windspeed_10m,relativehumidity_2m,surface_pressure&timezone=Europe%2FBerlin')
+        .then(r => r.json())
+        .then(data => {
+            const cur = data.current;
+            const t = cur.temperature_2m;
+            wx.temp      = (t >= 0 ? '+' : '') + t.toFixed(1) + ' C';
+            wx.humidity  = String(cur.relativehumidity_2m).padStart(3, '0') + ' %';
+            wx.wind      = String(Math.round(cur.windspeed_10m)).padStart(3, '0') + ' KPH';
+            wx.pressure  = Math.round(cur.surface_pressure) + ' HPA';
+            wx.condition = wLabel(cur.weathercode);
+            wx.vis       = visLabel(cur.weathercode);
+        })
+        .catch(() => {});
+}
+
+fetchWeather();
+setInterval(fetchWeather, 600000);
+
+// ---- Terminal text drawing (monospace) ----
+function term(text, x, y, color) {
+    ctx.fillStyle = color;
+    ctx.font = `${FONT_SZ}px ${FONT}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(text, x, y);
+}
+
+// Right-align a value string so it ends at x
+function termRight(text, x, y, color) {
+    ctx.fillStyle = color;
+    ctx.font = `${FONT_SZ}px ${FONT}`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(text, x, y);
+}
+
+// Draw a rectangle border using line() — ASCII box aesthetic
+function drawBox(x, y, w, h, color) {
+    line(x,     y,     x + w, y,     color, 1);  // top
+    line(x,     y + h, x + w, y + h, color, 1);  // bottom
+    line(x,     y,     x,     y + h, color, 1);  // left
+    line(x + w, y,     x + w, y + h, color, 1);  // right
+}
+
+// ---- Sensor rows definition ----
+function getSensorRows() {
+    return [
+        { label: 'TEMP.SENSOR',   val: wx.temp,     status: 'OK'   },
+        { label: 'HUMIDITY.PCT',  val: wx.humidity, status: 'OK'   },
+        { label: 'WIND.KPH',      val: wx.wind,     status: 'OK'   },
+        { label: 'PRESSURE.HPA',  val: wx.pressure, status: 'OK'   },
+        { label: 'CONDITION',     val: wx.condition,status: 'OK'   },
+        { label: 'VISIBILITY',    val: wx.vis,      status: 'OK'   },
+    ];
+}
+
+function render() {
+    // Full dark background
+    fillRect(0, 0, W, H, C.bg);
+
+    // ---- HEADER BAR ----
+    fillRect(0, 0, W, 32, C.darkBg);
+    line(0, 32, W, 32, C.vdim, 1);
+
+    // Header title — bright amber, centred feel
+    ctx.fillStyle = C.bright;
+    ctx.font = `bold ${FONT_SZ}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('>>> SYSTEM TERMINAL v2.1 <<<', W / 2, 21);
+
+    // Clock top-right
+    term(clockStr, W - 90, 21, C.amber);
+
+    // ---- OUTER BOX ----
+    drawBox(BOX_X, BOX_Y, BOX_W, BOX_H, C.vdim);
+
+    // Inner title line
+    const titleY = BOX_Y + 18;
+    term('WEATHER SENSOR READOUT  --  BERLIN, DE', BOX_X + 10, titleY, C.bright);
+    line(BOX_X, BOX_Y + 24, BOX_X + BOX_W, BOX_Y + 24, C.vdim, 1);
+
+    // Date line below inner title
+    term('DATE: ' + dateStr, BOX_X + 10, titleY + 20, C.dim);
+    line(BOX_X, BOX_Y + 46, BOX_X + BOX_W, BOX_Y + 46, C.vdim, 1);
+
+    // ---- SENSOR ROWS ----
+    const rowsStartY = BOX_Y + 64;
+    const rows = getSensorRows();
+
+    rows.forEach((row, i) => {
+        const ry = rowsStartY + i * LINE_H;
+
+        // Label
+        term(row.label, COL_LABEL, ry, C.amber);
+
+        // Separator colon
+        term(':', COL_SEP - 4, ry, C.dim);
+
+        // Value — right-aligned to COL_STATUS - 10
+        termRight(row.val, COL_STATUS - 12, ry, C.bright);
+
+        // Status tag
+        const stCol = row.status === 'OK' ? C.ok : C.warn;
+        term('[' + row.status + ']', COL_STATUS, ry, stCol);
+    });
+
+    // Divider before prompt area
+    const promptBoxY = BOX_Y + BOX_H - 30;
+    line(BOX_X, promptBoxY, BOX_X + BOX_W, promptBoxY, C.vdim, 1);
+
+    // ---- PROMPT LINE ----
+    const promptY = promptBoxY + 18;
+    const cursor = cursorVisible ? '_' : ' ';
+    term('C:\\WEATHER\\BERLIN> ' + cursor, BOX_X + 10, promptY, C.amber);
+
+    // ---- FOOTER ----
+    const footerY = H - 28;
+    line(0, footerY, W, footerY, C.vdim, 1);
+    fillRect(0, footerY + 1, W, H - footerY - 1, C.darkBg);
+
+    term('SYS:READY', LEFT_PAD, footerY + 16, C.dim);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.vdim;
+    ctx.font = `${FONT_SZ}px ${FONT}`;
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('OPEN-METEO API  \u2022  REFRESH 10 MIN', W / 2, footerY + 16);
+    termRight('MEM:OK  CPU:OK', W - LEFT_PAD, footerY + 16, C.dim);
+}
+
+// Start
+tickClock();
+redraw();
+setInterval(tick, 500);   // 500ms so cursor blinks at 1 Hz
+</script>
+</body>
+</html>

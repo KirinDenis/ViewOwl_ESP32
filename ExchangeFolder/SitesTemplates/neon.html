@@ -1,0 +1,439 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=480">
+<title>NEON CITY — NY + Singapore</title>
+<style>
+  /* ── Reset ── */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* ── Moving dot background ── */
+  @keyframes float-dots {
+    0%   { background-position: 0px 0px, 40px 40px; }
+    100% { background-position: 80px 80px, 120px 120px; }
+  }
+
+  /* ── Neon border glow alternation: pink → blue ── */
+  @keyframes neon-pink-blue {
+    0%,100% {
+      border-color: #ff0066;
+      box-shadow: 0 0 8px #ff0066, 0 0 20px #ff006644, inset 0 0 10px #ff006611;
+    }
+    50% {
+      border-color: #0066ff;
+      box-shadow: 0 0 8px #0066ff, 0 0 20px #0066ff44, inset 0 0 10px #0066ff11;
+    }
+  }
+
+  @keyframes neon-blue-pink {
+    0%,100% {
+      border-color: #0066ff;
+      box-shadow: 0 0 8px #0066ff, 0 0 20px #0066ff44, inset 0 0 10px #0066ff11;
+    }
+    50% {
+      border-color: #ff0066;
+      box-shadow: 0 0 8px #ff0066, 0 0 20px #ff006644, inset 0 0 10px #ff006611;
+    }
+  }
+
+  /* ── Anemometer spin ── */
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
+  /* ── Pulse for title glow ── */
+  @keyframes title-glow {
+    0%,100% { text-shadow: 0 0 8px currentColor, 0 0 20px currentColor; }
+    50%     { text-shadow: 0 0 14px currentColor, 0 0 36px currentColor, 0 0 60px currentColor; }
+  }
+
+  body {
+    width: 480px; height: 320px; overflow: hidden;
+    background: #080810;
+    color: #ffffff;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 10px;
+    position: relative;
+    /* Animated dot background */
+    background-image:
+      radial-gradient(circle, #ffffff08 1px, transparent 1px),
+      radial-gradient(circle, #ffffff05 1px, transparent 1px);
+    background-size: 80px 80px, 40px 40px;
+    animation: float-dots 20s linear infinite;
+  }
+
+  /* ── Shared overlay for the grid ── */
+  #app {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  #header {
+    height: 26px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 10px;
+    background: rgba(8,8,16,0.85);
+    border-bottom: 1px solid #330033;
+  }
+
+  .header-title {
+    font-size: 10px; letter-spacing: 2px; color: #ff0066;
+    text-shadow: 0 0 8px #ff0066;
+  }
+
+  #clock {
+    font-size: 10px; font-family: 'Courier New', monospace;
+    color: #0066ff;
+    text-shadow: 0 0 6px #0066ff;
+  }
+
+  /* ── Two-panel grid ── */
+  #panels {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+
+  /* ── Single city panel ── */
+  .panel {
+    padding: 8px 10px;
+    border: 1px solid #ff0066;
+    border-top: none;
+    animation: neon-pink-blue 4s ease-in-out infinite;
+    display: flex; flex-direction: column; gap: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .panel:last-child {
+    border-left: none;
+    animation: neon-blue-pink 4s ease-in-out infinite;
+  }
+
+  /* ── City title ── */
+  .panel-city {
+    font-size: 16px; font-weight: 700; letter-spacing: 3px;
+    color: #ff0066;
+    text-shadow: 0 0 8px #ff0066, 0 0 20px #ff0066;
+    animation: title-glow 3s ease-in-out infinite;
+  }
+
+  .panel:last-child .panel-city {
+    color: #0066ff;
+    text-shadow: 0 0 8px #0066ff, 0 0 20px #0066ff;
+  }
+
+  /* ── Big temperature ── */
+  .temp-big {
+    font-size: 50px; font-weight: 900; line-height: 1;
+    letter-spacing: -2px;
+    color: #ffffff;
+    text-shadow: 0 0 10px #ff006688, 3px 3px 0 #ff006633;
+  }
+
+  .panel:last-child .temp-big {
+    text-shadow: 0 0 10px #0066ff88, 3px 3px 0 #0066ff33;
+  }
+
+  /* ── Condition text ── */
+  .condition {
+    font-size: 9px; font-variant: small-caps; letter-spacing: 1px;
+    color: #ffff0099;
+  }
+
+  /* ── Feels-like ── */
+  .feels {
+    font-size: 9px; color: #ffffff66;
+  }
+
+  /* ── Stats row ── */
+  .stats-row {
+    display: flex; gap: 10px; align-items: center;
+    margin-top: 2px;
+  }
+
+  /* ── Anemometer ── */
+  .anemometer-wrap {
+    position: relative; width: 28px; height: 28px; flex-shrink: 0;
+  }
+
+  .anemometer {
+    width: 28px; height: 28px;
+  }
+
+  /* Speed applied via JS (animation-duration) */
+  .anemometer-rotor {
+    animation: spin 2s linear infinite;
+    transform-origin: 14px 14px;
+  }
+
+  .wind-label {
+    font-size: 9px; color: #ffffff88;
+    white-space: nowrap;
+  }
+
+  .wind-val {
+    font-size: 10px; font-weight: 600;
+    color: #ffff00;
+    text-shadow: 0 0 4px #ffff00;
+  }
+
+  /* ── Humidity ring (conic-gradient) ── */
+  .hum-wrap {
+    display: flex; align-items: center; gap: 4px;
+  }
+
+  .hum-ring {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    /* conic-gradient updated by JS */
+    background: conic-gradient(#00ffcc 0%, #0044aa 0%);
+    position: relative;
+  }
+
+  .hum-ring::after {
+    content: '';
+    position: absolute;
+    inset: 5px;
+    background: #080810;
+    border-radius: 50%;
+  }
+
+  .hum-label { font-size: 9px; color: #ffffff66; }
+  .hum-val   { font-size: 10px; color: #00ffcc; text-shadow: 0 0 4px #00ffcc; }
+
+  /* ── Stats row centred vertically between top content and chart ── */
+  .stats-middle { flex: 1; display: flex; align-items: center; }
+
+  /* ── Canvas bar chart — pinned to bottom of panel ── */
+  .chart-label { font-size: 8px; color: #ffffff44; }
+  canvas.forecast-chart { display: block; }
+</style>
+</head>
+<body data-vow-name="Neon" data-vow-category="ambient" data-vow-description="Neon glow ambient display">
+<div id="app">
+  <div id="header">
+    <span class="header-title">⬡ NEON CITY WEATHER ⬡</span>
+    <span id="clock">00:00:00</span>
+  </div>
+
+  <div id="panels">
+    <!-- Left: New York -->
+    <div class="panel" id="panel-ny">
+      <div class="panel-city">NEW YORK</div>
+      <div class="temp-big" id="temp-ny">--°</div>
+      <div class="condition" id="cond-ny">LOADING...</div>
+      <div class="feels" id="feels-ny">feels --°</div>
+
+      <div class="stats-middle"><div class="stats-row">
+        <!-- Anemometer -->
+        <div class="anemometer-wrap">
+          <svg class="anemometer" viewBox="0 0 28 28" id="anemo-ny">
+            <!-- Center hub -->
+            <circle cx="14" cy="14" r="3" fill="#ff0066"/>
+            <!-- Arms group (rotated by JS via animation-duration) -->
+            <g class="anemometer-rotor" id="rotor-ny">
+              <!-- 4 arms at 0/90/180/270° with cups -->
+              <line x1="14" y1="14" x2="14" y2="4"  stroke="#ff006699" stroke-width="1.5"/>
+              <circle cx="14" cy="3" r="2.5" fill="none" stroke="#ff0066" stroke-width="1.2"/>
+              <line x1="14" y1="14" x2="24" y2="14" stroke="#ff006699" stroke-width="1.5"/>
+              <circle cx="25" cy="14" r="2.5" fill="none" stroke="#ff0066" stroke-width="1.2"/>
+              <line x1="14" y1="14" x2="14" y2="24" stroke="#ff006699" stroke-width="1.5"/>
+              <circle cx="14" cy="25" r="2.5" fill="none" stroke="#ff0066" stroke-width="1.2"/>
+              <line x1="14" y1="14" x2="4"  y2="14" stroke="#ff006699" stroke-width="1.5"/>
+              <circle cx="3"  cy="14" r="2.5" fill="none" stroke="#ff0066" stroke-width="1.2"/>
+            </g>
+          </svg>
+        </div>
+        <div>
+          <div class="wind-label">WIND</div>
+          <div class="wind-val" id="wind-ny">-- km/h</div>
+        </div>
+
+        <!-- Humidity ring -->
+        <div class="hum-wrap">
+          <div class="hum-ring" id="hum-ring-ny"></div>
+          <div>
+            <div class="hum-label">HUM</div>
+            <div class="hum-val" id="hum-val-ny">--%</div>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- 6-hour forecast bar chart -->
+      <div class="chart-label">NEXT 6H TEMP</div>
+      <canvas class="forecast-chart" id="chart-ny" width="210" height="36"></canvas>
+    </div>
+
+    <!-- Right: Singapore -->
+    <div class="panel" id="panel-sg">
+      <div class="panel-city">SINGAPORE</div>
+      <div class="temp-big" id="temp-sg">--°</div>
+      <div class="condition" id="cond-sg">LOADING...</div>
+      <div class="feels" id="feels-sg">feels --°</div>
+
+      <div class="stats-middle"><div class="stats-row">
+        <div class="anemometer-wrap">
+          <svg class="anemometer" viewBox="0 0 28 28" id="anemo-sg">
+            <circle cx="14" cy="14" r="3" fill="#0066ff"/>
+            <g class="anemometer-rotor" id="rotor-sg">
+              <line x1="14" y1="14" x2="14" y2="4"  stroke="#0066ff99" stroke-width="1.5"/>
+              <circle cx="14" cy="3" r="2.5" fill="none" stroke="#0066ff" stroke-width="1.2"/>
+              <line x1="14" y1="14" x2="24" y2="14" stroke="#0066ff99" stroke-width="1.5"/>
+              <circle cx="25" cy="14" r="2.5" fill="none" stroke="#0066ff" stroke-width="1.2"/>
+              <line x1="14" y1="14" x2="14" y2="24" stroke="#0066ff99" stroke-width="1.5"/>
+              <circle cx="14" cy="25" r="2.5" fill="none" stroke="#0066ff" stroke-width="1.2"/>
+              <line x1="14" y1="14" x2="4"  y2="14" stroke="#0066ff99" stroke-width="1.5"/>
+              <circle cx="3"  cy="14" r="2.5" fill="none" stroke="#0066ff" stroke-width="1.2"/>
+            </g>
+          </svg>
+        </div>
+        <div>
+          <div class="wind-label">WIND</div>
+          <div class="wind-val" id="wind-sg">-- km/h</div>
+        </div>
+        <div class="hum-wrap">
+          <div class="hum-ring" id="hum-ring-sg"></div>
+          <div>
+            <div class="hum-label">HUM</div>
+            <div class="hum-val" id="hum-val-sg">--%</div>
+          </div>
+        </div>
+      </div></div>
+
+      <div class="chart-label">NEXT 6H TEMP</div>
+      <canvas class="forecast-chart" id="chart-sg" width="210" height="36"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Weather code → text ───────────────────────────────────────────────────
+function wmoText(code) {
+  const map = {
+    0:'CLEAR SKY', 1:'MAINLY CLEAR', 2:'PARTLY CLOUDY', 3:'OVERCAST',
+    45:'FOGGY', 48:'FOGGY', 51:'LIGHT DRIZZLE', 55:'HEAVY DRIZZLE',
+    61:'LIGHT RAIN', 63:'RAIN', 65:'HEAVY RAIN',
+    71:'LIGHT SNOW', 75:'HEAVY SNOW',
+    80:'SHOWERS', 81:'SHOWERS', 82:'HEAVY SHOWERS',
+    95:'THUNDERSTORM', 96:'HAIL STORM', 99:'HEAVY HAIL'
+  };
+  return map[code] || 'MIXED';
+}
+
+// ── Clock ─────────────────────────────────────────────────────────────────
+function updateClock() {
+  const n = new Date();
+  const p = v => String(v).padStart(2, '0');
+  document.getElementById('clock').textContent =
+    p(n.getHours()) + ':' + p(n.getMinutes()) + ':' + p(n.getSeconds());
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Set anemometer speed ──────────────────────────────────────────────────
+// Map wind speed (km/h) to rotation duration (slower = faster spin)
+function setAnemometer(id, kmh) {
+  const rotor = document.getElementById('rotor-' + id);
+  if (!rotor) return;
+  // 0 km/h = 8s period; 100 km/h = 0.4s period
+  const duration = Math.max(0.4, 8 - kmh * 0.076);
+  rotor.style.animationDuration = duration + 's';
+}
+
+// ── Set humidity conic ring ───────────────────────────────────────────────
+function setHumRing(id, pct) {
+  const ring = document.getElementById('hum-ring-' + id);
+  if (!ring) return;
+  ring.style.background = `conic-gradient(#00ffcc ${pct}%, #002244 ${pct}%)`;
+}
+
+// ── Draw neon bar chart ───────────────────────────────────────────────────
+function drawChart(canvasId, hourlyTemps, color) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !hourlyTemps) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Use first 6 future hours
+  const data = hourlyTemps.slice(0, 6);
+  if (data.length === 0) return;
+  const minT = Math.min(...data) - 1;
+  const maxT = Math.max(...data) + 1;
+  const range = maxT - minT || 1;
+
+  const barW = Math.floor(w / data.length) - 2;
+
+  data.forEach((t, i) => {
+    const barH = Math.max(2, ((t - minT) / range) * (h - 14));
+    const x = i * (barW + 2) + 1;
+    const y = h - barH - 10;
+
+    // Gradient bar
+    const grad = ctx.createLinearGradient(0, y, 0, h - 10);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, color + '44');
+    ctx.fillStyle = grad;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+    ctx.fillRect(x, y, barW, barH);
+
+    // Temperature label above bar
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffffff88';
+    ctx.font = '7px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText(Math.round(t) + '°', x + barW / 2, y - 1);
+  });
+}
+
+// ── Fetch one city ────────────────────────────────────────────────────────
+async function fetchCity(key, lat, lon) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,` +
+    `wind_speed_10m,wind_direction_10m` +
+    `&hourly=temperature_2m&forecast_days=1&timezone=auto`;
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const d = await resp.json();
+    const c = d.current;
+
+    document.getElementById('temp-' + key).textContent = Math.round(c.temperature_2m) + '°';
+    document.getElementById('cond-' + key).textContent = wmoText(c.weather_code);
+    document.getElementById('feels-' + key).textContent = 'feels ' + Math.round(c.apparent_temperature) + '°';
+    document.getElementById('wind-' + key).textContent = Math.round(c.wind_speed_10m) + ' km/h';
+    document.getElementById('hum-val-' + key).textContent = c.relative_humidity_2m + '%';
+
+    setAnemometer(key, c.wind_speed_10m);
+    setHumRing(key, c.relative_humidity_2m);
+
+    const chartColor = key === 'ny' ? '#ff0066' : '#0066ff';
+    drawChart('chart-' + key, d.hourly.temperature_2m, chartColor);
+
+  } catch (e) {
+    document.getElementById('temp-' + key).textContent = 'ERR';
+    console.error('Fetch error for ' + key + ':', e);
+  }
+}
+
+// ── Load all ──────────────────────────────────────────────────────────────
+function loadAll() {
+  fetchCity('ny', 40.71, -74.01);
+  fetchCity('sg', 1.35, 103.82);
+}
+
+loadAll();
+setInterval(loadAll, 10 * 60 * 1000);
+</script>
+</body>
+</html>

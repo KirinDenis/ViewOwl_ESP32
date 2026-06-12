@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy & Data Notice — ViewOwl</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:     #080c18;
+    --panel:  #0f1623;
+    --border: #1a2840;
+    --accent: #00d4ff;
+    --text:   #c0d0e8;
+    --dim:    #6b7a99;
+    --warn:   #ffcc00;
+  }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    font-size: 15px; line-height: 1.7; padding: 0;
+  }
+  header {
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 16px 32px; display: flex; align-items: center; gap: 16px;
+  }
+  header a { color: var(--accent); text-decoration: none; font-size: 13px; }
+  header a:hover { text-decoration: underline; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1 { font-size: 26px; color: var(--accent); margin-bottom: 8px; }
+  .subtitle { color: var(--dim); font-size: 13px; margin-bottom: 40px; }
+  .warn-box {
+    background: rgba(255,204,0,0.08); border: 1px solid rgba(255,204,0,0.3);
+    border-radius: 6px; padding: 16px 20px; margin-bottom: 32px;
+    color: var(--warn); font-size: 14px;
+  }
+  .warn-box strong { display: block; margin-bottom: 4px; }
+  h2 {
+    font-size: 15px; color: var(--accent); text-transform: uppercase;
+    letter-spacing: 1px; margin: 32px 0 10px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  p { margin-bottom: 12px; color: var(--text); }
+  ul { margin: 8px 0 12px 20px; }
+  ul li { margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th { background: var(--panel); color: var(--dim); font-size: 12px;
+       text-transform: uppercase; letter-spacing: 1px; padding: 8px 12px;
+       text-align: left; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 12px; border-bottom: 1px solid rgba(26,40,64,0.6); font-size: 14px; }
+  a { color: var(--accent); }
+  footer {
+    margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--dim); display: flex; gap: 20px; flex-wrap: wrap;
+  }
+  footer a { color: var(--dim); }
+  footer a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/">← ViewOwl</a>
+  <a href="/legal/terms.html">Terms of Use</a>
+</header>
+
+<main>
+  <h1>Privacy &amp; Data Notice</h1>
+  <div class="subtitle">ViewOwl — Last updated: 2026</div>
+
+  <div class="warn-box">
+    <strong>⚠ Development Preview</strong>
+    ViewOwl is an open-source project in active development, provided for testing and
+    evaluation purposes only. It is <strong>not a production service</strong> and carries
+    no guarantees of uptime, data retention, or security completeness.
+    Do not store sensitive personal data.
+  </div>
+
+  <h2>What is this?</h2>
+  <p>
+    ViewOwl is an open-source tool that renders HTML pages into BGR565 bitmap frames and
+    streams them to low-cost ESP32 + LCD displays over UDP/WiFi. The web interface lets
+    you manage display devices, upload templates, and monitor the grab pipeline.
+  </p>
+
+  <h2>What data we collect</h2>
+  <ul>
+    <li><strong>IP addresses</strong> — recorded in security logs for every HTTP request.</li>
+    <li><strong>Request logs</strong> — HTTP method, path, status code, and timestamp.</li>
+    <li><strong>Session data</strong> — a signed JWT token stored in your browser's
+        <code>localStorage</code> to keep you logged in.</li>
+    <li><strong>Account credentials</strong> — your login name and a bcrypt-hashed password.
+        Plaintext passwords are never stored.</li>
+  </ul>
+  <p>
+    We do <strong>not</strong> use analytics, tracking pixels, advertising networks,
+    or third-party scripts of any kind.
+  </p>
+
+  <h2>Why we collect it</h2>
+  <table>
+    <thead><tr><th>Data</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td>IP address &amp; request logs</td><td>Security — detecting abuse, blocking malicious IPs, brute-force protection</td></tr>
+      <tr><td>Session token (JWT)</td><td>Authentication — keeping you logged in across page loads</td></tr>
+      <tr><td>Login + password hash</td><td>Access control — verifying your identity</td></tr>
+    </tbody>
+  </table>
+
+  <h2>How long we keep it</h2>
+  <ul>
+    <li><strong>Security event logs</strong> — 30 days, then automatically purged.</li>
+    <li><strong>Session fingerprints</strong> — until you log out or 30 days of inactivity.</li>
+    <li><strong>Account data</strong> — until you request deletion.</li>
+    <li><strong>IP block records</strong> — up to 30 days for auto-blocks; permanent for manual blocks.</li>
+  </ul>
+
+  <h2>Your rights</h2>
+  <p>
+    You can request deletion of your data by emailing
+    <a href="mailto:privacy@viewowl.local">[contact email]</a>.
+    Because this is a development project operated by a small team, we may not always
+    respond within GDPR's 30-day window, but we will make a reasonable effort to do so.
+  </p>
+  <p>You can also delete your own account from the account settings page at any time.</p>
+
+  <h2>Cookies</h2>
+  <p>
+    ViewOwl does <strong>not</strong> use HTTP cookies for session management.
+    Your authentication token is stored in <code>localStorage</code> (browser storage,
+    not a cookie). This means no cookie consent banner is required.
+  </p>
+  <p>
+    If your browser's developer tools show a cookie from ViewOwl, it is a strictly
+    necessary technical artefact (e.g. CSRF protection) and contains no personal data.
+  </p>
+
+  <h2>Third-party services</h2>
+  <p>
+    The display templates may fetch live data from third-party APIs such as
+    <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
+    (free weather API, no key required). When a template fetches from such a service,
+    your browser's IP address will be visible to that service. ViewOwl itself does not
+    proxy or log these requests.
+  </p>
+
+  <h2>NOT for production use</h2>
+  <p>
+    This project is in active development. The data model, authentication system, and
+    security measures may change without notice. <strong>Do not use ViewOwl to store or
+    process personal data of third parties, or in any regulated context.</strong>
+    Data may be deleted or migrated without prior notice.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    For privacy questions or data deletion requests:
+    <a href="mailto:privacy@viewowl.local">[your contact email]</a>
+  </p>
+
+  <footer>
+    <a href="/">ViewOwl Home</a>
+    <a href="/legal/terms.html">Terms of Use</a>
+    <a href="https://github.com/KirinDenis/ViewOwl_ESP32" target="_blank" rel="noopener">GitHub</a>
+    <span>© ViewOwl Contributors</span>
+  </footer>
+</main>
+
+</body>
+</html>

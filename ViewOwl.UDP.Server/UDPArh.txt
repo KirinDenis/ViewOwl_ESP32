@@ -1,0 +1,916 @@
+﻿Building a Reliable Protocol over UDP — The Classic Way
+
+You're absolutely right: your challenge—how to build a simple reliable file or stream transfer protocol over UDP with acknowledgments—is a classic one. It's been solved for decades in C/C++ for embedded systems, games, networking hardware, and more.
+
+Here's a concise guide—a "schoolbook" of proven architectural patterns—and then I’ll give you a minimalistic C# implementation "C-style", without async/await or heavy abstractions.
+1. Classic Approaches over UDP
+
+Historically, people have added reliability to UDP using ARQ (Automatic Repeat reQuest) mechanisms:
+Scheme	Idea	Usage	Complexity	Throughput
+Stop-and-Wait	Send packet → wait for ACK → send next.	Early protocols, microcontrollers.	Minimal	Low (window = 1)
+Go-Back-N	Send N packets. If one is lost, resend all after it.	Simple link-layer protocols.	Medium	Better but wasteful on loss.
+Selective Repeat	Send N packets, only resend lost ones (ACK bitmap or NAKs).	Advanced systems and media protocols.	Higher	Efficient on bad networks.
+TFTP-style	Essentially Stop-and-Wait with manual block numbers.	Firmware bootloaders, small file transfer.	Very simple	OK for small/medium files.
+
+    For a single image — TFTP-style (Stop-and-Wait) is enough.
+    For constant streaming — consider a sliding window of 2–8 packets.
+
+2. What Every “Homegrown Reliable Protocol” Over UDP Needs
+A fixed packet header:
+
+struct PacketHeader
+{
+    uint16 Magic;       // to identify your packets
+    byte   PacketType;  // DATA / ACK / HELLO / AUTH / DONE / ERROR
+    uint32 SessionId;   // unique session identifier
+    uint32 Seq;         // block number (for DATA) or confirmed block (ACK)
+    uint16 PayloadLen;  // length of payload
+    uint16 Flags;       // e.g. LAST, RETRANSMIT, RESERVED
+    // followed by Payload[PayloadLen]
+    // optional CRC32
+}
+
+A fixed header simplifies parsing and debugging (e.g., via Wireshark with a custom dissector).
+3. Key Protocol Elements
+3.1 Client Identification
+
+    First packet: AUTH/HELLO (login/token/version).
+
+    Server generates SessionId, maps IPEndPoint → Session.
+
+    All further packets must include that SessionId.
+
+3.2 Single Receiver Model
+
+One blocking ReceiveFrom() → demultiplexer → Session.
+This is the canonical pattern. It guarantees each packet is processed in context.
+3.3 Queues
+
+Each session has:
+
+    Inbox: incoming packets from demux.
+
+    Outbox: data waiting to be sent.
+
+3.4 Timers & Retransmissions
+
+    Each DATA packet sent has a timer (timeout).
+
+    No ACK → retransmit.
+
+    Max retries → drop session.
+
+3.5 Packet Size
+
+    UDP packet size must respect MTU (e.g., ~1500 bytes Ethernet → ~1472 bytes usable).
+
+    If you mentioned a 1 KB hardware limit — great.
+
+    Mark the final packet with a flag (LAST) or a totalPackets count.
+
+4. Minimal Algorithm (TFTP-style Stop-and-Wait)
+Server:
+
+    Waits for AUTH.
+
+    Sends OK + SessionId.
+
+    Starts sending file blocks (Seq = 0..N-1).
+
+    After each block, waits for ACK(Seq).
+
+    If timeout → resend.
+
+    After final block (LAST), wait for final ACK → close session.
+
+Client:
+
+    Sends AUTH.
+
+    Receives SessionId.
+
+    Accepts DATA blocks; checks Seq; writes to file/stream.
+
+    Sends ACK(Seq) after each block.
+
+    After LAST block and final ACK → done.
+
+5. Want More Performance? Add a Sliding Window
+
+To avoid one-by-one ACK wait:
+
+    Hold a window of e.g. 4 packets.
+
+    Send packets Seq = base .. base+window-1.
+
+    Wait for ACKs; slide window as blocks get confirmed.
+
+    Retransmit only unacknowledged packets.
+
+    Optionally, use bitmap ACKs or NAKs.
+
+But to start with — Stop-and-Wait is ideal. Easy to debug.
+6. “C-style” Low-level Implementation in C#
+
+You asked for minimal frameworks, no async/await, no magic. Here's the way:
+
+    Use blocking sockets (Socket.Blocking = true).
+
+    One receiver thread (while(true) + ReceiveFrom).
+
+    Each authorized client gets a sender thread (or ThreadPool.QueueUserWorkItem).
+
+    For sync:
+
+        ConcurrentQueue<byte[]> or plain Queue<T> with lock.
+
+        ManualResetEvent / AutoResetEvent for signaling.
+
+        Or just Thread.Sleep(1) — works for some embedded systems.
+
+6.1 Packet Header (pack/unpack)
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+struct PacketHeader
+{
+    public ushort Magic;
+    public byte   Type;       // 0=AUTH,1=AUTH_OK,2=DATA,3=ACK,4=END
+    public byte   Flags;
+    public uint   SessionId;
+    public uint   Seq;
+    public ushort PayloadLen;
+}
+
+Serialization:
+
+static int WriteHeader(Span<byte> buf, ref PacketHeader h)
+{
+    BinaryPrimitives.WriteUInt16LittleEndian(buf, h.Magic);
+    buf[2] = h.Type;
+    buf[3] = h.Flags;
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.Slice(4), h.SessionId);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.Slice(8), h.Seq);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.Slice(12), h.PayloadLen);
+    return 14;
+}
+
+static PacketHeader ReadHeader(ReadOnlySpan<byte> buf)
+{
+    PacketHeader h;
+    h.Magic      = BinaryPrimitives.ReadUInt16LittleEndian(buf);
+    h.Type       = buf[2];
+    h.Flags      = buf[3];
+    h.SessionId  = BinaryPrimitives.ReadUInt32LittleEndian(buf.Slice(4));
+    h.Seq        = BinaryPrimitives.ReadUInt32LittleEndian(buf.Slice(8));
+    h.PayloadLen = BinaryPrimitives.ReadUInt16LittleEndian(buf.Slice(12));
+    return h;
+}
+
+6.2 Server — Receiver Thread Skeleton
+
+// UdpServer class — demultiplexes clients by IPEndPoint and hands off to Session
+// (see full code in original message)
+
+6.3 Session — Stop-and-Wait Core
+
+// Session class — handles per-client file transmission
+// (see full code in original message)
+
+7. Client Side (in short)
+
+Same approach:
+
+    One thread handles ReceiveFrom.
+
+    Parse DATA packets; verify Seq; write to buffer/file.
+
+    For each, send ACK(Seq).
+
+    Duplicate? Ignore, but still ACK.
+
+8. Classic Pitfalls & Solutions
+Problem	Solution
+Lost packet	Timeout + retry.
+Lost ACK	Server retries; client re-ACKs — idempotent.
+Duplicate packets	Track last Seq; ignore but re-ACK.
+Auth failure	Don't create session.
+File changes mid-transfer	Preload into memory.
+Low RAM?	Stream file by chunks, retry via re-seek.
+9. Next Steps
+
+Suggested plan:
+
+    Define packet format (magic, type, seq, len, last).
+
+    Build UDP demux server (one ReceiveFrom thread).
+
+    Implement Session with Stop-and-Wait.
+
+    Write minimal client to ACK blocks.
+
+    Optionally add CRC or integrity check.
+
+    Optionally expand to window > 1.
+   --------------------
+
+главных архитектурных ловушек при работе с UDP на Socket-уровне: один Socket.ReceiveFrom() может быть вызван только в одном месте в один момент, и он съедает данные, поэтому другие потоки "не увидят" пакеты.
+
+Это абсолютно нормально. И ты правильно чувствуешь проблему: один поток слушает UDP, а другой — отправляет, но все входящие пакеты проходят через один-единственный ReceiveFrom().
+🎯 Проблема:
+
+Ты хочешь, чтобы:
+
+    Один поток (серверный "приемник") принимал все входящие пакеты.
+
+    Эти пакеты можно было бы:
+
+        использовать для авторизации клиента,
+
+        использовать как подтверждения (ACK) от уже авторизованного клиента,
+
+        а дальше уже по логике рассылки.
+
+✅ Правильное архитектурное решение
+
+    Никогда не делай ReceiveFrom в разных потоках. Сделай один поток (или таск), который только принимает. А потом — диспатчит по клиентам/очередям.
+
+🔧 Архитектура
+
+// UDP сокет, один
+Socket socket;
+
+// Словарь авторизованных клиентов
+Dictionary<IPEndPoint, ClientSession> sessions;
+
+// Главный loop приема
+Task.Run(() => ListenLoop());
+
+🔁 Цикл приема (единый)
+
+private async Task ListenLoop()
+{
+    var buffer = new byte[1024];
+    EndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
+
+    while (true)
+    {
+        int received = socket.ReceiveFrom(buffer, ref remoteEP);
+        var data = new byte[received];
+        Buffer.BlockCopy(buffer, 0, data, 0, received);
+        var endpoint = (IPEndPoint)remoteEP;
+
+        if (!sessions.TryGetValue(endpoint, out var session))
+        {
+            // Неизвестный клиент — авторизация
+            if (IsAuthPacket(data))
+            {
+                session = new ClientSession(endpoint);
+                sessions[endpoint] = session;
+                session.StartSendingLoop(socket); // <-- начинает таск отправки
+            }
+            else
+            {
+                continue; // игнор
+            }
+        }
+
+        // Отдать данные сессии — сам решит, что делать
+        session.EnqueueIncomingPacket(data);
+    }
+}
+
+👤 ClientSession — как раз то место, где ты:
+
+    получаешь подтверждения (ACK) от клиента,
+
+    связываешь номера пакетов и флаги,
+
+    принимаешь решения, повторять ли пакет.
+
+🧱 Внутри ClientSession
+
+class ClientSession
+{
+    private readonly IPEndPoint _clientEndpoint;
+    private readonly ConcurrentQueue<byte[]> _incoming = new();
+    private readonly CancellationTokenSource _cts = new();
+    private Socket _socket;
+
+    private readonly ManualResetEventSlim _ackReceived = new(false);
+    private int _lastAckedPacketId = -1;
+
+    public ClientSession(IPEndPoint ep)
+    {
+        _clientEndpoint = ep;
+    }
+
+    public void StartSendingLoop(Socket socket)
+    {
+        _socket = socket;
+        Task.Run(SendingLoop);
+    }
+
+    public void EnqueueIncomingPacket(byte[] data)
+    {
+        _incoming.Enqueue(data);
+    }
+
+    private async Task SendingLoop()
+    {
+        byte[][] imageChunks = GetImageChunks();
+        for (int i = 0; i < imageChunks.Length; i++)
+        {
+            var packet = AddHeader(imageChunks[i], i);
+            _socket.SendTo(packet, _clientEndpoint);
+
+            // Ожидание подтверждения
+            _ackReceived.Reset();
+            bool ack = await WaitForAck(i, TimeSpan.FromMilliseconds(500));
+            if (!ack)
+            {
+                i--; // повторить тот же пакет
+                continue;
+            }
+        }
+    }
+
+    private byte[] AddHeader(byte[] chunk, int packetId)
+    {
+        byte[] result = new byte[chunk.Length + 4];
+        BitConverter.GetBytes(packetId).CopyTo(result, 0);
+        chunk.CopyTo(result, 4);
+        return result;
+    }
+
+    private async Task<bool> WaitForAck(int packetId, TimeSpan timeout)
+    {
+        var start = DateTime.UtcNow;
+        while ((DateTime.UtcNow - start) < timeout)
+        {
+            while (_incoming.TryDequeue(out var msg))
+            {
+                if (TryParseAck(msg, out int ackId) && ackId == packetId)
+                {
+                    return true;
+                }
+            }
+
+            await Task.Delay(20);
+        }
+
+        return false;
+    }
+
+    private bool TryParseAck(byte[] msg, out int packetId)
+    {
+        packetId = -1;
+        if (msg.Length >= 5 && msg[0] == 0xAA) // например, ACK начинается с 0xAA
+        {
+            packetId = BitConverter.ToInt32(msg, 1);
+            return true;
+        }
+        return false;
+    }
+
+    private byte[][] GetImageChunks()
+    {
+        // Заглушка — разбей файл на чанки
+        return File.ReadAllBytes("image.jpg")
+                   .Chunk(1024)
+                   .Select(c => c.ToArray())
+                   .ToArray();
+    }
+}
+
+🧩 Итого
+Что	Где происходит
+ReceiveFrom	Только в одном месте, централизовано
+Авторизация	При первом пакете в ListenLoop()
+Рассылка	В ClientSession.StartSendingLoop()
+ACK	Отправляется клиентом обратно — обрабатывается через очередь в ClientSession
+🧠 Что тебе не нужно делать:
+
+    ❌ Не делать ReceiveFrom() в нескольких потоках.
+
+    ❌ Не пытаться слушать UDP-подтверждения в потоке, где ты отправляешь — он их не получит.
+
+    ✅ Делегируй всю "приемку" централизованному обработчику.
+
+Если хочешь, я могу выдать минимальный работающий пример проекта, где:
+
+    есть сервер с авторизацией,
+
+    есть клиент,
+
+    есть обмен картинкой с ACK.
+-------------------------
+
+в мире уже давно существует классика для построения собственных "надстроек" над UDP, т.н. "надёжный UDP" (Reliable UDP, RUDP).
+И то, что я описал выше, это по сути базовая схема, проверенная временем: центральный приёмный цикл + сессии + ACK/timeout/retransmit. Именно так делают и на C, и на C++ уже десятки лет, особенно в embedded или game-сетях.
+Классика "Reliable UDP" (RUDP) — как строится
+1. Единый поток чтения UDP (dispatcher)
+
+    Потому что UDP-сокет не умеет "разделять" пакеты между потоками — recvfrom() всегда "съедает" пакет.
+
+    На С и C++ обычно делают один поток чтения, который раскладывает пакеты в очереди по клиентам или по каналам.
+
+2. Разделение на сессии
+
+    Каждый клиент определяется по (IP, port).
+
+    Для каждого клиента поддерживается состояние:
+
+        Номер последнего отправленного пакета,
+
+        Номер последнего подтверждённого пакета,
+
+        Очередь на отправку,
+
+        Таймауты и повторная передача.
+
+3. ACK и таймауты
+
+    Отправляющий поток держит очередь пакетов, ожидающих подтверждения.
+
+    Каждый пакет имеет ID (sequence number).
+
+    Если ACK не пришёл в течение N миллисекунд — пакет переотправляется.
+
+    На C++ часто используют массив битов (window) для отметки полученных пакетов (Go-Back-N или Sliding Window).
+
+4. Chunking больших сообщений
+
+    Большие данные (например, изображение) нарезаются на куски фиксированного размера (MTU ~ 512-1200 байт).
+
+    К каждому куску добавляется заголовок:
+
+    struct UdpHeader {
+        uint32_t messageId;   // ID сообщения (например, картинки)
+        uint16_t packetId;    // ID пакета внутри сообщения
+        uint16_t totalPackets; // сколько всего пакетов
+    };
+
+    Клиент собирает их, пока не получит все.
+
+5. Базовый поток на C выглядит так:
+
+while (1) {
+    int len = recvfrom(sock, buffer, sizeof(buffer), 0, &from, &fromlen);
+    if (len > 0) {
+        parse_packet(buffer, len, from);
+    }
+}
+
+А отправка — в другом потоке, который проверяет очередь и таймауты.
+Это и есть "классика"
+
+То, что я описал для C#, — прямая калька с C/C++ классического решения:
+
+    Один поток (или async цикл) на ReceiveFrom.
+
+    Сессии по клиентам, которые держат своё состояние.
+
+    ACK + retransmit.
+
+    Очереди на отправку.
+
+Это же используется в:
+
+    Игровых движках (QuakeNet, Unreal Engine, Source Engine),
+
+    VoIP протоколах,
+
+    Собственных протоколах на базе UDP.
+
+Почему не стоит городить сложные async/await?
+
+Ты прав — для "низкоуровневого" решения можно писать только на Socket и чистых потоках (Thread или Task.Run) без async/await.
+
+На C# это будет выглядеть как "C-style" код с блокирующими ReceiveFrom и очередями.
+Примерно так:
+
+void ServerLoop()
+{
+    byte[] buffer = new byte[1500];
+    EndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
+
+    while (true)
+    {
+        int len = socket.ReceiveFrom(buffer, ref remoteEP);
+        byte[] packet = new byte[len];
+        Buffer.BlockCopy(buffer, 0, packet, 0, len);
+
+        ProcessPacket(packet, (IPEndPoint)remoteEP);
+    }
+}
+
+И отправка в отдельном Thread:
+
+void SendingLoop(ClientSession session)
+{
+    while (session.Active)
+    {
+        if (session.TryGetNextPacket(out byte[] packet))
+        {
+            socket.SendTo(packet, session.RemoteEP);
+        }
+        else
+        {
+            Thread.Sleep(1);
+        }
+    }
+}
+
+Хочешь — могу сделать тебе "шаблон RUDP на C#"
+
+Прямо чистый C-style код, без async/await, который:
+
+    Принимает пакеты,
+
+    Делает ACK,
+
+    Отправляет файлы чанками с переотправкой по таймауту.
+
+Сделаю в виде одного .cs файла, где будет минимальный "сервер+клиент".
+----------
+ “как по-правильному построить над UDP свой маленький надёжный протокол передачи файла/потока данных с подтверждениями” — классическая. Её решали десятки лет на C / C++ в встраиваемых системах, играх, сетевом оборудовании и т.д. Давай я покажу тебе краткую “школу” — архитектурные паттерны, проверенные временем, и затем предложу минималистичный вариант на C# в “низкоуровневом стиле” (почти как на C) без async/await и тяжёлых абстракций.
+1. Классические подходы поверх UDP
+
+Исторически люди строили “надёжность” поверх UDP несколькими схемами (ARQ — Automatic Repeat reQuest):
+Схема	Идея	Где применяли	Сложность	Пропускная способность
+Stop-and-Wait	Отправил пакет → ждёшь ACK → следующий.	Ранние протоколы, простые линк-уровни, микроконтроллеры.	Минимальная	Низкая (окно=1).
+Go-Back-N	Окно >1. Шлёшь N подряд; если потеря — откатываешься к потерянному и пересылаешь всё после него.	Протоколы канального уровня, простая надёжность.	Средняя	Лучше, но при потере откат большой.
+Selective Repeat (Selective ACK / NAK)	Окно >1. Пересылаешь только потерянные пакеты (по NAK или bitmap ACK).	Более продвинутые стековые реализации, медиа-протоколы.	Выше	Эффективно на плохих сетях.
+TFTP-подобный	Фактически Stop-and-Wait с маленькими блоками и вручную-нумеруемыми блоками.	Бутлоадеры, прошивки по сети.	Очень прост	Для малых/средних файлов OK.
+
+    Для одной картинки — достаточно TFTP-подобного (Stop-and-Wait).
+    Для постоянного стриминга — подумай про маленькое скользящее окно (2–8 пакетов).
+
+2. Что обязательно есть в любом “классическом” самодельном протоколе поверх UDP
+
+Минимальный кадровый формат (заголовок):
+
+struct PacketHeader
+{
+    uint16 Magic;       // чтобы отличить "свои" пакеты
+    byte   PacketType;  // DATA / ACK / HELLO / AUTH / DONE / ERROR
+    uint32 SessionId;   // идентификатор сессии (после авторизации)
+    uint32 Seq;         // порядковый номер блока (для DATA) или подтверждаемый номер (для ACK)
+    uint16 PayloadLen;  // длина полезной нагрузки
+    uint16 Flags;       // биты: LAST, RETRANSMIT, RESERVED
+    // далее Payload[PayloadLen]
+    // опционально CRC32
+}
+
+Фиксированный заголовок упрощает парсинг и отладку сниффером (Wireshark с кастомным dissector’ом — мечта, но не обязательно).
+3. Ключевые элементы протокола
+3.1 Идентификация клиента
+
+    Первый пакет: AUTH/HELLO (логин/ключ/магический токен/версия).
+
+    Сервер создаёт SessionId и хранит IPEndPoint → Session.
+
+    Дальше все пакеты от клиента проверяются: совпал ли SessionId.
+
+3.2 Чёткая модель приёма
+
+Единый блокирующий ReceiveFrom() → демультиплексор → Session.
+Это канон. Так сделали все. Так проще всего гарантировать, что никто не “проест” чужой пакет.
+3.3 Очереди
+
+У каждой сессии:
+
+    Inbox: входящие пакеты от демультиплексора.
+
+    Outbox: очередь того, что надо отправить.
+
+3.4 Таймеры и ретрансляции
+
+    На каждый DATA-пакет, отправленный сервером, ставишь таймер (timeout).
+
+    Если не пришёл ACK — повтор.
+
+    Лимит повторов → обрыв сессии.
+
+3.5 Пакетизация
+
+    Размер UDP-пакета: учитывай MTU (обычно ~1500 байт Ethernet → ~1472 полезных байт для UDP IPv4; но ты говорил об аппаратном лимите 1 KB — отлично).
+
+    Последний пакет помечай флагом LAST или счётчиком totalPackets.
+
+4. Минимальный алгоритм (TFTP-стиль / Stop-and-Wait)
+
+Сервер:
+
+    Ждёт AUTH.
+
+    Отправляет OK + SessionId.
+
+    Начинает передачу файла блоками (номер блока = Seq = 0..N-1).
+
+    После каждого блока ждёт ACK(Seq).
+
+    Если таймаут → повтор.
+
+    После последнего блока (LAST) ждёт финальный ACK; закрывает сессию.
+
+Клиент:
+
+    Шлёт AUTH.
+
+    Получает SessionId.
+
+    Принимает блоки; проверяет Seq; пишет в поток.
+
+    На каждый полученный блок → шлёт ACK(Seq).
+
+    Когда LAST — после записи шлёт финальный ACK, сбор завершён.
+
+5. Если хочешь лучше (мини-скользящее окно)
+
+Чтобы не ждать ACK после каждого пакета:
+
+    Держишь окно, скажем, 4 пакета.
+
+    Шлёшь блоки Seq = base .. base+window-1.
+
+    Ждёшь ACK’и; по мере подтверждения сдвигаешь окно.
+
+    Повторы — только неподтверждённых.
+
+    Можно ACK’ом передавать “наивысший полученный подряд Seq” + bitmap (опционально).
+
+Но для начала сделай Stop-and-Wait — проще отладить.
+6. Низкоуровневый “как на C” стиль в C#
+
+Ты просил “минимум фреймворков, без async/await, без магии”. Окей. Делай:
+
+    Socket.Blocking = true (по умолчанию true).
+
+    Один поток приёма (бесконечный while + ReceiveFrom).
+
+    Для каждого авторизованного клиента — поток отправки (или ThreadPool QueueUserWorkItem).
+
+    Для синхронизации:
+
+        ConcurrentQueue<byte[]> или собственный локализованный Queue<T> под lock (как в C).
+
+        ManualResetEvent / AutoResetEvent для сигналов.
+
+        Или просто busy-wait c Thread.Sleep(1) — если железо терпит (иногда в embedded так и делают).
+
+6.1 Структура заголовка (pack/unpack)
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+struct PacketHeader
+{
+    public ushort Magic;
+    public byte   Type;       // 0=AUTH,1=AUTH_OK,2=DATA,3=ACK,4=END
+    public byte   Flags;
+    public uint   SessionId;
+    public uint   Seq;
+    public ushort PayloadLen;
+}
+
+Сериализация:
+
+static int WriteHeader(Span<byte> buf, ref PacketHeader h)
+{
+    BinaryPrimitives.WriteUInt16LittleEndian(buf, h.Magic);
+    buf[2] = h.Type;
+    buf[3] = h.Flags;
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.Slice(4), h.SessionId);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.Slice(8), h.Seq);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.Slice(12), h.PayloadLen);
+    return 14;
+}
+
+static PacketHeader ReadHeader(ReadOnlySpan<byte> buf)
+{
+    PacketHeader h;
+    h.Magic      = BinaryPrimitives.ReadUInt16LittleEndian(buf);
+    h.Type       = buf[2];
+    h.Flags      = buf[3];
+    h.SessionId  = BinaryPrimitives.ReadUInt32LittleEndian(buf.Slice(4));
+    h.Seq        = BinaryPrimitives.ReadUInt32LittleEndian(buf.Slice(8));
+    h.PayloadLen = BinaryPrimitives.ReadUInt16LittleEndian(buf.Slice(12));
+    return h;
+}
+
+6.2 Сервер — приёмный поток (скелет)
+
+class UdpServer
+{
+    private readonly Socket _sock;
+    private readonly Dictionary<IPEndPoint, Session> _sessions = new();
+    private readonly byte[] _recvBuf = new byte[2048];
+
+    public UdpServer(IPEndPoint bind)
+    {
+        _sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        _sock.Bind(bind);
+    }
+
+    public void Start()
+    {
+        var t = new Thread(ListenLoop) { IsBackground = true };
+        t.Start();
+    }
+
+    private void ListenLoop()
+    {
+        EndPoint remote = new IPEndPoint(IPAddress.Any, 0);
+
+        while (true)
+        {
+            int len = _sock.ReceiveFrom(_recvBuf, ref remote);
+            var ep = (IPEndPoint)remote;
+
+            // копия, чтобы не перетёрлось
+            byte[] pkt = new byte[len];
+            Buffer.BlockCopy(_recvBuf, 0, pkt, 0, len);
+
+            if (!_sessions.TryGetValue(ep, out var sess))
+            {
+                // обработка авторизации
+                if (TryAuth(pkt, ep, out sess))
+                {
+                    _sessions[ep] = sess;
+                    sess.StartSender(_sock);
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
+            sess.OnPacketFromClient(pkt);
+        }
+    }
+
+    private bool TryAuth(byte[] pkt, IPEndPoint ep, out Session session)
+    {
+        // парсим и проверяем
+        // если ок:
+        session = new Session(ep);
+        return true;
+    }
+}
+
+6.3 Session — стоп-и-жди (Stop-and-Wait)
+
+class Session
+{
+    private const int PacketDataSize = 1024; // твой лимит
+    private readonly IPEndPoint _ep;
+    private Socket _sock;
+
+    private readonly Queue<byte[]> _incoming = new(); // под lock
+    private readonly AutoResetEvent _incomingEvent = new(false);
+
+    private uint _sessionId = 1; // задай при авторизации
+
+    // Файл для отправки
+    private byte[] _fileData;
+
+    public Session(IPEndPoint ep) => _ep = ep;
+
+    public void LoadFile(string path)
+    {
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        _fileData = new byte[fs.Length];
+        fs.Read(_fileData, 0, _fileData.Length);
+    }
+
+    public void StartSender(Socket sock)
+    {
+        _sock = sock;
+        var th = new Thread(SenderLoop) { IsBackground = true };
+        th.Start();
+    }
+
+    public void OnPacketFromClient(byte[] data)
+    {
+        lock (_incoming)
+            _incoming.Enqueue(data);
+        _incomingEvent.Set();
+    }
+
+    private void SenderLoop()
+    {
+        if (_fileData == null || _fileData.Length == 0)
+            return;
+
+        int totalBlocks = (_fileData.Length + PacketDataSize - 1) / PacketDataSize;
+
+        for (uint seq = 0; seq < totalBlocks; seq++)
+        {
+            int offset = (int)(seq * PacketDataSize);
+            int size   = Math.Min(PacketDataSize, _fileData.Length - offset);
+
+            var payload = new ReadOnlySpan<byte>(_fileData, offset, size);
+
+            // собрать пакет
+            Span<byte> buf = stackalloc byte[14]; // header
+            var hdr = new PacketHeader
+            {
+                Magic      = 0xBEEF,
+                Type       = 2, // DATA
+                Flags      = (byte)((seq == totalBlocks - 1) ? 1 : 0), // LAST=1
+                SessionId  = _sessionId,
+                Seq        = seq,
+                PayloadLen = (ushort)size
+            };
+            int hdrLen = WriteHeader(buf, ref hdr);
+
+            // отправляем (заголовок+payload)
+            byte[] pkt = new byte[hdrLen + size];
+            buf.Slice(0, hdrLen).CopyTo(pkt);
+            Buffer.BlockCopy(_fileData, offset, pkt, hdrLen, size);
+
+            bool acked = false;
+            for (int attempt = 0; attempt < 5 && !acked; attempt++)
+            {
+                _sock.SendTo(pkt, _ep);
+                acked = WaitAck(seq, 500); // 500 мс
+            }
+
+            if (!acked)
+            {
+                Console.WriteLine($"[{_ep}] Block {seq} failed after retries.");
+                return;
+            }
+        }
+
+        Console.WriteLine($"[{_ep}] File done.");
+    }
+
+    private bool WaitAck(uint seq, int timeoutMs)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < timeoutMs)
+        {
+            // есть ли входящие
+            if (_incomingEvent.WaitOne(timeoutMs - (int)sw.ElapsedMilliseconds))
+            {
+                while (true)
+                {
+                    byte[]? pkt = null;
+                    lock (_incoming)
+                        if (_incoming.Count > 0)
+                            pkt = _incoming.Dequeue();
+                    if (pkt == null) break;
+
+                    var span = new ReadOnlySpan<byte>(pkt);
+                    if (span.Length < 14) continue;
+                    var hdr = ReadHeader(span);
+
+                    if (hdr.Magic != 0xBEEF) continue;
+                    if (hdr.SessionId != _sessionId) continue;
+
+                    if (hdr.Type == 3) // ACK
+                    {
+                        if (hdr.Seq == seq)
+                            return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+}
+
+    Обрати внимание: никаких async/await, только блокирующие сокеты, очереди, AutoResetEvent — почти “как в C”.
+
+7. Клиент (в двух словах)
+
+Аналогично: один поток читает ReceiveFrom (все пакеты сервера), складывает очередь → обработчик:
+
+    Если DATA (Seq ожидаемый) → записать в буфер, слать ACK(Seq).
+
+    Если пропуски — можно либо игнорировать (Stop-and-Wait гарантирует порядок), либо NAK.
+
+8. Тонкости “железобетонного” подхода
+Проблема	Решение
+Потеря пакета	Таймаут + повтор.
+Потеря ACK	Сервер повторит данные → клиент повторно ACK — idempotent.
+Дубликаты	Хранить последний Seq; повторные игнорить, но ACK прислать.
+Сбой авторизации	Сессия не создаётся.
+Изменение файла на лету	Считать в память снимок перед отправкой.
+Ограничения RAM	Читай и отправляй кусками из файла (но тогда в момент ретрансляции нужен повторный доступ к файлу; можно кэшировать окно).
+9. Как двигаться дальше
+
+Предлагаю план:
+
+    Определим формат пакета (магия, тип, seq, len, last).
+
+    Сделаем серверный демультиплексор (один ReceiveFrom).
+
+    Реализуем Session с Stop-and-Wait.
+
+    Сделаем простейший клиент, подтверждающий пакеты.
+
+    Добавим проверку CRC (опционально).
+
+    При необходимости расширим до окна >1.
+

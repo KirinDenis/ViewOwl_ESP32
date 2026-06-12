@@ -1,0 +1,271 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="Reactor Core WY-7"
+  data-vow-description="Weyland-Yutani reactor core — rotating ring segments, phase-coded NOMINAL/WARNING/CRITICAL, temperature and coolant gauges, blue CRT"
+  data-vow-category="scifi"
+  data-vow-tags="reactor,core,nuclear,scifi,aliens,weyland,crt"
+  data-vow-frames="16"
+  data-vow-fps="8"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+const FRAMES = 16;
+const frameParam   = new URLSearchParams(location.search).get('vow_frame');
+const initialFrame = parseInt(frameParam ?? '0', 10);
+let N = ((initialFrame % FRAMES) + FRAMES) % FRAMES;
+
+/* ── Phase by frame group ────────────────────────────────────────────────── */
+const PHASES = [
+  { name: 'NOMINAL',  rgb: [63,168,255],  danger: 0 },   // frames 0-3
+  { name: 'WARNING',  rgb: [255,176,0],   danger: 1 },   // frames 4-7
+  { name: 'CRITICAL', rgb: [255,48,48],   danger: 2 },   // frames 8-11
+  { name: 'COOLING',  rgb: [63,168,255],  danger: 0 },   // frames 12-15
+];
+function phase()  { return PHASES[Math.floor(N / 4)]; }
+function rgba(rgb, a) { return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a})`; }
+function hex(rgb) { return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`; }
+
+/* Pulse factor: 0→1→0 per frame group (smooth via cosine) */
+function pulse() { return (1 - Math.cos((N % 4) / 3 * Math.PI)) / 2; }
+
+/* Stats per phase */
+function temp()    { const p = pulse(); return [420, 680, 910, 520][Math.floor(N/4)] + p * 80 | 0; }
+function power()   { return [88, 94, 99, 91][Math.floor(N/4)]; }
+function coolant() { return [100, 72, 41, 88][Math.floor(N/4)]; }
+
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
+function fr(x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(x, y, w, h); }
+function txt(s, x, y, col, px, bold, align) {
+  ctx.fillStyle = col; ctx.font = `${bold?'bold ':''}${px}px "Courier New",monospace`;
+  ctx.textBaseline = 'top'; ctx.textAlign = align ?? 'left'; ctx.fillText(s, x, y);
+}
+
+/* ── Core geometry ───────────────────────────────────────────────────────── */
+const CX = VW / 2;    // 240
+const CY = 158;       // core centre Y
+const RINGS = [
+  { r: 20,  segs: 3, gapRatio: 0.25, speed:  1.00, lw: 5 },
+  { r: 38,  segs: 5, gapRatio: 0.20, speed: -0.70, lw: 3 },
+  { r: 56,  segs: 7, gapRatio: 0.18, speed:  0.50, lw: 2 },
+  { r: 74,  segs: 9, gapRatio: 0.15, speed: -0.35, lw: 2 },
+  { r: 92,  segs: 12,gapRatio: 0.12, speed:  0.20, lw: 1.5 },
+];
+const OUTER_R = 108;
+
+/* ── Background ──────────────────────────────────────────────────────────── */
+function drawBg() {
+  fr(0, 0, VW, VH, '#020618');
+  /* Faint grid */
+  ctx.strokeStyle = '#0E2A55'; ctx.lineWidth = 1;
+  for (let x = 0; x <= VW; x += 24) { ctx.beginPath(); ctx.moveTo(x,24); ctx.lineTo(x,VH-22); ctx.stroke(); }
+  for (let y = 26; y <= VH-22; y += 24) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(VW,y); ctx.stroke(); }
+}
+
+/* ── Core ────────────────────────────────────────────────────────────────── */
+function drawCore() {
+  const ph  = phase();
+  const rgb = ph.rgb;
+  const T   = N / FRAMES;       // 0..1 over full cycle
+  const P   = pulse();          // 0..1 within phase group
+
+  /* Outer decorative ring */
+  ctx.strokeStyle = rgba(rgb, 0.45); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(CX, CY, OUTER_R, 0, Math.PI * 2); ctx.stroke();
+
+  /* Tick marks on outer ring */
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    const len = i % 6 === 0 ? 8 : 4;
+    ctx.strokeStyle = rgba(rgb, i%6===0 ? 0.7 : 0.35); ctx.lineWidth = i%6===0?2:1;
+    ctx.beginPath();
+    ctx.moveTo(CX + OUTER_R*Math.cos(a), CY + OUTER_R*Math.sin(a));
+    ctx.lineTo(CX + (OUTER_R+len)*Math.cos(a), CY + (OUTER_R+len)*Math.sin(a));
+    ctx.stroke();
+  }
+
+  /* Ambient core glow — pulsing */
+  const glowR = 60 + P * 30;
+  const g = ctx.createRadialGradient(CX, CY, 0, CX, CY, glowR);
+  g.addColorStop(0,   rgba(rgb, 0.30 + P * 0.20));
+  g.addColorStop(0.5, rgba(rgb, 0.10));
+  g.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(CX-glowR, CY-glowR, glowR*2, glowR*2);
+
+  /* Rotating ring segments */
+  for (const ring of RINGS) {
+    const angle  = T * Math.PI * 2 * ring.speed * 4; // *4 so full rotation visible
+    const segA   = (Math.PI * 2) / ring.segs;
+    const arcFrac = 1 - ring.gapRatio;
+    const bright = 0.6 + P * 0.4;
+    ctx.strokeStyle = rgba(rgb, bright);
+    ctx.lineWidth   = ring.lw;
+    for (let s = 0; s < ring.segs; s++) {
+      const sa = angle + s * segA;
+      ctx.beginPath();
+      ctx.arc(CX, CY, ring.r, sa, sa + segA * arcFrac, false);
+      ctx.stroke();
+    }
+  }
+
+  /* Energy spokes — 4 thin lines rotating from centre */
+  const spokeA = T * Math.PI * 2 * 2; // double rotation speed
+  ctx.strokeStyle = rgba(rgb, 0.20 + P * 0.20); ctx.lineWidth = 1;
+  for (let s = 0; s < 4; s++) {
+    const a = spokeA + s * Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(CX, CY);
+    ctx.lineTo(CX + RINGS[2].r * Math.cos(a), CY + RINGS[2].r * Math.sin(a));
+    ctx.stroke();
+  }
+
+  /* Central bright core dot */
+  const coreR = 7 + P * 5;
+  const cg = ctx.createRadialGradient(CX, CY, 0, CX, CY, coreR);
+  cg.addColorStop(0, 'rgba(232,244,255,1.0)');
+  cg.addColorStop(0.4, rgba(rgb, 0.9));
+  cg.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = cg;
+  ctx.beginPath(); ctx.arc(CX, CY, coreR, 0, Math.PI*2); ctx.fill();
+}
+
+/* ── Gauge (vertical bar) ────────────────────────────────────────────────── */
+function drawGauge(x, y, w, h, label, pct, val, unit, col) {
+  ctx.strokeStyle = '#2A3038'; ctx.lineWidth = 1; ctx.strokeRect(x-1, y-1, w+2, h+2);
+  fr(x, y, w, h, '#0A1838');
+  const fh = Math.round(h * (pct / 100));
+  fr(x, y + h - fh, w, fh, col);
+  /* Tick marks */
+  for (let i = 0; i <= 4; i++) { fr(x+w+1, y+(h*i/4)|0, 3, 1, '#1F70C8'); }
+  txt(label, x, y-13, '#3FA8FF', 9, true);
+  txt(val+unit, x, y+h+3, col, 10, true);
+}
+
+/* ── Side panels ─────────────────────────────────────────────────────────── */
+function drawPanels() {
+  const ph  = phase();
+  const rgb = ph.rgb;
+  const col = hex(rgb);
+  const blink = ph.danger > 0 && (N & 1) === 0;
+
+  /* Left panel: TEMP + POWER */
+  const lx = 10;
+  const T_ = temp(), P_ = power();
+  const tempPct  = Math.min(100, ((T_ - 300) / 800) * 100);
+  const tempCol  = T_ > 800 ? '#FF3030' : (T_ > 600 ? '#FFB000' : '#3FA8FF');
+  drawGauge(lx, 42, 18, 170, 'TEMP', tempPct, T_, '°C', tempCol);
+  drawGauge(lx+26, 42, 18, 170, 'PWR', P_, P_, '%', col);
+
+  /* Right panel: COOLANT + PRESSURE */
+  const rx = VW - 54;
+  const C_ = coolant();
+  const prsPct = C_ * 0.9 + 5;
+  drawGauge(rx, 42, 18, 170, 'CLT', C_, C_, '%', C_ < 50 ? '#FF3030' : '#3FA8FF');
+  drawGauge(rx+26, 42, 18, 170, 'PRS', prsPct|0, (prsPct*1.2)|0, 'kPa', col);
+
+  /* Phase label left */
+  const phX = 10, phY = 224;
+  txt('PHASE', phX, phY, '#3FA8FF', 9, true);
+  txt(blink ? '        ' : ph.name, phX, phY+13, col, 13, true);
+
+  /* Blink indicator */
+  if (ph.danger > 0) {
+    txt(blink ? '▲ ALERT' : '       ', phX, phY+30, col, 10, true);
+  }
+
+  /* Frame counter right */
+  txt('CYCLE', VW-52, 224, '#3FA8FF', 9, true);
+  txt(String(N+1).padStart(2,'0')+'/'+FRAMES, VW-52, 237, '#E8F4FF', 13, true);
+
+  /* Output watts */
+  txt('OUTPUT', VW-52, 258, '#3FA8FF', 9, true);
+  txt((P_*24.6|0)+'MW', VW-52, 271, col, 11, true);
+}
+
+/* ── HUD chrome ──────────────────────────────────────────────────────────── */
+function drawHud() {
+  const ph  = phase();
+  const rgb = ph.rgb;
+  const col = hex(rgb);
+  const blink = ph.danger > 1 && (N & 1) === 0;
+
+  /* Header */
+  fr(0, 0, VW, 24, 'rgba(8,28,72,0.75)');
+  ctx.strokeStyle='#1F70C8'; ctx.lineWidth=1; ctx.strokeRect(0,0,VW,24);
+  txt('REACTOR CORE  WY-7 // WEYLAND-YUTANI', 8, 6, '#3FA8FF', 12, true);
+  ctx.textAlign='right';
+  txt('FR '+String(N+1).padStart(2,'0')+'/'+FRAMES, VW-8, 6, '#FFB000', 11, true);
+  ctx.textAlign='left';
+
+  /* Footer */
+  const fy = VH-22;
+  fr(0, fy, VW, 22, 'rgba(8,28,72,0.75)');
+  ctx.strokeStyle='#1F70C8'; ctx.strokeRect(0,fy,VW,22);
+  const msg = ph.danger===2 ? '⚠ CRITICAL — CORE TEMPERATURE EXCEEDING LIMITS'
+            : ph.danger===1 ? '⚠ WARNING — THERMAL VARIANCE DETECTED'
+            :                 'NOMINAL — ALL SYSTEMS WITHIN PARAMETERS';
+  txt(blink?'':msg, 8, fy+6, col, 11, true);
+  ctx.textAlign='right'; txt('CH 03', VW-8, fy+6, '#1F70C8', 11, true); ctx.textAlign='left';
+
+  /* Corner LEDs */
+  for (const [lx,ly] of [[4,28],[VW-8,28],[4,fy-6],[VW-8,fy-6]]) {
+    ctx.fillStyle = (ph.danger>0 && (N&1)===0) ? col : '#1F70C8';
+    ctx.beginPath(); ctx.arc(lx, ly, 3, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+/* ── CRT post ────────────────────────────────────────────────────────────── */
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.33)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2,VH/2,Math.min(VW,VH)*0.32, VW/2,VH/2,Math.max(VW,VH)*0.68);
+  g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.78)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,VW,VH);
+}
+
+/* ── Compose ─────────────────────────────────────────────────────────────── */
+function render() {
+  ctx.setTransform(W/VW, 0, 0, H/VH, 0, 0);
+  drawBg();
+  drawCore();
+  drawPanels();
+  drawHud();
+  drawScanlines();
+  drawVignette();
+}
+
+render();
+
+if (frameParam === null) {
+  const FPS = 8; let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000/FPS) { last = ts; N=(N+1)%FRAMES; render(); }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

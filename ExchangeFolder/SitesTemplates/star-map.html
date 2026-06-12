@@ -1,0 +1,238 @@
+﻿<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body" data-vow-name="Star Map" data-vow-category="scifi" data-vow-description="Sci-fi star map navigator">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict'
+const W=480,H=320,cv=document.getElementById('screen'),cx=cv.getContext('2d')
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+function dither(){
+  const id=cx.getImageData(0,0,W,H),d=id.data
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=(y*W+x)*4
+    for(let c=0;c<3;c++){
+      const bits=c===1?6:5,max=(1<<bits)-1,old=d[i+c]
+      const nv=Math.round(old/255*max)/max*255,err=old-nv
+      d[i+c]=nv
+      if(x+1<W)d[i+4+c]+=err*7/16
+      if(y+1<H){if(x>0)d[i+(W-1)*4+c]+=err*3/16;d[i+W*4+c]+=err*5/16;if(x+1<W)d[i+(W+1)*4+c]+=err/16}
+    }
+  }
+  cx.putImageData(id,0,0)
+}
+const P={
+  bg:css(0,4,12),pan:css(0,16,32),bdr:css(0,72,104),bdrd:css(0,28,44),
+  cy:css(0,216,248),cy2:css(0,144,180),cy3:css(0,36,60),
+  gn:css(0,208,72),am:css(240,152,0),
+  rd:css(240,32,32),
+  tx:css(120,196,216),tx2:css(52,104,128),
+  wh:css(208,236,248),hl:css(0,180,240),
+  st1:css(200,228,248),st2:css(160,200,236),st3:css(100,160,210)
+}
+function fill(x,y,w,h,col){cx.fillStyle=col;cx.fillRect(x,y,w,h)}
+function line(x1,y1,x2,y2,col,lw=1){cx.strokeStyle=col;cx.lineWidth=lw;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()}
+function txt(s,x,y,col,sz=9,al='left'){cx.font=`${sz}px monospace`;cx.fillStyle=col;cx.textAlign=al;cx.fillText(s,x,y);cx.textAlign='left'}
+function circ(x,y,r,col,lw=1){cx.strokeStyle=col;cx.lineWidth=lw;cx.beginPath();cx.arc(x,y,r,0,Math.PI*2);cx.stroke()}
+function dot(x,y,r,col){cx.beginPath();cx.arc(x,y,r,0,Math.PI*2);cx.fillStyle=col;cx.fill()}
+
+// Star field (fixed seed)
+const STARS=Array.from({length:180},(_,i)=>{
+  const s=Math.sin(i*127.1+3.14)*43758.5453
+  const sx=((s-Math.floor(s))*W)|0
+  const s2=Math.sin(i*311.7+1.23)*43758.5453
+  const sy=((s2-Math.floor(s2))*H)|0
+  const s3=Math.sin(i*521.3)*43758.5453
+  const mag=((s3-Math.floor(s3))*3)|0
+  return[sx,sy,mag]
+})
+
+// Named star clusters / waypoints
+const WAYPOINTS=[
+  {name:'ALPHA CEN',bx:0.22,by:0.35,active:true},
+  {name:'TAU CETI', bx:0.65,by:0.18,active:true},
+  {name:'SIRIUS',   bx:0.78,by:0.62,active:false},
+  {name:'PROCYON',  bx:0.42,by:0.72,active:false},
+  {name:'FOMALHAUT',bx:0.12,by:0.80,active:false},
+]
+
+// Constellation lines (index pairs into WAYPOINTS)
+const CONLINES=[[0,1],[1,2],[2,3],[3,4]]
+
+// Frames: ship heading degrees, zoom, selected waypoint, mode
+const FRAMES=[
+  {hdg:42,  zoom:1.0,wp:0,mode:'SURVEY',    note:'PLOTTING COURSE'},
+  {hdg:67,  zoom:1.0,wp:1,mode:'LOCK-ON',   note:'TARGET ACQUIRED'},
+  {hdg:67,  zoom:1.6,wp:1,mode:'APPROACH',  note:'CLOSING DISTANCE'},
+  {hdg:91,  zoom:1.6,wp:1,mode:'TRANSIT',   note:'FTL JUMP READY'},
+  {hdg:134, zoom:1.0,wp:0,mode:'SURVEY',    note:'RETURNING TO SURVEY'},
+]
+
+let fi=0,tk=0
+
+function tick(){
+  const f=FRAMES[fi],bl=(tk++%2)===0
+  const nw=new Date(),ts=`${String(nw.getHours()).padStart(2,'0')}:${String(nw.getMinutes()).padStart(2,'0')}:${String(nw.getSeconds()).padStart(2,'0')}`
+
+  fill(0,0,W,H,P.bg)
+
+  // === STAR FIELD (drawn before grid) ===
+  const MX=232,MY=162  // map center
+  const ROT=f.hdg*Math.PI/180
+  const ZM=f.zoom
+  for(const[sx,sy,mag]of STARS){
+    // Rotate stars opposite to heading to simulate rotation
+    const dx=(sx-MX)/ZM,dy=(sy-MY)/ZM
+    const rx=dx*Math.cos(-ROT*0.04)-dy*Math.sin(-ROT*0.04)
+    const ry=dx*Math.sin(-ROT*0.04)+dy*Math.cos(-ROT*0.04)
+    const fx=MX+rx*ZM,fy=MY+ry*ZM
+    if(fx<0||fx>=W||fy<0||fy>=H)continue
+    const col=mag===2?P.st1:mag===1?P.st2:P.st3
+    cx.fillStyle=col;cx.fillRect(~~fx,~~fy,mag===2?2:1,mag===2?2:1)
+  }
+
+  // Subtle grid overlay
+  cx.strokeStyle=P.cy3;cx.lineWidth=0.5
+  for(let x=0;x<W;x+=40)line(x,0,x,H,P.cy3,0.5)
+  for(let y=0;y<H;y+=40)line(0,y,W,y,P.cy3,0.5)
+
+  // Header
+  fill(0,0,W,24,P.pan);line(0,24,W,24,P.bdrd)
+  cx.fillStyle=P.cy;cx.font='bold 11px monospace';cx.fillText('⬡ ASTRO-NAVIGATION COMPUTER',8,16)
+  txt(ts,W-8,16,P.tx2,9,'right')
+
+  // === MAP AREA (center region) ===
+  const MAP_X=130,MAP_Y=28,MAP_W=220,MAP_H=234
+  fill(MAP_X,MAP_Y,MAP_W,MAP_H,css(0,2,8))
+  cx.save();cx.beginPath();cx.rect(MAP_X,MAP_Y,MAP_W,MAP_H);cx.clip()
+
+  const MCX=MAP_X+MAP_W/2,MCY=MAP_Y+MAP_H/2
+
+  // Range circles
+  for(let r=1;r<=3;r++){
+    circ(MCX,MCY,r*30*ZM,P.cy3,0.5)
+    txt(r+'LY',MCX+r*30*ZM+2,MCY-2,P.cy3,6)
+  }
+  // Cross-hair axes
+  line(MAP_X,MCY,MAP_X+MAP_W,MCY,P.cy3,0.5)
+  line(MCX,MAP_Y,MCX,MAP_Y+MAP_H,P.cy3,0.5)
+
+  // Constellation connecting lines
+  for(const[a,b]of CONLINES){
+    const wa=WAYPOINTS[a],wb=WAYPOINTS[b]
+    const ax=MAP_X+wa.bx*MAP_W,ay=MAP_Y+wa.by*MAP_H
+    const bx=MAP_X+wb.bx*MAP_W,by=MAP_Y+wb.by*MAP_H
+    line(ax,ay,bx,by,P.cy3,0.5)
+  }
+
+  // Waypoints
+  for(let i=0;i<WAYPOINTS.length;i++){
+    const w=WAYPOINTS[i]
+    const wx=MAP_X+w.bx*MAP_W,wy=MAP_Y+w.by*MAP_H
+    const isSel=i===f.wp
+    dot(wx,wy,isSel?5:3,isSel?P.hl:P.cy2)
+    if(isSel){
+      circ(wx,wy,10,bl?P.hl:P.cy2,1)
+      circ(wx,wy,16,P.cy3,0.5)
+    }
+    const nc=isSel?P.wh:P.tx2
+    txt(w.name,wx+8,wy-2,nc,6)
+  }
+
+  // Ship marker (center of map)
+  const shipCol=f.mode==='LOCK-ON'&&bl?P.am:P.cy
+  dot(MCX,MCY,4,shipCol)
+  // Ship direction indicator
+  const hrad=f.hdg*Math.PI/180
+  line(MCX,MCY,MCX+Math.cos(hrad-Math.PI/2)*20,MCY+Math.sin(hrad-Math.PI/2)*20,P.cy,1.5)
+
+  cx.restore()
+  cx.strokeStyle=P.bdr;cx.lineWidth=1.5;cx.strokeRect(MAP_X,MAP_Y,MAP_W,MAP_H)
+  txt('CHART: SECTOR 7 — OUTER RIM',MCX,MAP_Y+MAP_H+10,P.tx2,7,'center')
+
+  // === LEFT: Compass / heading panel ===
+  fill(4,28,122,234,P.pan);cx.strokeStyle=P.bdrd;cx.lineWidth=1;cx.strokeRect(4,28,122,234)
+  txt('HEADING',8,40,P.tx2,8)
+
+  // Compass rose
+  const CPX=65,CPY=100,CPR=38
+  circ(CPX,CPY,CPR,P.bdrd,1)
+  circ(CPX,CPY,CPR-6,P.cy3,0.5)
+  const dirs=['N','E','S','W']
+  const dirA=[0,90,180,270]
+  for(let d=0;d<4;d++){
+    const a=(dirA[d]-f.hdg)*Math.PI/180
+    const tx2=CPX+Math.cos(a-Math.PI/2)*(CPR+10)
+    const ty2=CPY+Math.sin(a-Math.PI/2)*(CPR+10)
+    txt(dirs[d],tx2,ty2+3,P.tx2,7,'center')
+    line(CPX+Math.cos(a-Math.PI/2)*(CPR-8),CPY+Math.sin(a-Math.PI/2)*(CPR-8),
+         CPX+Math.cos(a-Math.PI/2)*CPR,CPY+Math.sin(a-Math.PI/2)*CPR,P.cy2,1)
+  }
+  // Heading needle (always points up on compass = current heading)
+  cx.save()
+  cx.translate(CPX,CPY)
+  cx.beginPath();cx.moveTo(0,-CPR+4);cx.lineTo(5,4);cx.lineTo(-5,4);cx.closePath()
+  cx.fillStyle=P.cy;cx.fill()
+  cx.restore()
+  // Center dot
+  dot(CPX,CPY,3,P.wh)
+
+  txt(String(f.hdg).padStart(3,'0')+'°',CPX,CPY+54,P.cy,18,'center')
+  txt('TRUE BEARING',CPX,CPY+70,P.tx2,7,'center')
+
+  // Speed / distance info
+  const infos=[
+    ['SPEED','0.4c'],['DIST','2.3 LY'],['ETA','18.4 H'],['ZOOM',f.zoom.toFixed(1)+'x']
+  ]
+  for(let i=0;i<infos.length;i++){
+    const[lab,val]=infos[i],ty=170+i*20
+    line(8,ty,122,ty,P.bdrd,0.5)
+    txt(lab,8,ty+13,P.tx2,7)
+    txt(val,118,ty+13,P.cy,8,'right')
+  }
+
+  // === RIGHT: Target data panel ===
+  fill(354,28,122,234,P.pan);cx.strokeStyle=P.bdrd;cx.lineWidth=1;cx.strokeRect(354,28,122,234)
+  txt('TARGET',358,40,P.tx2,8)
+
+  const wp=WAYPOINTS[f.wp]
+  fill(358,44,110,18,css(0,20,40))
+  txt(wp.name,413,57,P.cy,10,'center')
+
+  // Target data
+  const tdata=[
+    ['CLASS','G-TYPE STAR'],['DIST','2.31 LY'],['MAG','4.2'],
+    ['TEMP','5780 K'],['PLANETS','3'],['STATUS',f.mode],
+  ]
+  for(let i=0;i<tdata.length;i++){
+    const[lab,val]=tdata[i],ty=68+i*24
+    line(358,ty+4,472,ty+4,P.bdrd,0.5)
+    txt(lab,358,ty+16,P.tx2,7)
+    const vc=lab==='STATUS'?(f.mode==='LOCK-ON'?P.am:P.gn):P.cy
+    txt(val,470,ty+16,vc,7,'right')
+  }
+
+  // Signal strength
+  txt('SIGNAL',358,222,P.tx2,7)
+  for(let b=0;b<8;b++){
+    const bh=4+b*3,by=242-bh
+    fill(358+b*13,by,10,bh,b<6?P.cy:P.cy3)
+  }
+
+  // Mode badge
+  fill(358,258,110,18,f.mode==='LOCK-ON'&&bl?css(40,24,0):css(0,20,40))
+  txt(f.mode,413,271,f.mode==='LOCK-ON'?P.am:P.hl,9,'center')
+
+  // Bottom bar
+  fill(0,266,W,54,P.pan);line(0,266,W,266,P.bdrd)
+  txt('▶ '+f.note,8,283,f.mode==='LOCK-ON'&&bl?P.am:P.cy,9)
+  txt(`HDG ${String(f.hdg).padStart(3,'0')}°  ZOOM ${f.zoom.toFixed(1)}x  WP: ${wp.name}`,8,300,P.tx2,8)
+  txt(`${fi+1}/${FRAMES.length}`,W-8,283,P.gn,8,'right')
+
+  dither()
+  fi=(fi+1)%FRAMES.length
+}
+tick();setInterval(tick,1000)
+</script></body></html>

@@ -1,0 +1,48 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<!-- Target .NET 8 cross-platform (no -windows suffix) -->
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<EnableNETAnalyzers>true</EnableNETAnalyzers>
+		<AnalysisMode>AllEnabledByDefault</AnalysisMode>
+		<WarningLevel>5</WarningLevel>
+		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+		<Features>strict</Features>
+		<!-- CA2007: ConfigureAwait — suppressed project-wide (pre-existing policy)        -->
+		<!-- CA1031: catch(Exception) — intentional: Chromium navigation errors must not  -->
+		<!--          crash the grab loop; we log and continue.                           -->
+		<!-- CA1054: Uri vs string — PuppeteerSharp GoToAsync accepts string; using Uri   -->
+		<!--          would require extra conversions with no benefit here.               -->
+		<!-- CA2000: dispose out-var IPage — false positive; IPage is IAsyncDisposable    -->
+		<!--          and is closed via CloseAsync() in the same scope.                  -->
+		<!-- CA1303: Console.WriteLine with literal strings — intentional diagnostic     -->
+		<!--          output; adding resource tables for console log messages adds        -->
+		<!--          unnecessary complexity.                                             -->
+		<NoWarn>CA2007;CA1031;CA1054;CA2000;CA1303</NoWarn>
+	</PropertyGroup>
+
+	<ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+		<!-- Copy Chrome-for-testing to output on Windows for local development.
+		     On Linux the system chromium-browser package is used instead. -->
+		<Content Include="Chrome-for-testing\**\*">
+			<Link>Chrome-for-testing\%(RecursiveDir)%(FileName)%(Extension)</Link>
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- NuGet packages -->
+		<PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
+		<PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />
+		<PackageReference Include="PuppeteerSharp" Version="24.39.0" />
+		<PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\ViewOwl.Config\ViewOwl.Config.csproj" />
+		<ProjectReference Include="..\ViewOwl.Grabber.DTO\ViewOwl.DTO.csproj" />
+	</ItemGroup>
+
+</Project>

@@ -1,0 +1,14 @@
+{
+  "name": "ViewOwl ESP32 Display",
+  "version": "1.0.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        { "path": "bootloader.bin",      "offset": 4096  },
+        { "path": "partition-table.bin", "offset": 32768 },
+        { "path": "viewowl.bin",         "offset": 65536 }
+      ]
+    }
+  ]
+}

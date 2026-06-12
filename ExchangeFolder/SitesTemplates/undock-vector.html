@@ -1,0 +1,429 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="Undock Vector"
+  data-vow-description="Spacecraft undocking from airlock — early-80s vector wireframe ship recedes from station, glowing phosphor strokes"
+  data-vow-category="scifi"
+  data-vow-tags="undock,vector,wireframe,scifi,aliens,vectrex,80s,asteroids"
+  data-vow-frames="16"
+  data-vow-fps="6"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+/* ── Canvas — fills viewport, drawing in logical 480×320 ────────────────── */
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+
+const canvas = document.getElementById('c');
+canvas.width  = W;
+canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+/* ── Class C frame contract ─────────────────────────────────────────────── */
+const FRAMES = 16;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+let N = ((parseInt(frameParam ?? '0', 10) % FRAMES) + FRAMES) % FRAMES;
+let T = N / FRAMES;
+
+/* ── Palette — Aliens blue CRT + amber engine flare ─────────────────────── */
+const C = {
+  bgDeep: '#020618',
+  grid:   '#0A2240',
+  blue1:  '#1F70C8',
+  blue2:  '#3FA8FF',
+  phos:   '#E8F4FF',
+  amber:  '#FFB000',
+  red:    '#FF3030',
+  star:   '#80B0E0',
+};
+
+/* ── Vector stroke — double-pass with phosphor glow ─────────────────────── */
+function vstroke(color, lw, glow) {
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = glow ?? 5;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = lw ?? 1.4;
+  ctx.stroke();
+  ctx.shadowBlur  = 0;
+}
+function vline(x1, y1, x2, y2, color, lw) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  vstroke(color, lw);
+}
+function vpoly(points, color, lw, closed) {
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  if (closed !== false) ctx.closePath();
+  vstroke(color, lw);
+}
+function vdot(x, y, r, color) {
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 4;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur  = 0;
+}
+
+/* ── Departure model ─────────────────────────────────────────────────────── *
+ *  Frame 0..2: docked (clamps engaged → release)                              *
+ *  Frame 3..15: ship slides right + recedes (scale down)                      */
+function shipState(t) {
+  if (t < 3 / FRAMES) {
+    const k = t / (3 / FRAMES);
+    return {
+      cx:   140,
+      scale: 1.0,
+      status: t < 1 / FRAMES ? 'DOCKED'
+            : t < 2 / FRAMES ? 'CLAMPS RELEASE'
+                              : 'CLEARING UMBILICALS',
+      thrust: 0,
+      clamp: 1 - k,
+    };
+  }
+  const u = (t - 3 / FRAMES) / (1 - 3 / FRAMES);    /* 0..1 departure */
+  const ease = 1 - Math.pow(1 - u, 2.2);             /* ease-out      */
+  return {
+    cx:    140 + ease * 280,
+    scale: 1.0 - ease * 0.72,
+    status: u > 0.92 ? 'DEPARTURE CLEAR'
+           : u > 0.5 ? 'OUTBOUND'
+                     : 'THRUSTERS NOMINAL',
+    thrust: 0.4 + 0.6 * (1 - Math.abs(u - 0.4) / 0.6),
+    clamp: 0,
+  };
+}
+function distanceM(t)  { return Math.round(shipState(t).cx > 145 ? (shipState(t).cx - 140) * 0.7 : 0); }
+function velocityMs(t) {
+  if (t < 3 / FRAMES) return 0;
+  const dt = 1 / FRAMES;
+  return Math.max(0, ((shipState(t).cx - shipState(Math.max(0, t - dt)).cx) / dt) * 0.05).toFixed(2);
+}
+
+/* ── Background — deep space, grid floor, stars ─────────────────────────── */
+function drawBackground() {
+  ctx.fillStyle = C.bgDeep;
+  ctx.fillRect(0, 0, VW, VH);
+
+  /* Vanishing-point grid floor — perspective ground for depth cue */
+  const horizon = VH * 0.55;
+  const vp = { x: VW / 2, y: horizon };
+  ctx.strokeStyle = C.grid;
+  ctx.lineWidth   = 1;
+  ctx.shadowBlur  = 0;
+  /* Radial spokes */
+  for (let i = -6; i <= 6; i++) {
+    const x = vp.x + i * 80;
+    ctx.beginPath();
+    ctx.moveTo(x, VH);
+    ctx.lineTo(vp.x, vp.y);
+    ctx.stroke();
+  }
+  /* Receding rows */
+  for (let i = 1; i <= 8; i++) {
+    const y = horizon + (VH - horizon) * (1 - 1 / (1 + i * 0.5));
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(VW, y);
+    ctx.stroke();
+  }
+
+  /* Static starfield — deterministic (PRNG seeded once) */
+  const seedRng = mulberry32(0xC0FFEE);
+  for (let i = 0; i < 50; i++) {
+    const sx = seedRng() * VW;
+    const sy = seedRng() * horizon;
+    if (Math.abs(sx - VW/2) < 30 && sy > horizon - 30) continue; /* avoid HUD */
+    /* Twinkle: each star brightens deterministically based on N */
+    const twinkle = (Math.sin((i * 17 + N * 11) * 0.3) + 1) / 2;
+    const r = 0.6 + twinkle * 0.8;
+    vdot(sx, sy, r, C.star);
+  }
+}
+function mulberry32(seed) {
+  let s = seed >>> 0;
+  return function () {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), 1 | t);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ── Station / airlock — fixed on left side ─────────────────────────────── */
+function drawStation() {
+  /* Station hull edge — large arc on far left */
+  ctx.beginPath();
+  ctx.moveTo(0, 70);
+  ctx.lineTo(80, 70);
+  ctx.lineTo(110, 100);
+  ctx.lineTo(110, 220);
+  ctx.lineTo(80, 250);
+  ctx.lineTo(0, 250);
+  vstroke(C.blue2, 1.5);
+
+  /* Inner panel lines */
+  vline(20, 90, 100, 90, C.blue1, 1);
+  vline(20, 230, 100, 230, C.blue1, 1);
+  vline(40, 110, 40, 210, C.blue1, 1);
+  vline(70, 110, 70, 210, C.blue1, 1);
+
+  /* Airlock collar — projects right from station, ship docks here */
+  vpoly([
+    [110, 130], [140, 140], [140, 180], [110, 190],
+  ], C.blue2, 1.5);
+
+  /* Docking ring — open circle facing right */
+  ctx.beginPath();
+  ctx.ellipse(140, 160, 6, 22, 0, 0, Math.PI * 2);
+  vstroke(C.amber, 1.5);
+
+  /* Station label */
+  ctx.font         = 'bold 9px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle    = C.blue2;
+  ctx.shadowBlur   = 0;
+  ctx.fillText('STN-7', 4, 60);
+}
+
+/* Umbilical lines from station to ship — retract during clamps phase */
+function drawUmbilical(s) {
+  if (s.clamp <= 0.05) return;
+  const a = s.clamp;          /* 0..1 — fully connected at 1 */
+  ctx.strokeStyle = C.amber;
+  ctx.lineWidth   = 1;
+  ctx.shadowColor = C.amber;
+  ctx.shadowBlur  = 3;
+  for (let i = -1; i <= 1; i++) {
+    const y0 = 160 + i * 12;
+    ctx.beginPath();
+    ctx.moveTo(140, y0);
+    /* Slack curve — sags more as clamp loosens */
+    const midX = 140 + (s.cx - 140) * 0.5 * a;
+    const midY = y0 + (1 - a) * 8;
+    ctx.quadraticCurveTo(midX, midY, s.cx - 90 * s.scale, y0);
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+}
+
+/* ── Vector ship — wireframe frigate, scales with state ─────────────────── */
+function drawShip(s) {
+  ctx.save();
+  ctx.translate(s.cx, 160);
+  ctx.scale(s.scale, s.scale);
+
+  /* Hull outline (nose right, tail left) */
+  vpoly([
+    [ 100,   0],     /* nose tip                                          */
+    [  60, -16],     /* upper nose                                        */
+    [  30, -28],     /* upper hull fwd                                    */
+    [ -40, -28],     /* upper hull aft                                    */
+    [ -60, -34],     /* upper engine                                      */
+    [-100, -28],     /* engine end top                                    */
+    [-100,  28],     /* engine end bot                                    */
+    [ -60,  34],     /* lower engine                                      */
+    [ -40,  28],     /* lower hull aft                                    */
+    [  30,  28],     /* lower hull fwd                                    */
+    [  60,  16],     /* lower nose                                        */
+  ], C.phos, 1.6);
+
+  /* Cockpit — slanted hex window near nose */
+  vpoly([
+    [ 70, -10], [ 82,  -6], [ 82,   6], [ 70,  10], [ 58,   6], [ 58,  -6],
+  ], C.blue2, 1.2);
+
+  /* Hull spine + paneling */
+  vline(-40, -28, -40,  28, C.blue1, 1);
+  vline(  0, -28,   0,  28, C.blue1, 1);
+  vline( 30, -28,  30,  28, C.blue1, 1);
+  vline(-60, -34, -60,  34, C.blue1, 1);
+
+  /* Top + bottom fins */
+  vpoly([[-20, -28], [-30, -54], [-50, -54], [-40, -28]], C.blue2, 1.3, true);
+  vpoly([[-20,  28], [-30,  54], [-50,  54], [-40,  28]], C.blue2, 1.3, true);
+
+  /* Antenna/sensor mast */
+  vline(20, -28, 20, -50, C.amber, 1);
+  vdot (20, -50, 1.6, C.amber);
+
+  /* Engine nozzles — three exhausts at tail */
+  for (const ny of [-18, 0, 18]) {
+    vpoly([
+      [-100, ny - 5], [-110, ny - 5], [-110, ny + 5], [-100, ny + 5],
+    ], C.blue2, 1.2);
+  }
+
+  /* Engine flare — only when thrusting; hot inner core + outer wisp */
+  if (s.thrust > 0.05) {
+    const fl = 18 + 22 * s.thrust;
+    for (const ny of [-18, 0, 18]) {
+      /* Outer flare (amber, soft) */
+      ctx.beginPath();
+      ctx.moveTo(-110, ny - 4);
+      ctx.lineTo(-110 - fl, ny);
+      ctx.lineTo(-110, ny + 4);
+      vstroke(C.amber, 1.4, 8);
+      /* Inner flare (white-hot core) */
+      ctx.beginPath();
+      ctx.moveTo(-110, ny - 1);
+      ctx.lineTo(-110 - fl * 0.55, ny);
+      ctx.lineTo(-110, ny + 1);
+      vstroke(C.phos, 1.2, 6);
+    }
+  }
+
+  /* Hull marking — registry number forward-aft */
+  ctx.font         = 'bold 8px "Courier New", monospace';
+  ctx.fillStyle    = C.amber;
+  ctx.shadowColor  = C.amber;
+  ctx.shadowBlur   = 2;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign    = 'left';
+  ctx.fillText('USS NARCISSUS // 17', -30, 0);
+  ctx.shadowBlur   = 0;
+  ctx.textAlign    = 'left';
+
+  ctx.restore();
+}
+
+/* ── HUD ─────────────────────────────────────────────────────────────────── */
+function drawHud() {
+  const s = shipState(T);
+
+  /* Header band */
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, 0, VW, 24);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  ctx.strokeRect(0, 0, VW, 24);
+
+  ctx.font         = 'bold 12px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.textAlign    = 'left';
+  ctx.fillStyle    = C.blue2;
+  ctx.shadowColor  = C.blue2; ctx.shadowBlur = 3;
+  ctx.fillText('UNDOCK SEQUENCE A-7', 8, 7);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.amber;
+  ctx.shadowColor = C.amber;
+  ctx.fillText('FR ' + String(N + 1).padStart(2, '0') + '/' + FRAMES, VW - 8, 7);
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'left';
+
+  /* Right-side telemetry block — distance / velocity / status */
+  const rx = VW - 110;
+  const ry = 36;
+  ctx.fillStyle = 'rgba(8,28,72,0.55)';
+  ctx.fillRect(rx, ry, 105, 86);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1;
+  ctx.strokeRect(rx, ry, 105, 86);
+
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle = C.blue2; ctx.shadowBlur = 0;
+  ctx.fillText('DISTANCE', rx + 6, ry + 6);
+  ctx.font = 'bold 16px "Courier New", monospace';
+  ctx.fillStyle = C.phos;
+  ctx.shadowColor = C.phos; ctx.shadowBlur = 3;
+  ctx.fillText(distanceM(T) + ' m', rx + 6, ry + 18);
+
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle = C.blue2; ctx.shadowBlur = 0;
+  ctx.fillText('VELOCITY', rx + 6, ry + 40);
+  ctx.font = 'bold 14px "Courier New", monospace';
+  ctx.fillStyle = C.amber;
+  ctx.shadowColor = C.amber; ctx.shadowBlur = 3;
+  ctx.fillText(velocityMs(T) + ' m/s', rx + 6, ry + 52);
+
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle = C.blue2; ctx.shadowBlur = 0;
+  ctx.fillText('CLAMP', rx + 6, ry + 72);
+  ctx.fillStyle = s.clamp > 0.5 ? C.amber : (s.clamp > 0 ? C.red : C.blue2);
+  const clampLbl = s.clamp > 0.5 ? 'LOCKED' : (s.clamp > 0 ? 'RELEASING' : 'CLEAR');
+  ctx.fillText(clampLbl, rx + 50, ry + 72);
+
+  /* Footer */
+  const fy = VH - 22;
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, fy, VW, 22);
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(0, fy, VW, 22);
+
+  ctx.font = 'bold 11px "Courier New", monospace';
+  const danger = s.clamp > 0 && s.cx > 142;
+  ctx.fillStyle   = danger ? C.red : C.blue2;
+  ctx.shadowColor = ctx.fillStyle;
+  ctx.shadowBlur  = 3;
+  ctx.fillText(danger ? '⚠ TENSION ON UMBILICAL' : s.status, 8, fy + 6);
+  ctx.shadowBlur = 0;
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.blue1;
+  ctx.fillText('CH 07 // VECTOR-CRT', VW - 8, fy + 6);
+  ctx.textAlign = 'left';
+}
+
+/* ── CRT effects ─────────────────────────────────────────────────────────── */
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW, VH) * 0.4,
+                                     VW/2, VH/2, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+
+/* ── Compose ────────────────────────────────────────────────────────────── */
+function render() {
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+  drawBackground();
+  drawStation();
+
+  const s = shipState(T);
+  drawUmbilical(s);
+  drawShip(s);
+  drawHud();
+  drawScanlines();
+  drawVignette();
+}
+
+render();
+
+/* ── Dev preview — browser only when no vow_frame param ─────────────────── */
+if (frameParam === null) {
+  const FPS = 6;
+  let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) {
+      last = ts;
+      N = (N + 1) % FRAMES;
+      T = N / FRAMES;
+      render();
+    }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

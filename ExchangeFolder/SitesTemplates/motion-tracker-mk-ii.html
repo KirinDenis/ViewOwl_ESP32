@@ -1,0 +1,363 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="Motion Tracker MK-II"
+  data-vow-description="Aliens motion tracker — dome sweep, contact blips, F.E.M.S. readout, blue CRT phosphor"
+  data-vow-category="scifi"
+  data-vow-tags="motion,tracker,radar,aliens,sweep,crt,dome"
+  data-vow-frames="16"
+  data-vow-fps="8"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+const FRAMES = 16;
+const frameParam   = new URLSearchParams(location.search).get('vow_frame');
+const initialFrame = parseInt(frameParam ?? '0', 10);
+let N = ((initialFrame % FRAMES) + FRAMES) % FRAMES;
+
+/* ── Palette ─────────────────────────────────────────────────────────────── */
+const P = {
+  bg:      '#000C18',
+  glow:    'rgba(13,72,161,0.18)',
+  fill0:   'rgba(14,72,160,0.13)',
+  fill1:   'rgba(6,30,80,0.06)',
+  ringDim: 'rgba(41,182,246,0.40)',
+  ringMid: 'rgba(41,182,246,0.60)',
+  ringOut: 'rgba(41,182,246,0.85)',
+  line:    '#29B6F6',
+  blip:    '#81D4FA',
+  tick:    '#0D8ACC',
+  panel:   '#0D47A1',
+  panelHi: '#1565C0',
+  socket:  '#040E28',
+  white:   '#E3F2FD',
+  dim:     '#90CAF9',
+  red:     '#EF5350',
+};
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+const PANEL_H = 66;
+const cx      = VW / 2;           // 240
+const cy      = VH - PANEL_H;     // 254  — dome centre sits on panel top edge
+const RINGS   = [52, 90, 128, 166, 208];  // 5 ring radii
+const OR      = RINGS[4];                  // outer radius  208
+
+/* ── Sweep angle: π (left) → 0 (right) over 16 frames ───────────────────── */
+function sweepAngle(n) { return Math.PI * (1 - n / FRAMES); }
+
+/* ── Contact blips at fixed dome positions ───────────────────────────────── */
+/* angle uses same convention as sweepAngle: π=left, 0=right, π/2=top       */
+const BLIPS = [
+  { a: Math.PI * 0.72, r: 100 },   // upper-left zone  (hit ≈ frame 4–5)
+  { a: Math.PI * 0.50, r: 155 },   // top-centre  far  (hit ≈ frame 8)
+  { a: Math.PI * 0.24, r: 84  },   // right zone  close(hit ≈ frame 12–13)
+];
+
+/* Brightness fades from 1→0 as sweep moves away from the blip after passing */
+function blipBright(blipA, swA) {
+  const TRAIL = Math.PI * 0.16;
+  const diff  = blipA - swA;   // >0 = sweep already passed this blip
+  if (diff <= 0 || diff > TRAIL) return 0;
+  return 1 - diff / TRAIL;
+}
+
+/* Distance label (scaled to look like metres) */
+function distStr(blip) {
+  return (blip.r / OR * 9.99).toFixed(2).replace('.', '..');
+}
+
+/* ── Draw helpers ────────────────────────────────────────────────────────── */
+function fr(x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(x, y, w, h); }
+
+function txt(s, x, y, col, px, bold, align) {
+  ctx.fillStyle    = col;
+  ctx.font         = `${bold ? 'bold ' : ''}${px}px "Courier New", monospace`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign    = align ?? 'left';
+  ctx.fillText(s, x, y);
+}
+
+/* Clip to the dome semicircle for all dome-interior drawing */
+function clipDome(fn) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx - OR, cy);
+  ctx.arc(cx, cy, OR, Math.PI, 0, false);
+  ctx.closePath();
+  ctx.clip();
+  fn();
+  ctx.restore();
+}
+
+/* ── Background ──────────────────────────────────────────────────────────── */
+function drawBg() {
+  fr(0, 0, VW, VH, P.bg);
+  /* Ambient blue halo behind dome */
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, OR * 1.25);
+  g.addColorStop(0,   P.glow);
+  g.addColorStop(0.7, 'rgba(13,72,161,0.06)');
+  g.addColorStop(1,   'rgba(0,12,24,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+
+/* ── Dome glass fill — gives the 3-D frosted-bubble look ─────────────────── */
+function drawDomeFill() {
+  clipDome(() => {
+    const g = ctx.createRadialGradient(cx, cy - 70, 16, cx, cy, OR);
+    g.addColorStop(0,   P.fill0);
+    g.addColorStop(0.65,'rgba(8,40,100,0.07)');
+    g.addColorStop(1,   'rgba(4,20,50,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, VW, cy);
+  });
+}
+
+/* ── Concentric arc rings ─────────────────────────────────────────────────── */
+function drawRings() {
+  for (let i = 0; i < RINGS.length; i++) {
+    const isOut = (i === RINGS.length - 1);
+    ctx.strokeStyle = isOut ? P.ringOut : (i >= 2 ? P.ringMid : P.ringDim);
+    ctx.lineWidth   = isOut ? 2 : 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, RINGS[i], Math.PI, 0, false);
+    ctx.stroke();
+  }
+}
+
+/* ── Tick marks on outer ring ────────────────────────────────────────────── */
+function drawTicks() {
+  for (let deg = 0; deg <= 180; deg += 15) {
+    const ang    = Math.PI - (deg / 180) * Math.PI;   // map 0..180° → π..0
+    const isMaj  = (deg % 45 === 0);
+    const len    = isMaj ? 14 : 7;
+    const x1 = cx + OR * Math.cos(ang);
+    const y1 = cy + OR * Math.sin(ang);
+    const x2 = cx + (OR + len) * Math.cos(ang);
+    const y2 = cy + (OR + len) * Math.sin(ang);
+    ctx.strokeStyle = isMaj ? P.line : P.tick;
+    ctx.lineWidth   = isMaj ? 2 : 1;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+
+    /* Bracket caps on 45° / 135° ticks */
+    if (deg === 45 || deg === 135) {
+      const mx = cx + (OR + 8) * Math.cos(ang);
+      const my = cy + (OR + 8) * Math.sin(ang);
+      ctx.fillStyle = P.line;
+      ctx.fillRect(mx - 4, my - 2, 8, 4);
+    }
+  }
+}
+
+/* ── Expanding pulse ring — the "rising bubble wave" ────────────────────── */
+function drawPulse() {
+  const pulseR = (N / FRAMES) * OR;
+  if (pulseR < 4) return;
+  const alpha = (1 - N / FRAMES) * 0.6;
+  clipDome(() => {
+    ctx.strokeStyle = `rgba(41,182,246,${alpha})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, pulseR, Math.PI, 0, false);
+    ctx.stroke();
+  });
+}
+
+/* ── Sweep line + trailing glow sector ───────────────────────────────────── */
+function drawSweep() {
+  const ang = sweepAngle(N);
+  const ex  = cx + OR * Math.cos(ang);
+  const ey  = cy + OR * Math.sin(ang);
+
+  /* Trailing filled sector */
+  clipDome(() => {
+    ctx.fillStyle = 'rgba(41,182,246,0.06)';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, OR, ang, ang + Math.PI * 0.09, false);
+    ctx.closePath();
+    ctx.fill();
+  });
+
+  /* Sweep line with fade */
+  const g = ctx.createLinearGradient(cx, cy, ex, ey);
+  g.addColorStop(0,    'rgba(41,182,246,1.0)');
+  g.addColorStop(0.65, 'rgba(41,182,246,0.5)');
+  g.addColorStop(1,    'rgba(41,182,246,0.0)');
+  ctx.strokeStyle = g;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+}
+
+/* ── Contact blips ────────────────────────────────────────────────────────── */
+function drawBlips() {
+  const sw = sweepAngle(N);
+  for (const b of BLIPS) {
+    const br = blipBright(b.a, sw);
+    if (br <= 0) continue;
+    const bx = cx + b.r * Math.cos(b.a);
+    const by = cy + b.r * Math.sin(b.a);
+    /* Glow */
+    ctx.strokeStyle = `rgba(129,212,250,${br * 0.55})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(bx, by, 8, 0, Math.PI * 2); ctx.stroke();
+    /* Core */
+    ctx.fillStyle = `rgba(129,212,250,${br})`;
+    ctx.beginPath(); ctx.arc(bx, by, 3, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+/* ── Structural lines & markers drawn OVER the animation ─────────────────── */
+function drawStructure() {
+  ctx.strokeStyle = P.line;
+  ctx.lineWidth   = 1;
+
+  /* Horizontal base */
+  ctx.beginPath();
+  ctx.moveTo(cx - OR - 22, cy); ctx.lineTo(cx + OR + 22, cy);
+  ctx.stroke();
+
+  /* Vertical centre */
+  ctx.beginPath();
+  ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - OR - 20);
+  ctx.stroke();
+
+  /* X crosses at left and right ends */
+  drawX(cx - OR - 14, cy, 11);
+  drawX(cx + OR + 14, cy, 11);
+
+  /* Centre dot */
+  ctx.fillStyle = P.line;
+  ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+
+  /* Decorative bracket boxes at outer ring ends (left / right) */
+  const bW = 6, bH = 20;
+  fr(cx - OR - 22, cy - bH / 2, bW, bH, P.bg);
+  ctx.strokeStyle = P.line; ctx.lineWidth = 1;
+  ctx.strokeRect(cx - OR - 22, cy - bH / 2, bW, bH);
+
+  fr(cx + OR + 16, cy - bH / 2, bW, bH, P.bg);
+  ctx.strokeRect(cx + OR + 16, cy - bH / 2, bW, bH);
+}
+
+function drawX(x, y, s) {
+  ctx.strokeStyle = P.line; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s);
+  ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s);
+  ctx.stroke();
+}
+
+/* ── Bottom panel ────────────────────────────────────────────────────────── */
+function drawPanel() {
+  const py = cy;   // panel top = dome centre = VH - PANEL_H
+
+  /* Panel body */
+  fr(0, py, VW, PANEL_H, P.panel);
+  /* Top highlight strip */
+  fr(0, py, VW, 2, P.panelHi);
+
+  /* Central socket trapezoid where dome meets panel */
+  ctx.fillStyle = P.socket;
+  ctx.beginPath();
+  ctx.moveTo(cx - 72, py); ctx.lineTo(cx + 72, py);
+  ctx.lineTo(cx + 88, VH); ctx.lineTo(cx - 88, VH);
+  ctx.closePath(); ctx.fill();
+  /* Socket side rails */
+  ctx.strokeStyle = P.dim; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx - 72, py); ctx.lineTo(cx - 88, VH); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx + 72, py); ctx.lineTo(cx + 88, VH); ctx.stroke();
+
+  /* Vertical dividers */
+  ctx.strokeStyle = 'rgba(144,202,249,0.35)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx - 104, py + 6); ctx.lineTo(cx - 104, VH - 6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx + 104, py + 6); ctx.lineTo(cx + 104, VH - 6); ctx.stroke();
+
+  /* Red distance counter — centre */
+  const sw    = sweepAngle(N);
+  let label   = '00..00';
+  for (const b of BLIPS) {
+    if (blipBright(b.a, sw) > 0) { label = distStr(b); break; }
+  }
+  txt(label,  cx,         py + PANEL_H * 0.50, P.red,   29, true,  'center');
+  txt('m',    cx + 66,    py + PANEL_H * 0.68, P.red,   10, false, 'left');
+
+  /* Left info */
+  txt('F.E.M.S.',  cx - 114, py + PANEL_H * 0.34, P.white, 9,  true,  'right');
+  txt('5.547.6',   cx - 114, py + PANEL_H * 0.66, P.dim,   11, false, 'right');
+
+  /* Right info */
+  txt('CX. 54/38', cx + 114, py + PANEL_H * 0.34, P.white, 9,  true,  'left');
+  txt(String(N * 4).padStart(2, '0') + '.04', cx + 114, py + PANEL_H * 0.66, P.dim, 11, false, 'left');
+
+  /* Status dots */
+  ctx.fillStyle = P.dim;
+  ctx.beginPath(); ctx.arc(cx - 108, py + PANEL_H * 0.50, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + 108, py + PANEL_H * 0.50, 3, 0, Math.PI * 2); ctx.fill();
+}
+
+/* ── CRT post-processing ──────────────────────────────────────────────────── */
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW,VH)*0.30,
+                                     VW/2, VH/2, Math.max(VW,VH)*0.70);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+
+/* ── Compose ─────────────────────────────────────────────────────────────── */
+function render() {
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+  drawBg();
+  drawDomeFill();
+  drawRings();
+  drawTicks();
+  drawPulse();
+  drawSweep();
+  drawBlips();
+  drawStructure();
+  drawPanel();
+  drawScanlines();
+  drawVignette();
+}
+
+render();
+
+/* Dev loop — only runs when no ?vow_frame param (i.e. not during server grab) */
+if (frameParam === null) {
+  const FPS = 8; let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) { last = ts; N = (N + 1) % FRAMES; render(); }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+.panel-box { display: flex; flex-direction: column; }
+.panel-content { flex: 1; padding: 10px 12px; font-family: var(--font); }

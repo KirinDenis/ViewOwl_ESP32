@@ -1,0 +1,106 @@
+# ViewOwl
+
+> A production content-delivery platform that puts live web pages on fleets of low-cost
+> microcontroller displays. A server renders ordinary HTML in a real browser, converts each
+> frame to the display's native pixel format, and ships it to ESP32 devices over a custom
+> reliability protocol built on UDP. The devices hold no application logic — they receive
+> frames and render them — so all content, data, and layout live in HTML/JS on the server.
+> Devices are flashed and Wi-Fi-provisioned entirely from the browser; no toolchain, no IDE.
+
+## What makes this non-trivial
+
+ViewOwl owns the full path from a cloud-rendered web page down to silicon — not just a
+front-end and back-end, but an additional embedded tier with its own wire protocol and
+offline playback engine. The hard problems it solves end-to-end:
+
+- **Reliable frame delivery over lossy Wi-Fi/UDP.** Custom 15-byte-header protocol with
+  per-chunk stop-and-wait ACK, sequencing, retransmission, session lifecycle, device-side
+  socket resurrection, and watchdog-safe receive loops.
+- **CRC32 frame dedup.** The device reports its last-rendered frame's CRC in every HELLO;
+  the server answers `NOT_MODIFIED` when nothing changed — no needless re-transmit, no
+  flash wear, no visible refresh.
+- **Atomic multi-frame animation (Class C).** The server pre-renders an N-frame batch,
+  the device writes it to a flash partition and plays the loop **independently of the
+  network** — survives Wi-Fi loss entirely.
+- **Per-device multi-resolution rendering.** Each template is rendered at every connected
+  device's native resolution (320×240 ILI9341, 480×320 ST7796, 480×320 ILI9486).
+- **Zero-toolchain onboarding.** Browser-based flashing (Web Serial) and serial
+  Wi-Fi/token provisioning persisted to NVS — a non-developer can bring a device online.
+- **Self-describing templates + live data.** `data-vow-*` HTML attributes drive the whole
+  pipeline; any API-backed page becomes a wall display with no embedded code.
+- **Operational hardening.** JWT auth, BCrypt, security middleware with IP auto-blocking
+  (brute-force/scanner thresholds), rate limiting, session fingerprinting, and a real-time
+  SignalR dashboard for managing the fleet.
+
+## Status
+
+Production-deployed on a Linux ARM64 server behind a TLS reverse proxy. Devices run
+continuously for weeks without watchdog reboots; a server redeploy costs at most one
+delayed HELLO cycle (NVS-persisted CRC → `NOT_MODIFIED` on reconnect). Actively developed,
+with three shipping firmware variants and a documented wire protocol kept byte-compatible
+between the C# server and the C firmware (`UDPUtils.cs` ↔ `packet.h`).
+
+## Architecture
+
+Three components communicating through the filesystem and UDP:
+
+1. **Grabber** (`ViewOwl.Grabber.WebAPI/`) — ASP.NET Core 8 service. Runs headless Chromium, renders HTML → PNG → BGR565 `.bin`. Serves templates over HTTP (Chromium ARM64 blocks `file://`). Port 5000/TCP.
+2. **UDP Server** (`ViewOwl.UDP.Server/`) — .NET 8 console. Listens for ESP32 HELLO packets, streams `.bin` files via a custom 15-byte header ACK protocol. Port 11000/UDP.
+3. **Firmware** (`ViewOwl.ESP32.Client/`) — ESP-IDF 5.5 C99. WiFi + UDP client + SPI LCD driver + flash playback engine. Three build variants: 320×240 (ILI9341), 480×320 (ST7796), 480×320 (ILI9486).
+
+Shared state: `ExchangeFolder/` — Grabber writes `{guid}.bin`, UDP Server reads it. Both on same machine. Atomic writes (`.tmp` → rename).
+
+## Key source files
+
+- [`ViewOwl.Grabber.Engine/Chrome.cs`](ViewOwl.Grabber.Engine/Chrome.cs) — PNG capture, BGR565 conversion, CRC dedup
+- [`ViewOwl.Grabber.WebAPI/BackgroundServices/DeviceTemplateRefreshWorker.cs`](ViewOwl.Grabber.WebAPI/BackgroundServices/DeviceTemplateRefreshWorker.cs) — periodic re-grab, Class C multi-frame batch, HTML hash skip
+- [`ViewOwl.UDP.Server/UDPServer.cs`](ViewOwl.UDP.Server/UDPServer.cs) — session lifecycle, NOT_MODIFIED CRC optimisation
+- [`ViewOwl.UDP.Server/UDPServerSession.cs`](ViewOwl.UDP.Server/UDPServerSession.cs) — per-device frame transfer, CRC32 computation
+- [`ViewOwl.UDP.Utils/UDPUtils.cs`](ViewOwl.UDP.Utils/UDPUtils.cs) — 15-byte PacketHeader (must stay in sync with `packet.h`)
+- [`ViewOwl.ESP32.Client/main/udp_client.c`](ViewOwl.ESP32.Client/main/udp_client.c) — HELLO/AUTH/DATA/ACK/DONE, batch flash write, NVS CRC persistence
+- [`ViewOwl.ESP32.Client/main/config.h`](ViewOwl.ESP32.Client/main/config.h) — all firmware compile-time constants
+- [`ViewOwl.ESP32.Client/main/lcd_init.c`](ViewOwl.ESP32.Client/main/lcd_init.c) — SPI bus init, display controller setup
+- [`ViewOwl.Grabber.Engine/TemplateMetadataParser.cs`](ViewOwl.Grabber.Engine/TemplateMetadataParser.cs) — parses `data-vow-*` from HTML body element
+
+## Template system
+
+Templates are self-describing HTML files. `data-vow-*` attributes on `<body>` define class, name, category, frame count, fps, refresh interval. Metadata is **not stored in DB** — parsed from `HtmlContent` on every read.
+
+Three classes:
+- **A** — any HTML/CSS, server-rendered by Chromium, single frame, refreshed periodically
+- **B** — canvas-only, server grab OR live browser push (reads canvas pixels, POSTs BGR565 to device)
+- **C** — canvas multi-frame animation, each frame grabbed at `?vow_frame=N`, stored in ESP32 flash, plays offline
+
+Class C constraint: `Math.random()` forbidden — same frame index must always produce same pixels (CRC dedup breaks otherwise; also causes ARM64 Chrome timeout during batch capture via `getImageData()`).
+
+## Frame format
+
+Raw BGR565, 16 bits/pixel, little-endian. 480×320 = 307,200 bytes. 320×240 = 153,600 bytes. Matches native SPI LCD format — no conversion on device. Compressed variants (palette+RLE, palette+LZ4) flagged by first byte (0x01, 0x03).
+
+## UDP protocol
+
+15-byte header: Magic (0xABADBABE) + PacketType + SessionId + Seq + PayloadLength + Flags. 1400-byte packets. Custom ACK per chunk. NOT_MODIFIED response when device CRC matches manifest batch CRC — skips retransmission.
+
+## Module reference (deep dives)
+
+- [`docs/reference/udp-transport.md`](docs/reference/udp-transport.md) — **Full UDP protocol**: packet structure, state machine, server Auth() decision tree, ESP32 socket resurrection, WDT feeding strategy, NVS CRC persistence, NOT_MODIFIED optimisation, stability record. Self-contained — reusable independently.
+- [`docs/reference/renderer.md`](docs/reference/renderer.md) — **Chromium → BGR565 pipeline**: why headless Chrome, tab management, CSS injection, CRC dedup, atomic write, BGR565 bit packing, compression formats, performance characteristics
+- [`docs/reference/firmware.md`](docs/reference/firmware.md) — **ESP32 firmware modules**: config.h constants table, udp_client.c state variables, lcd_init.c SPI pins, nvs_storage.c NVS keys, flash_frames.c partition player, packet.h wire format, build variants
+- [`docs/reference/grabber-api.md`](docs/reference/grabber-api.md) — **ASP.NET Core API**: startup sequence, all controllers and endpoints, all background services, config types, concurrency model
+- [`docs/reference/database.md`](docs/reference/database.md) — **Full DB schema**: all 11 tables (main + security), every column with type/constraints/notes, indexes, business rules, migration history, repository pattern
+- [`docs/reference/auth-security.md`](docs/reference/auth-security.md) — **Auth & security**: JWT flow, BCrypt, session fingerprinting, SecurityMiddleware pipeline (IP extraction → block check → honeypot → UA detection → headers), auto-block thresholds, sandbox mode
+- [`docs/reference/frontend.md`](docs/reference/frontend.md) — **React dashboard**: FlowCanvas architecture, TemplateNode/DeviceNode, browser push loop, SignalR events table, PipelineView, BURN wizard, hooks, state management
+- [`docs/reference/api-reference.md`](docs/reference/api-reference.md) — **Complete REST API**: every endpoint with request/response shapes, auth requirements, rate limits, error codes
+- [`docs/reference/pipelines.md`](docs/reference/pipelines.md) — **Internal pipelines**: GrabChannel flow, IFrameRefreshQueue, frame resolution chain, DeviceTemplateRefreshWorker scheduling logic, UDPServerSession state machine, SignalR event flow, known limitations
+
+## Documentation
+
+- [`docs/getting-started.md`](docs/getting-started.md) — hardware requirements, wiring, flashing, first use
+- [`docs/hardware.md`](docs/hardware.md) — display modules, SPI speed, ESP32 memory layout, packet size rationale, frame format
+- [`docs/architecture.md`](docs/architecture.md) — full system overview, component details, ExchangeFolder structure
+- [`docs/templates/overview.md`](docs/templates/overview.md) — A/B/C taxonomy, data-vow-* contract, grab flow
+- [`docs/templates/class-a.md`](docs/templates/class-a.md) — Class A details, design tips, approved APIs
+- [`docs/templates/class-b.md`](docs/templates/class-b.md) — canvas sizing, BGR565 palette, push loop
+- [`docs/templates/class-c.md`](docs/templates/class-c.md) — multi-frame grab, 3D wireframe recipe, phosphor CRT effects, performance notes
+- [`docs/server/self-hosting.md`](docs/server/self-hosting.md) — Ubuntu 22.04 ARM64 deployment, systemd units, disk hygiene
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — templates, bug fixes, hardware support, code style

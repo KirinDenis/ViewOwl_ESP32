@@ -1,0 +1,57 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net8.0</TargetFramework>
+		<Version>1.2.0</Version>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<EnableNETAnalyzers>true</EnableNETAnalyzers>
+		<AnalysisMode>AllEnabledByDefault</AnalysisMode>
+		<AnalysisLevel>latest</AnalysisLevel>
+		<WarningLevel>5</WarningLevel>
+		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<Deterministic>true</Deterministic>
+		<!-- CA1031: catch(Exception) — WebApiClient intentionally swallows HTTP errors so  -->
+		<!--         network failures never crash the UDP session loop.                     -->
+		<!-- CA1848: LoggerMessage delegates — low-frequency per-session logging; the        -->
+		<!--         overhead of interpolated strings is acceptable here.                   -->
+		<!-- CA2007: ConfigureAwait — not applicable; all WebApiClient methods are sync.    -->
+		<!-- CA1849: Thread.Sleep — the main loop is intentionally a blocking console loop; -->
+		<!--         the server has no async entry point by design.                         -->
+		<!-- CA1305: IFormatProvider in Serilog.File — Serilog's API does not expose a      -->
+		<!--         culture overload for the sink; suppression is the only option.         -->
+		<!-- CA1812: internal types appear uninstantiated — they are resolved via the DI    -->
+		<!--         container (AddSingleton<T>()) which the static analyzer cannot see.    -->
+		<!-- CA2000: UDPServerSession ownership in Auth() is always transferred to the      -->
+		<!--         _sessions dictionary and disposed there; the analyzer cannot verify     -->
+		<!--         cross-method ownership transfer.                                       -->
+		<NoWarn>CA1031;CA1848;CA2007;CA1849;CA1305;CA1812;CA2000</NoWarn>
+	</PropertyGroup>
+
+	<ItemGroup>
+	  <Content Include="..\ViewOwl.Grabber.WebAPI\appsettings.Shared.json" Link="appsettings.Shared.json">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.8" />
+		<PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.8" />
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
+		<PackageReference Include="Serilog" Version="4.3.0" />
+		<PackageReference Include="Serilog.Extensions.Logging" Version="9.0.2" />
+		<PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\ViewOwl.Config\ViewOwl.Config.csproj" />
+		<ProjectReference Include="..\ViewOwl.UDP.Utils\ViewOwl.UDP.Utils.csproj" />
+	</ItemGroup>
+
+</Project>

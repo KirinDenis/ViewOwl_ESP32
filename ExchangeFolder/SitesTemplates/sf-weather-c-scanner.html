@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; image-rendering: pixelated; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="Atmospheric Scanner"
+  data-vow-description="16-frame sweep scanner — wind/pressure/temp as animated blips, Nostromo blue CRT"
+  data-vow-category="weather"
+  data-vow-tags="weather,scifi,radar,scanner,animation,alien"
+  data-vow-frames="16"
+  data-vow-fps="12"
+  data-vow-refresh="10"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+
+const canvas = document.getElementById('c');
+canvas.width  = W;
+canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+
+/* Frame index — everything deterministic in N. No Math.random() allowed. */
+const FRAMES = 16;
+const frame  = parseInt(new URLSearchParams(location.search).get('vow_frame') ?? '0', 10);
+const N      = ((frame % FRAMES) + FRAMES) % FRAMES;
+const T      = N / FRAMES;                           /* 0..1 loop position  */
+
+/* Blue CRT palette (Nostromo) */
+const P = {
+  bgDeep: '#020618',
+  bgGlow: '#0A1838',
+  grid:   '#0E2A55',
+  dim:    '#103E78',
+  mid:    '#1F70C8',
+  lit:    '#3FA8FF',
+  bright: '#9FD8FF',
+  phos:   '#E8F4FF',
+  warn:   '#FF6330',
+  amber:  '#FFB000',
+};
+
+const CX = W / 2;
+const CY = H / 2 + 10;
+const R  = Math.min(W, H) * 0.42;
+
+function fill(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+function txt(s, x, y, c, size, bold) {
+  ctx.fillStyle = c;
+  ctx.font = `${bold ? 'bold ' : ''}${size}px "Courier New", monospace`;
+  ctx.fillText(s, x, y);
+}
+
+function drawBackground() {
+  fill(0, 0, W, H, P.bgDeep);
+  const g = ctx.createRadialGradient(CX, CY, 8, CX, CY, R * 1.2);
+  g.addColorStop(0, 'rgba(20,60,140,0.55)');
+  g.addColorStop(1, 'rgba(2,6,24,0.00)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+function drawRings() {
+  ctx.strokeStyle = P.grid; ctx.lineWidth = 1;
+  for (const frac of [0.33, 0.66, 1.0]) {
+    ctx.beginPath();
+    ctx.arc(CX, CY, R * frac, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  /* Radial spokes every 30° */
+  for (let deg = 0; deg < 360; deg += 30) {
+    const a = (deg - 90) * Math.PI / 180;
+    ctx.beginPath();
+    ctx.moveTo(CX, CY);
+    ctx.lineTo(CX + R * Math.cos(a), CY + R * Math.sin(a));
+    ctx.stroke();
+  }
+  /* Cross-hair */
+  ctx.strokeStyle = P.dim;
+  ctx.beginPath(); ctx.moveTo(CX - R, CY); ctx.lineTo(CX + R, CY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(CX, CY - R); ctx.lineTo(CX, CY + R); ctx.stroke();
+}
+
+/* Sweep arm — rotates 360° over 16 frames with a bright leading edge */
+function drawSweep() {
+  const sweepDeg = T * 360 - 90;
+  const a  = sweepDeg * Math.PI / 180;
+  const x2 = CX + R * Math.cos(a);
+  const y2 = CY + R * Math.sin(a);
+
+  /* Trail: several fading segments behind the sweep for motion blur feel */
+  const TRAIL = 6;
+  for (let i = TRAIL; i > 0; i--) {
+    const lagDeg = sweepDeg - i * 4;
+    const la = lagDeg * Math.PI / 180;
+    const lx = CX + R * Math.cos(la);
+    const ly = CY + R * Math.sin(la);
+    ctx.strokeStyle = `rgba(63,168,255,${0.08 * (TRAIL - i + 1) / TRAIL})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(CX, CY); ctx.lineTo(lx, ly); ctx.stroke();
+  }
+
+  /* Leading crisp edge */
+  ctx.strokeStyle = P.phos; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(CX, CY); ctx.lineTo(x2, y2); ctx.stroke();
+
+  /* Sweep glow dot */
+  const g = ctx.createRadialGradient(x2, y2, 1, x2, y2, 12);
+  g.addColorStop(0, 'rgba(232,244,255,0.9)');
+  g.addColorStop(1, 'rgba(63,168,255,0.0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x2, y2, 12, 0, Math.PI * 2); ctx.fill();
+}
+
+/* Wind direction needle — rotates once per 16 frames, offset from sweep */
+function drawWindNeedle(windDeg) {
+  if (windDeg == null) return;
+  /* Needle direction is the wind bearing — STATIC per frame (weather doesn't  *
+   * rotate in animation; only sweep rotates). Small wobble ±2° keyed on N.    */
+  const wobble = 2 * Math.sin(2 * Math.PI * T);
+  const a  = (windDeg + wobble - 90) * Math.PI / 180;
+  const lr = R * 0.85;
+  const x2 = CX + lr * Math.cos(a);
+  const y2 = CY + lr * Math.sin(a);
+
+  ctx.strokeStyle = P.amber; ctx.lineWidth = 2;
+  ctx.shadowColor = P.amber; ctx.shadowBlur = 6;
+  ctx.beginPath(); ctx.moveTo(CX, CY); ctx.lineTo(x2, y2); ctx.stroke();
+
+  /* Arrowhead */
+  const ah = 6;
+  const backA1 = a + Math.PI * 0.85;
+  const backA2 = a - Math.PI * 0.85;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 + ah * Math.cos(backA1), y2 + ah * Math.sin(backA1));
+  ctx.lineTo(x2 + ah * Math.cos(backA2), y2 + ah * Math.sin(backA2));
+  ctx.closePath();
+  ctx.fillStyle = P.amber;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+/* Three contact blips at fixed bearings — they pulse when the sweep arm      *
+ * passes near their angle (classic radar sweep reveal). Pulse is a function  *
+ * of angular distance from sweep, so it is fully deterministic in N.         */
+const BLIPS = [
+  { deg:  55, frac: 0.48, label: 'T'  },
+  { deg: 200, frac: 0.72, label: 'P'  },
+  { deg: 310, frac: 0.58, label: 'H'  },
+];
+
+function angularDelta(a, b) {
+  let d = ((a - b) % 360 + 540) % 360 - 180;
+  return Math.abs(d);
+}
+
+function drawBlips() {
+  const sweepDeg = T * 360;
+  for (const b of BLIPS) {
+    const a  = (b.deg - 90) * Math.PI / 180;
+    const x  = CX + R * b.frac * Math.cos(a);
+    const y  = CY + R * b.frac * Math.sin(a);
+
+    /* Pulse strength: 1.0 when sweep hits blip, fades within 60° window */
+    const d = angularDelta(sweepDeg, b.deg);
+    const pulse = Math.max(0, 1 - d / 60);
+
+    const halo = 6 + 10 * pulse;
+    const g = ctx.createRadialGradient(x, y, 1, x, y, halo);
+    g.addColorStop(0,   `rgba(232,244,255,${0.4 + 0.5 * pulse})`);
+    g.addColorStop(0.5, `rgba(63,168,255,${0.25 * (1 - pulse * 0.5)})`);
+    g.addColorStop(1,   'rgba(31,112,200,0.0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, halo, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = P.phos;
+    ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
+
+    txt(b.label, x + 6, y - 6, P.bright, 10, true);
+  }
+}
+
+function drawHud(d) {
+  /* Header bar */
+  fill(0, 0, W, 24, 'rgba(8,28,72,0.65)');
+  ctx.strokeStyle = P.mid; ctx.strokeRect(0, 0, W, 24);
+  txt('ATMO-SCAN WARSAW', 8, 17, P.bright, 12, true);
+  txt('FRAME ' + String(N + 1).padStart(2, '0') + '/' + FRAMES,
+      W - 96, 17, P.amber, 11, true);
+
+  /* Footer bar — live numeric readout */
+  const fy = H - 20;
+  fill(0, fy, W, 20, 'rgba(8,28,72,0.65)');
+  ctx.strokeStyle = P.mid; ctx.strokeRect(0, fy, W, 20);
+
+  const t = (d && d.temp != null) ? d.temp + '°C' : '--°C';
+  const w = (d && d.wind != null) ? d.wind + 'km/h' : '--km/h';
+  const p = (d && d.pres != null) ? d.pres + 'hPa' : '--hPa';
+  const h = (d && d.hum  != null) ? d.hum  + '%'    : '--%';
+  txt('T ' + t, 8,   H - 6, P.phos,  11, true);
+  txt('W ' + w, 88,  H - 6, P.amber, 11, true);
+  txt('H ' + h, 188, H - 6, P.bright, 11, true);
+  txt('P ' + p, 268, H - 6, P.bright, 11, true);
+  ctx.textAlign = 'right';
+  txt('LINK ' + (d && d.ok ? 'OK' : 'WAIT'), W - 8, H - 6,
+      d && d.ok ? P.phos : P.warn, 11, true);
+  ctx.textAlign = 'left';
+}
+
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  for (let y = 0; y < H; y += 2) ctx.fillRect(0, y, W, 1);
+}
+
+function render(d) {
+  drawBackground();
+  drawRings();
+  drawBlips();
+  drawSweep();
+  drawWindNeedle(d ? d.windDeg : null);
+  drawHud(d);
+  drawScanlines();
+}
+
+async function fetchWeather() {
+  const url = 'https://api.open-meteo.com/v1/forecast'
+    + '?latitude=52.23&longitude=21.01'
+    + '&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,surface_pressure';
+  const r = await fetch(url);
+  const j = await r.json();
+  const c = j.current;
+  return {
+    temp:    Math.round(c.temperature_2m),
+    hum:     Math.round(c.relative_humidity_2m),
+    wind:    Math.round(c.wind_speed_10m),
+    windDeg: c.wind_direction_10m,
+    pres:    Math.round(c.surface_pressure),
+    ok:      true,
+  };
+}
+
+(async () => {
+  /* First paint with placeholders so the scanner shows something instantly */
+  render(null);
+  try {
+    const d = await fetchWeather();
+    render(d);
+  } catch (e) {
+    render({ ok: false });
+  }
+})();
+</script>
+</body>
+</html>

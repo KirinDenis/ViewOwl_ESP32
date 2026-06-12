@@ -1,0 +1,219 @@
+/* ── Top header bar — ISA-101 HMI ─────────────────────────────────────────── */
+.app-header {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-lg);
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+  gap: 0;
+}
+
+/* ── Branding ──────────────────────────────────────────────────────────────── */
+.header-brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  flex-shrink: 0;
+  padding-right: var(--space-lg);
+}
+
+.header-logo {
+  font-family: var(--font);
+  font-size: var(--text-md);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--text-bright);
+}
+
+.header-sub {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  color: var(--neutral-text);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ── Vertical separators ───────────────────────────────────────────────────── */
+.header-vsep,
+.header-alarm-sep {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+  flex-shrink: 0;
+  margin-right: var(--space-lg);
+}
+
+/* ── Status strip ──────────────────────────────────────────────────────────── */
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-shrink: 0;
+}
+
+.header-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+}
+
+.header-datetime {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  color: var(--neutral-text);
+  letter-spacing: 0.10em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Alarm count badges — ISA-101 severity ────────────────────────────────── */
+.header-alarms {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-left: var(--space-md);
+  flex-shrink: 0;
+}
+
+.alarm-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px var(--space-sm);
+  border-radius: 2px;
+  min-width: 42px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* P1 Critical — red, pulsing (unacknowledged alarm animation) */
+.alarm-p1 {
+  background: rgba(204, 51, 51, 0.18);
+  border: 1px solid var(--p1-color);
+  color: var(--p1-color);
+  animation: alarmPulse 1s ease-in-out infinite;
+}
+
+/* P2 High — amber, no pulse (watch state) */
+.alarm-p2 {
+  background: rgba(212, 160, 23, 0.15);
+  border: 1px solid var(--p2-color);
+  color: var(--p2-color);
+}
+
+/* P3 Warning — yellow */
+.alarm-p3 {
+  background: rgba(200, 184, 0, 0.12);
+  border: 1px solid var(--p3-color);
+  color: var(--p3-color);
+}
+
+/* Spacer pushes toolbar to far right */
+.header-spacer { flex: 1; }
+
+/* ── Toolbar buttons ───────────────────────────────────────────────────────── */
+.header-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.header-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 200, 255, 0.12);
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  padding: 5px var(--space-md);
+  min-width: 90px;
+  cursor: pointer;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+  line-height: 1.4;
+}
+
+.header-tool-btn:hover {
+  background: rgba(0, 200, 255, 0.22);
+  border-color: var(--primary);
+  color: var(--text-bright);
+  text-decoration: none;
+}
+
+/* Templates button — cyan accent (admin action) */
+.header-tool-btn-templates {
+  background: rgba(0, 191, 255, 0.08);
+  border-color: rgba(0, 191, 255, 0.4);
+  color: var(--accent);
+}
+.header-tool-btn-templates:hover {
+  background: rgba(0, 191, 255, 0.18);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Burn button — amber accent (destructive action) */
+.header-tool-btn-burn {
+  background: rgba(212, 160, 23, 0.12);
+  border-color: rgba(212, 160, 23, 0.6);
+  color: var(--status-warn);
+}
+.header-tool-btn-burn:hover {
+  background: rgba(212, 160, 23, 0.22);
+  border-color: var(--status-warn);
+  color: var(--status-warn);
+}
+
+/* Admin button */
+.header-tool-btn-admin {
+  background: rgba(100, 100, 160, 0.12);
+  border-color: var(--border);
+}
+.header-tool-btn-admin:hover {
+  background: rgba(100, 100, 160, 0.22);
+  border-color: var(--border-bright);
+  color: var(--text-bright);
+  text-decoration: none;
+}
+
+/* ── Icon buttons (theme, logout) ──────────────────────────────────────────── */
+.header-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--neutral-text);
+  font-size: 0.85rem;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.header-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-bright);
+  color: var(--text);
+}
+
+.header-icon-btn-logout {
+  color: var(--status-error);
+  border-color: rgba(204, 51, 51, 0.30);
+}
+.header-icon-btn-logout:hover {
+  background: rgba(204, 51, 51, 0.10);
+  border-color: var(--status-error);
+}

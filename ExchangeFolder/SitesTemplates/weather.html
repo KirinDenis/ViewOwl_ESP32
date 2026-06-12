@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weather Dashboard</title>
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        font-family: Arial, sans-serif;
+        background: url('weather.png') no-repeat center center fixed;
+        background-size: cover;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        color: #fff;
+    }
+    #weather {
+        display: flex;
+        width: 100%;
+        flex: 1;
+        justify-content: center;
+        align-items: center;
+    }
+    .city {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background-color: rgba(0,0,0,0.5);
+        margin: 2px;
+        border-radius: 10px;
+        text-align: center;
+        padding: 10px;
+    }
+    .city h2 {
+        font-size: 3em;
+        margin: 0.2em 0;
+    }
+    .temperature {
+        font-size: 4em;
+        font-weight: bold;
+        margin: 0.2em 0;
+    }
+    .humidity, .pressure {
+        font-size: 2em;
+        margin: 0.1em 0;
+    }
+    #datetime {
+        font-size: 2.5em;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 10px;
+        color: #fff;
+        background-color: rgba(0,0,0,0.5);
+        margin: 2px;
+        border-radius: 10px;
+        padding: 10px;
+    }
+</style>
+</head>
+<body>
+<div id="weather"></div>
+<div id="datetime"></div>
+
+<script>
+const cities = [
+    { name: 'Kyiv' },
+    { name: 'Trencin' },
+    { name: 'Tirana' }
+];
+
+async function fetchWeather(city) {
+    const url = `https://wttr.in/${city.name}?format=j1`;
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Ошибка API: ${response.status}`);
+    }
+    const data = await response.json();
+
+    return {
+        city: city.name,
+        temperature: data.current_condition[0].temp_C,
+        humidity: data.current_condition[0].humidity,
+        pressure: data.current_condition[0].pressure
+    };
+}
+
+async function displayWeather() {
+    const container = document.getElementById('weather');
+    container.innerHTML = '';
+
+    for (let city of cities) {
+        try {
+            const weather = await fetchWeather(city);
+            const cityDiv = document.createElement('div');
+            cityDiv.classList.add('city');
+            cityDiv.innerHTML = `
+                <h2>${weather.city}</h2>
+                <p class="temperature">${weather.temperature}°C</p>
+                <p class="humidity">Humidity: ${weather.humidity}%</p>
+                <p class="pressure">Pressure: ${weather.pressure} hPa</p>
+            `;
+            container.appendChild(cityDiv);
+        } catch (err) {
+            console.error(err);
+            container.innerHTML += `<div class="city"><h2>${city.name}</h2><p>Ошибка загрузки данных</p></div>`;
+        }
+    }
+}
+
+function updateDateTime() {
+    const now = new Date();
+    const datetimeDiv = document.getElementById('datetime');
+    const options = { 
+        weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+    };
+    datetimeDiv.textContent = now.toLocaleString('en-US', options);
+}
+
+displayWeather();
+updateDateTime();
+
+// обновляем раз в минуту
+setInterval(() => {
+    displayWeather();
+    updateDateTime();
+}, 60000);
+</script>
+</body>
+</html>

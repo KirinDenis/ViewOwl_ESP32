@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="UA-571 Sentry Gun"
+  data-vow-description="UA-571-C auto-turret — fan-shape sweep, motion contacts in scan area, RED lock when target acquired"
+  data-vow-category="scifi"
+  data-vow-tags="sentry,turret,gun,aliens,radar,sweep,80s"
+  data-vow-frames="16"
+  data-vow-fps="8"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+const FRAMES = 16;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+let N = ((parseInt(frameParam ?? '0', 10) % FRAMES) + FRAMES) % FRAMES;
+let T = N / FRAMES;
+
+const C = {
+  bg:    '#020618',
+  grid:  '#0E2A55',
+  blue1: '#103E78',
+  blue2: '#1F70C8',
+  blue3: '#3FA8FF',
+  bright:'#9FD8FF',
+  phos:  '#E8F4FF',
+  amber: '#FFB000',
+  red:   '#FF3030',
+  redD:  '#7C1010',
+};
+
+function vstroke(c, lw, glow) {
+  ctx.shadowColor = c; ctx.shadowBlur = glow ?? 4;
+  ctx.strokeStyle = c; ctx.lineWidth = lw ?? 1.4;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+function vline(x1,y1,x2,y2,c,lw){ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); vstroke(c,lw); }
+function vellipse(cx,cy,rx,ry,c,lw){ ctx.beginPath(); ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); vstroke(c,lw); }
+function vpoly(pts,c,lw,closed){ ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]); for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]); if(closed!==false) ctx.closePath(); vstroke(c,lw); }
+
+/* ── Turret + sweep geometry ─────────────────────────────────────────────── *
+ *  Turret base at bottom-center; fan extends upward across 90° arc.           *
+ *  Sweep angle oscillates: frames 0..7 sweep right, 8..15 sweep left back.   */
+const TX = VW / 2;
+const TY = VH - 50;
+const FAN_HALF_DEG = 45;          /* 90° total cone                          */
+const FAN_R        = 220;
+
+function sweepAngleDeg() {
+  /* Triangle wave: 0..7 → -45° to +45°,  8..15 → +45° back to -45°          */
+  const pos = N <= 7 ? (N / 7)        /* 0..1 ramp up                       */
+                     : ((15 - N) / 7); /* 1..0 ramp down                     */
+  return -FAN_HALF_DEG + pos * FAN_HALF_DEG * 2;
+}
+function deg2rad(d) { return (d - 90) * Math.PI / 180; }   /* 0° = up        */
+
+/* ── Contacts in fan area — fixed bearings + ranges, locked when sweep hits ── */
+const CONTACTS = [
+  { degOffset: -28, range:  85, name: 'X-1' },
+  { degOffset:  -8, range: 145, name: 'X-2' },
+  { degOffset:  22, range: 100, name: 'X-3' },
+];
+function angularDelta(a, b) {
+  let d = ((a - b) % 360 + 540) % 360 - 180;
+  return Math.abs(d);
+}
+function lockedContact() {
+  const sw = sweepAngleDeg();
+  for (const c of CONTACTS) {
+    if (angularDelta(c.degOffset, sw) < 6) return c;
+  }
+  return null;
+}
+
+/* ── Background — deep blue + grid ───────────────────────────────────────── */
+function drawBackground() {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, VW, VH);
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  for (let x = 0; x <= VW; x += 24) {
+    ctx.beginPath(); ctx.moveTo(x, 28); ctx.lineTo(x, VH - 24); ctx.stroke();
+  }
+  for (let y = 32; y <= VH - 24; y += 24) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VW, y); ctx.stroke();
+  }
+}
+
+/* ── Fan scan area — arc segments at distance rings + radial limit lines ── */
+function drawFan() {
+  /* Range rings inside the fan */
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  for (const frac of [0.33, 0.66, 1.0]) {
+    const r = FAN_R * frac;
+    ctx.beginPath();
+    ctx.arc(TX, TY, r, deg2rad(-FAN_HALF_DEG), deg2rad(FAN_HALF_DEG));
+    ctx.stroke();
+  }
+  /* Side limit lines (cone edges) */
+  for (const sgn of [-1, 1]) {
+    const a = deg2rad(sgn * FAN_HALF_DEG);
+    vline(TX, TY, TX + FAN_R * Math.cos(a), TY + FAN_R * Math.sin(a), C.blue2, 1);
+  }
+  /* Mid axis */
+  vline(TX, TY, TX, TY - FAN_R, C.blue1, 1);
+  /* Range labels */
+  ctx.font = 'bold 8px "Courier New", monospace';
+  ctx.fillStyle = C.blue2; ctx.shadowBlur = 0;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(' 50m', TX + 4, TY - FAN_R * 0.33);
+  ctx.fillText('100m', TX + 4, TY - FAN_R * 0.66);
+  ctx.fillText('150m', TX + 4, TY - FAN_R * 1.0);
+}
+
+/* ── Sweep beam — narrow cone with trailing fade ─────────────────────────── */
+function drawSweep() {
+  const sw = sweepAngleDeg();
+  /* Soft trailing arc — 4 steps behind */
+  for (let i = 4; i > 0; i--) {
+    const lagDeg = sw - i * 5;
+    const a = deg2rad(lagDeg);
+    ctx.strokeStyle = `rgba(63,168,255,${0.10 * (5 - i) / 4})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(TX, TY);
+    ctx.lineTo(TX + FAN_R * Math.cos(a), TY + FAN_R * Math.sin(a));
+    ctx.stroke();
+  }
+  /* Bright leading edge */
+  const a = deg2rad(sw);
+  vline(TX, TY, TX + FAN_R * Math.cos(a), TY + FAN_R * Math.sin(a), C.phos, 1.6, 7);
+}
+
+/* ── Contacts — RED dots in scan area, halo grows when sweep is near ────── */
+function drawContacts() {
+  const sw = sweepAngleDeg();
+  for (const c of CONTACTS) {
+    const a = deg2rad(c.degOffset);
+    const x = TX + c.range * Math.cos(a);
+    const y = TY + c.range * Math.sin(a);
+    const d = angularDelta(c.degOffset, sw);
+    const pulse = Math.max(0, 1 - d / 30);
+
+    /* Halo */
+    const halo = ctx.createRadialGradient(x, y, 1, x, y, 12 + pulse * 8);
+    halo.addColorStop(0, `rgba(255,80,80,${0.4 + 0.5 * pulse})`);
+    halo.addColorStop(1, 'rgba(255,48,48,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(x, y, 12 + pulse * 8, 0, Math.PI * 2); ctx.fill();
+
+    /* Crisp red core */
+    ctx.fillStyle = C.red;
+    ctx.shadowColor = C.red; ctx.shadowBlur = 5;
+    ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    /* Lock box around contact when sweep hits */
+    if (d < 6) {
+      ctx.strokeStyle = C.red; ctx.lineWidth = 1.4;
+      ctx.shadowColor = C.red; ctx.shadowBlur = 4;
+      ctx.strokeRect(x - 8, y - 8, 16, 16);
+      ctx.shadowBlur = 0;
+      ctx.font = 'bold 8px "Courier New", monospace';
+      ctx.fillStyle = C.red;
+      ctx.fillText(c.name, x + 10, y - 4);
+    }
+  }
+}
+
+/* ── Sentry turret base — top-down silhouette at TX, TY ─────────────────── */
+function drawTurret() {
+  const sw = sweepAngleDeg();
+  /* Tripod base — 3 legs */
+  for (let i = 0; i < 3; i++) {
+    const ang = (i / 3) * Math.PI * 2 + Math.PI / 2;
+    const ex = TX + Math.cos(ang) * 26;
+    const ey = TY + Math.sin(ang) * 26;
+    vline(TX, TY, ex, ey, C.blue3, 1.6);
+    /* Foot */
+    vellipse(ex, ey, 3, 3, C.blue3, 1.2);
+  }
+  /* Base ring */
+  vellipse(TX, TY, 14, 14, C.blue3, 1.6);
+  /* Head — small rectangle pointing in sweep direction */
+  ctx.save();
+  ctx.translate(TX, TY);
+  ctx.rotate(deg2rad(sw) + Math.PI / 2);
+  vpoly([[-6, -10], [6, -10], [6, 6], [-6, 6]], C.amber, 1.4, true);
+  /* Barrel */
+  vline(0, -10, 0, -22, C.amber, 1.6);
+  ctx.restore();
+}
+
+/* ── HUD ─────────────────────────────────────────────────────────────────── */
+function drawHud() {
+  const lc = lockedContact();
+  /* Header */
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, 0, VW, 24);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  ctx.strokeRect(0, 0, VW, 24);
+
+  ctx.font         = 'bold 12px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle    = C.blue3;
+  ctx.shadowColor  = C.blue3; ctx.shadowBlur = 3;
+  ctx.fillText('UA-571-C SENTRY // GUN-7', 8, 7);
+
+  ctx.textAlign = 'right';
+  const blinkOn = (N & 1) === 0;
+  if (lc) {
+    ctx.fillStyle = blinkOn ? C.red : C.redD;
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.fillText('⚠ TARGET ' + lc.name, VW - 8, 7);
+  } else {
+    ctx.fillStyle = C.amber;
+    ctx.shadowColor = C.amber;
+    ctx.fillText('SCAN', VW - 8, 7);
+  }
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'left';
+
+  /* Bearing/Range readout — top-right small block */
+  const tx = 8, ty = 36;
+  ctx.fillStyle = 'rgba(8,28,72,0.6)';
+  ctx.fillRect(tx, ty, 90, 50);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1;
+  ctx.strokeRect(tx, ty, 90, 50);
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle = C.blue2; ctx.shadowBlur = 0;
+  ctx.fillText('BEARING', tx + 6, ty + 4);
+  ctx.font = 'bold 14px "Courier New", monospace';
+  ctx.fillStyle = C.bright;
+  ctx.shadowColor = C.bright; ctx.shadowBlur = 3;
+  const sw = sweepAngleDeg();
+  ctx.fillText((sw < 0 ? '-' : '+') + Math.abs(Math.round(sw)).toString().padStart(2, '0') + '°',
+               tx + 6, ty + 18);
+  ctx.shadowBlur = 0;
+  ctx.font = 'bold 8px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('AZIMUTH', tx + 6, ty + 36);
+
+  /* Right block — AMMO + ROUNDS FIRED */
+  const rx = VW - 100, ry = 36;
+  ctx.fillStyle = 'rgba(8,28,72,0.6)';
+  ctx.fillRect(rx, ry, 92, 50);
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(rx, ry, 92, 50);
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('AMMO', rx + 6, ry + 4);
+  ctx.font = 'bold 14px "Courier New", monospace';
+  /* Ammo decreases as contacts get locked — ~500 rounds, -5 per locked frame */
+  const lockedFrames = countLockedFrames(N);
+  const ammoLeft = Math.max(0, 500 - lockedFrames * 12);
+  ctx.fillStyle = ammoLeft < 100 ? C.red : C.bright;
+  ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 3;
+  ctx.fillText(String(ammoLeft).padStart(4, '0'), rx + 6, ry + 18);
+  ctx.shadowBlur = 0;
+  ctx.font = 'bold 8px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('ROUNDS', rx + 6, ry + 36);
+
+  /* Footer */
+  const fy = VH - 18;
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, fy, VW, 18);
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(0, fy, VW, 18);
+  ctx.font = 'bold 10px "Courier New", monospace';
+  ctx.fillStyle = lc ? (blinkOn ? C.red : C.redD) : C.blue2;
+  ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = lc ? 4 : 0;
+  ctx.fillText(lc ? '⚠ FIRING — TARGET ACQUIRED'
+                  : 'AUTO MODE // FRIENDLY-FIRE OFF',
+               8, fy + 4);
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.blue3;
+  ctx.fillText('FR ' + String(N + 1).padStart(2, '0') + '/' + FRAMES, VW - 8, fy + 4);
+  ctx.textAlign = 'left';
+}
+
+/* Deterministic count of frames in [0..n] that locked a contact */
+function countLockedFrames(uptoN) {
+  let count = 0;
+  for (let f = 0; f <= uptoN; f++) {
+    const pos = f <= 7 ? (f / 7) : ((15 - f) / 7);
+    const sw  = -FAN_HALF_DEG + pos * FAN_HALF_DEG * 2;
+    for (const c of CONTACTS) {
+      if (angularDelta(c.degOffset, sw) < 6) { count++; break; }
+    }
+  }
+  return count;
+}
+
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW, VH) * 0.4,
+                                     VW/2, VH/2, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+
+function render() {
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+  drawBackground();
+  drawFan();
+  drawContacts();
+  drawSweep();
+  drawTurret();
+  drawHud();
+  drawScanlines();
+  drawVignette();
+}
+
+render();
+
+if (frameParam === null) {
+  const FPS = 8;
+  let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) {
+      last = ts;
+      N = (N + 1) % FRAMES;
+      T = N / FRAMES;
+      render();
+    }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

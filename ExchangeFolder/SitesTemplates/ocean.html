@@ -1,0 +1,466 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=480">
+<title>OCEAN DEPTH — Miami</title>
+<style>
+  /* ── Reset & base ── */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 480px; height: 320px; overflow: hidden;
+    background: #020d1a;
+    color: #e0f8ff;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 11px;
+    position: relative;
+  }
+
+  /* ── Animated ocean wave at bottom ── */
+  .wave-container {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 55px;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wave {
+    position: absolute;
+    width: 200%;
+    height: 100%;
+    bottom: 0;
+    background: linear-gradient(180deg, transparent 0%, rgba(0,68,170,0.35) 40%, rgba(0,255,204,0.18) 100%);
+    /* Sinusoidal shape via clip-path */
+    clip-path: path('M0,30 C60,10 120,50 180,30 C240,10 300,50 360,30 C420,10 480,50 540,30 C600,10 660,50 720,30 C780,10 840,50 900,30 C960,10 1020,50 1080,30 C1140,10 1200,50 1260,30 C1320,10 1380,50 1440,30 L1440,55 L0,55 Z');
+    animation: wave-anim 5s linear infinite;
+  }
+
+  .wave2 {
+    position: absolute;
+    width: 200%;
+    height: 100%;
+    bottom: 0;
+    background: linear-gradient(180deg, transparent 0%, rgba(0,255,204,0.12) 50%, rgba(0,100,200,0.25) 100%);
+    clip-path: path('M0,40 C80,20 160,55 240,35 C320,15 400,50 480,32 C560,14 640,48 720,30 C800,12 880,46 960,28 C1040,10 1120,44 1200,26 C1280,8 1360,42 1440,24 L1440,55 L0,55 Z');
+    animation: wave-anim2 7s linear infinite;
+    opacity: 0.7;
+  }
+
+  @keyframes wave-anim {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+
+  @keyframes wave-anim2 {
+    0%   { transform: translateX(-20%); }
+    100% { transform: translateX(-70%); }
+  }
+
+  /* ── Rain drops ── */
+  .rain-container {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .drop {
+    position: absolute;
+    width: 1px;
+    height: 8px;
+    background: linear-gradient(180deg, transparent, #00ffcc66);
+    border-radius: 2px;
+    animation: fall linear infinite;
+    opacity: 0;
+  }
+
+  @keyframes fall {
+    0%   { transform: translateY(-20px); opacity: 0.8; }
+    100% { transform: translateY(340px); opacity: 0; }
+  }
+
+  /* ── Main layout ── */
+  #app {
+    position: relative;
+    z-index: 1;
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+  }
+
+  /* ── Header bar ── */
+  #header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 12px 4px;
+    background: linear-gradient(90deg, #020d1a, #041828, #020d1a);
+    border-bottom: 1px solid #0044aa44;
+  }
+
+  #city-name {
+    font-size: 14px; font-weight: 700; letter-spacing: 3px;
+    color: #00ffcc;
+    text-shadow: 0 0 10px #00ffcc;
+  }
+
+  #clock {
+    font-size: 12px; color: #44aaff;
+    text-shadow: 0 0 6px #44aaff;
+    font-family: 'Courier New', monospace;
+  }
+
+  /* ── Main content ── */
+  #content {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    grid-template-rows: 1fr auto;
+    gap: 6px;
+    padding: 8px 10px 4px;
+  }
+
+  /* ── Left: big temperature + gauges ── */
+  #left-col {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+
+  #temp-display {
+    font-size: 72px; font-weight: 100; line-height: 1;
+    color: #00ffcc;
+    text-shadow: 0 0 20px #00ffcc, 0 0 40px #0044aa;
+    letter-spacing: -2px;
+  }
+
+  #emoji-big {
+    font-size: 20px;
+    margin-top: -4px;
+  }
+
+  #condition-text {
+    font-size: 10px; letter-spacing: 2px; color: #44aaff;
+    text-align: center;
+  }
+
+  #feels-like {
+    font-size: 10px; color: #4488aa;
+  }
+
+  /* ── SVG gauges ── */
+  .gauge-row {
+    display: flex; gap: 10px; align-items: center;
+  }
+
+  .gauge-label {
+    font-size: 8px; color: #4488aa; text-align: center; margin-top: 2px;
+  }
+
+  /* ── Right col: stats + beaufort ── */
+  #right-col {
+    display: flex; flex-direction: column; gap: 5px;
+    padding-left: 6px;
+  }
+
+  .stat-item {
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid #0044aa22;
+    padding-bottom: 3px;
+  }
+
+  .stat-key {
+    font-size: 9px; color: #4488aa; letter-spacing: 1px;
+  }
+
+  .stat-val {
+    font-size: 11px; font-weight: 600; color: #00ffcc;
+    text-shadow: 0 0 4px #00ffcc55;
+  }
+
+  #beaufort {
+    font-size: 8px; color: #0044aa; margin-top: 2px;
+    font-style: italic;
+  }
+
+  /* ── Forecast row ── */
+  #forecast-row {
+    grid-column: 1 / -1;
+    display: flex; gap: 4px;
+    padding-bottom: 6px;
+  }
+
+  .fc-card {
+    flex: 1;
+    background: rgba(0,68,170,0.2);
+    border: 1px solid #0044aa44;
+    border-radius: 4px;
+    padding: 3px 2px;
+    text-align: center;
+    backdrop-filter: blur(2px);
+  }
+
+  .fc-time  { font-size: 8px; color: #4488aa; }
+  .fc-emoji { font-size: 10px; }
+  .fc-temp  { font-size: 9px; color: #00ffcc; font-weight: 600; }
+  .fc-prob  { font-size: 8px; color: #44aaff; }
+</style>
+</head>
+<body data-vow-name="Ocean" data-vow-category="ambient" data-vow-description="Ocean wave ambient animation">
+
+<!-- Rain drops (generated by JS) -->
+<div class="rain-container" id="rain"></div>
+
+<!-- Wave -->
+<div class="wave-container">
+  <div class="wave"></div>
+  <div class="wave2"></div>
+</div>
+
+<div id="app">
+  <div id="header">
+    <span id="city-name">MIAMI</span>
+    <span id="clock">00:00:00</span>
+  </div>
+
+  <div id="content">
+    <!-- Left column: big temp + SVG gauges -->
+    <div id="left-col">
+      <div id="temp-display">--°</div>
+      <div id="emoji-big">🌊</div>
+      <div id="condition-text">LOADING...</div>
+      <div id="feels-like">feels like --°</div>
+      <div class="gauge-row">
+        <!-- Humidity ring SVG -->
+        <div>
+          <svg width="52" height="52" viewBox="0 0 52 52">
+            <!-- Background ring -->
+            <circle cx="26" cy="26" r="20" fill="none" stroke="#0044aa33" stroke-width="5"/>
+            <!-- Animated fill ring (stroke-dasharray driven by JS) -->
+            <circle cx="26" cy="26" r="20" fill="none" stroke="#00ffcc" stroke-width="5"
+                    stroke-linecap="round"
+                    stroke-dasharray="0 126"
+                    stroke-dashoffset="31.5"
+                    id="hum-ring"
+                    style="transition: stroke-dasharray 1.5s ease;"/>
+            <text x="26" y="22" text-anchor="middle" fill="#00ffcc" font-size="9" font-weight="600" id="hum-center">--%</text>
+            <text x="26" y="33" text-anchor="middle" fill="#4488aa" font-size="6">HUM</text>
+          </svg>
+        </div>
+        <!-- Pressure arc SVG -->
+        <div>
+          <svg width="52" height="34" viewBox="0 0 52 34">
+            <!-- Semicircle background -->
+            <path d="M4,28 A22,22 0 0,1 48,28" fill="none" stroke="#0044aa33" stroke-width="5"/>
+            <!-- Pressure arc (0→1013 mapped to 0→180°) -->
+            <path d="M4,28 A22,22 0 0,1 48,28" fill="none" stroke="#44aaff" stroke-width="5"
+                  stroke-linecap="round"
+                  stroke-dasharray="0 69"
+                  id="pres-arc"
+                  style="transition: stroke-dasharray 1.5s ease;"/>
+            <text x="26" y="26" text-anchor="middle" fill="#44aaff" font-size="8" id="pres-center">----</text>
+            <text x="26" y="34" text-anchor="middle" fill="#4488aa" font-size="5">hPa</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column: stats -->
+    <div id="right-col">
+      <div class="stat-item">
+        <span class="stat-key">WIND SPEED</span>
+        <span class="stat-val" id="wind-val">-- km/h</span>
+      </div>
+      <div id="beaufort">--</div>
+      <div class="stat-item">
+        <span class="stat-key">PRECIPITATION</span>
+        <span class="stat-val" id="prec-val">-- mm</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-key">UV INDEX</span>
+        <span class="stat-val" id="uv-val">--</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-key">WIND DIR</span>
+        <span class="stat-val" id="wdir-val">--°</span>
+      </div>
+    </div>
+
+    <!-- 6-point forecast row -->
+    <div id="forecast-row" id="fc-row">
+      <div class="fc-card"><div class="fc-time">--:00</div><div class="fc-emoji">🌊</div><div class="fc-temp">--°</div><div class="fc-prob">--%</div></div>
+      <div class="fc-card"><div class="fc-time">--:00</div><div class="fc-emoji">🌊</div><div class="fc-temp">--°</div><div class="fc-prob">--%</div></div>
+      <div class="fc-card"><div class="fc-time">--:00</div><div class="fc-emoji">🌊</div><div class="fc-temp">--°</div><div class="fc-prob">--%</div></div>
+      <div class="fc-card"><div class="fc-time">--:00</div><div class="fc-emoji">🌊</div><div class="fc-temp">--°</div><div class="fc-prob">--%</div></div>
+      <div class="fc-card"><div class="fc-time">--:00</div><div class="fc-emoji">🌊</div><div class="fc-temp">--°</div><div class="fc-prob">--%</div></div>
+      <div class="fc-card"><div class="fc-time">--:00</div><div class="fc-emoji">🌊</div><div class="fc-temp">--°</div><div class="fc-prob">--%</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Weather code → emoji ──────────────────────────────────────────────────
+function wmoEmoji(code) {
+  if (code === 0)               return '☀️';
+  if (code <= 2)                return '⛅';
+  if (code === 3)               return '☁️';
+  if (code >= 45 && code <= 48) return '🌫️';
+  if (code >= 51 && code <= 57) return '🌦️';
+  if (code >= 61 && code <= 67) return '🌧️';
+  if (code >= 71 && code <= 77) return '❄️';
+  if (code >= 80 && code <= 82) return '🌧️';
+  if (code >= 95 && code <= 99) return '⛈️';
+  return '🌊';
+}
+
+// ── Weather code → condition string ──────────────────────────────────────
+function wmoText(code) {
+  if (code === 0)               return 'CLEAR SKY';
+  if (code === 1)               return 'MAINLY CLEAR';
+  if (code === 2)               return 'PARTLY CLOUDY';
+  if (code === 3)               return 'OVERCAST';
+  if (code >= 45 && code <= 48) return 'FOGGY';
+  if (code >= 51 && code <= 55) return 'DRIZZLE';
+  if (code >= 61 && code <= 65) return 'RAIN';
+  if (code >= 71 && code <= 75) return 'SNOWFALL';
+  if (code >= 80 && code <= 82) return 'RAIN SHOWERS';
+  if (code >= 95 && code <= 99) return 'THUNDERSTORM';
+  return 'MIXED';
+}
+
+// ── Beaufort scale description ────────────────────────────────────────────
+function beaufort(kmh) {
+  if (kmh < 2)  return 'Calm';
+  if (kmh < 12) return 'Light breeze';
+  if (kmh < 29) return 'Gentle breeze';
+  if (kmh < 50) return 'Moderate breeze';
+  if (kmh < 62) return 'Fresh breeze';
+  if (kmh < 75) return 'Strong breeze';
+  if (kmh < 89) return 'Near gale';
+  if (kmh < 103)return 'Gale';
+  return 'Storm';
+}
+
+// ── Clock ─────────────────────────────────────────────────────────────────
+function updateClock() {
+  const n = new Date();
+  const p = v => String(v).padStart(2, '0');
+  document.getElementById('clock').textContent = p(n.getHours()) + ':' + p(n.getMinutes()) + ':' + p(n.getSeconds());
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Generate rain drops ───────────────────────────────────────────────────
+function buildRain(intensity) {
+  const container = document.getElementById('rain');
+  container.innerHTML = '';
+  const count = Math.round(intensity * 30); // 0..1 → 0..30 drops
+  for (let i = 0; i < count; i++) {
+    const d = document.createElement('div');
+    d.className = 'drop';
+    d.style.left = Math.random() * 480 + 'px';
+    d.style.animationDuration = (1.0 + Math.random() * 1.5) + 's';
+    d.style.animationDelay = (Math.random() * 3) + 's';
+    container.appendChild(d);
+  }
+}
+
+// ── SVG humidity ring (circumference = 2π×20 ≈ 125.6) ────────────────────
+function setHumidityRing(pct) {
+  const circ = 2 * Math.PI * 20; // ≈ 125.66
+  const filled = (pct / 100) * circ;
+  document.getElementById('hum-ring').setAttribute('stroke-dasharray', filled + ' ' + (circ - filled));
+}
+
+// ── SVG pressure arc (arc length = π×22 ≈ 69.1) ──────────────────────────
+function setPressureArc(hpa) {
+  // Map 960–1040 hPa to 0–100%
+  const pct = Math.max(0, Math.min(100, (hpa - 960) / 80 * 100));
+  const arcLen = Math.PI * 22; // ≈ 69.1
+  const filled = (pct / 100) * arcLen;
+  document.getElementById('pres-arc').setAttribute('stroke-dasharray', filled + ' ' + (arcLen - filled));
+  document.getElementById('pres-center').textContent = Math.round(hpa);
+}
+
+// ── Build forecast cards ──────────────────────────────────────────────────
+function buildForecast(times, temps, probs, wmo) {
+  const row = document.getElementById('forecast-row');
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  // Pick 6 future hourly points
+  const indices = [];
+  for (let i = 0; i < times.length && indices.length < 6; i++) {
+    const h = parseInt(times[i].split('T')[1].split(':')[0]);
+    if (h > currentHour || (i > currentHour + 1)) indices.push(i);
+  }
+  // Fallback: first 6 if not enough future hours
+  while (indices.length < 6) indices.push(indices.length);
+
+  const cards = row.querySelectorAll('.fc-card');
+  indices.forEach((idx, pos) => {
+    if (pos >= cards.length || idx >= times.length) return;
+    const h = times[idx].split('T')[1].substring(0, 5);
+    cards[pos].querySelector('.fc-time').textContent = h;
+    cards[pos].querySelector('.fc-emoji').textContent = wmoEmoji(wmo || 0);
+    cards[pos].querySelector('.fc-temp').textContent = Math.round(temps[idx]) + '°';
+    cards[pos].querySelector('.fc-prob').textContent = (probs[idx] || 0) + '%';
+  });
+}
+
+// ── Fetch Miami data ──────────────────────────────────────────────────────
+async function loadWeather() {
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=25.76&longitude=-80.19' +
+    '&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,' +
+    'weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,uv_index' +
+    '&hourly=temperature_2m,precipitation_probability,weather_code&forecast_days=1&timezone=auto';
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const d = await resp.json();
+    const c = d.current;
+
+    // Big temperature
+    document.getElementById('temp-display').textContent = Math.round(c.temperature_2m) + '°';
+    document.getElementById('emoji-big').textContent = wmoEmoji(c.weather_code);
+    document.getElementById('condition-text').textContent = wmoText(c.weather_code);
+    document.getElementById('feels-like').textContent = 'feels like ' + Math.round(c.apparent_temperature) + '°';
+
+    // Humidity ring
+    setHumidityRing(c.relative_humidity_2m);
+    document.getElementById('hum-center').textContent = c.relative_humidity_2m + '%';
+
+    // Pressure arc
+    setPressureArc(c.surface_pressure);
+
+    // Stats
+    document.getElementById('wind-val').textContent = Math.round(c.wind_speed_10m) + ' km/h';
+    document.getElementById('beaufort').textContent = beaufort(c.wind_speed_10m);
+    document.getElementById('prec-val').textContent = c.precipitation.toFixed(1) + ' mm';
+    document.getElementById('uv-val').textContent = c.uv_index.toFixed(1);
+    document.getElementById('wdir-val').textContent = Math.round(c.wind_direction_10m) + '°';
+
+    // Rain animation intensity
+    buildRain(Math.min(1, c.precipitation / 5));
+
+    // Forecast
+    buildForecast(
+      d.hourly.time,
+      d.hourly.temperature_2m,
+      d.hourly.precipitation_probability,
+      c.weather_code
+    );
+
+  } catch (e) {
+    document.getElementById('temp-display').textContent = 'ERR';
+    console.error('Weather fetch error:', e);
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+buildRain(0.3); // Default light rain for aesthetics
+loadWeather();
+setInterval(loadWeather, 10 * 60 * 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,438 @@
+.editor-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 14, 26, 0.88);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(1px);
+}
+
+.editor-modal {
+  width: 95vw;
+  height: 90vh;
+  display: grid;
+  grid-template-rows: 54px 1fr 54px;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 40px rgba(0, 229, 255, 0.25);
+  background: rgba(0, 28, 58, 0.99);
+  overflow: hidden;
+}
+
+/* Header */
+.editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0, 45, 85, 0.95);
+}
+.editor-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.editor-label {
+  font-family: var(--font);
+  font-size: 0.75rem;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--primary);
+  white-space: nowrap;
+  text-shadow: 0 0 8px var(--glow);
+}
+.editor-name-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--primary);
+  font-family: var(--font);
+  font-size: 0.9rem;
+  font-weight: bold;
+  padding: 2px 4px;
+  outline: none;
+  min-width: 200px;
+  transition: border-color 0.2s;
+}
+.editor-name-input:focus { border-color: var(--primary); }
+.editor-dirty {
+  color: var(--warning);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+.editor-close-btn {
+  background: rgba(180, 20, 20, 0.9);
+  border: 1px solid #ff3333;
+  color: #fff;
+  font-family: var(--font);
+  font-size: 1rem;
+  font-weight: bold;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  box-shadow: 0 0 8px rgba(255, 51, 51, 0.35);
+}
+.editor-close-btn:hover {
+  background: #ff2222;
+  border-color: #ff5555;
+  box-shadow: 0 0 16px rgba(255, 51, 51, 0.65);
+}
+
+/* Body */
+.editor-body {
+  display: grid;
+  grid-template-columns: 1fr 540px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.editor-pane {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.pane-label {
+  font-family: var(--font);
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  color: rgba(0, 229, 255, 0.9);
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0, 35, 65, 0.7);
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+/* CodeMirror container — must have a definite height for height="100%" to work */
+.editor-cm-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* The wrapper div rendered by @uiw/react-codemirror must also fill the container */
+.editor-cm-wrap > div {
+  height: 100%;
+}
+
+/* Force CodeMirror editor to fill the container */
+.editor-cm-wrap .cm-editor {
+  height: 100%;
+  font-family: 'Courier New', Consolas, monospace !important;
+  font-size: 13px !important;
+}
+
+/* Enable scroll inside CodeMirror */
+.editor-cm-wrap .cm-scroller {
+  overflow: auto !important;
+}
+
+/* Visible teal scrollbar inside the CodeMirror editor */
+.editor-cm-wrap .cm-scroller::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+.editor-cm-wrap .cm-scroller::-webkit-scrollbar-track {
+  background: rgba(0, 229, 255, 0.04);
+}
+.editor-cm-wrap .cm-scroller::-webkit-scrollbar-thumb {
+  background: rgba(0, 229, 255, 0.35);
+  border-radius: 2px;
+}
+.editor-cm-wrap .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 229, 255, 0.65);
+}
+
+.preview-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  background: rgba(0, 10, 20, 0.6);
+  padding: 16px;
+  gap: 12px;
+  overflow: hidden;
+}
+.preview-frame-wrap {
+  border: 2px solid var(--primary);
+  box-shadow: 0 0 20px var(--glow);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.preview-iframe {
+  display: block;
+  border: none;
+}
+
+/* Keyboard shortcut hints — bright and clearly readable */
+.preview-shortcuts {
+  display: flex;
+  gap: 20px;
+  font-family: var(--font);
+  font-size: 0.7rem;
+  color: rgba(0, 229, 255, 0.85);
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.3);
+}
+
+/* Footer actions */
+.editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 20px;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 45, 85, 0.95);
+}
+.ed-spacer { flex: 1; }
+
+.ed-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.68rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.ed-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* RUN — inverted cyan, dark text */
+.ed-btn-run {
+  background: rgba(0, 155, 180, 0.82);
+  border-color: var(--secondary);
+  color: #fff;
+  box-shadow: 0 0 5px rgba(0,221,255,0.2);
+}
+.ed-btn-run:hover {
+  background: var(--secondary);
+  box-shadow: 0 0 12px rgba(0,221,255,0.5);
+}
+
+/* SAVE — inverted cyan-blue, dark text */
+.ed-btn-save {
+  background: rgba(0, 140, 175, 0.82);
+  border-color: rgba(64, 196, 255, 0.9);
+  color: #fff;
+  box-shadow: 0 0 5px rgba(64,196,255,0.2);
+}
+.ed-btn-save:hover:not(:disabled) {
+  background: rgba(64, 196, 255, 0.9);
+  box-shadow: 0 0 12px rgba(64,196,255,0.5);
+}
+/* Saved / error feedback states */
+.ed-btn-save.status-ok  { background: rgba(0,190,90,0.82); border-color: var(--primary); color: #fff; }
+.ed-btn-save.status-err { background: rgba(180,20,20,0.85); border-color: var(--danger);  color: #fff; }
+
+/* GRAB — inverted green, dark text */
+.ed-btn-grab {
+  background: rgba(0, 185, 85, 0.8);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 0 5px rgba(0,255,136,0.2);
+}
+.ed-btn-grab:hover {
+  background: var(--primary);
+  box-shadow: 0 0 12px rgba(0,255,136,0.5);
+}
+
+/* RESET — inverted amber, dark text */
+.ed-btn-reset {
+  background: rgba(185, 140, 0, 0.82);
+  border-color: var(--warning);
+  color: #fff;
+}
+.ed-btn-reset:hover {
+  background: var(--warning);
+  box-shadow: 0 0 10px rgba(255,204,0,0.5);
+}
+
+/* CANCEL — inverted red, white text */
+.ed-btn-cancel {
+  background: rgba(180, 20, 20, 0.85);
+  border-color: #ff3333;
+  color: #fff;
+  box-shadow: 0 0 5px rgba(255,51,51,0.2);
+}
+.ed-btn-cancel:hover {
+  background: #ff2222;
+  border-color: #ff5555;
+  box-shadow: 0 0 12px rgba(255,51,51,0.5);
+}
+
+/* Starter templates panel — full width within preview pane */
+.starters-panel {
+  width: 100%;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+}
+.starters-label {
+  font-family: var(--font);
+  font-size: 0.68rem;
+  letter-spacing: 0.15em;
+  color: rgba(0, 229, 255, 0.9);
+  padding: 0 2px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+.starters-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.starters-list::-webkit-scrollbar { width: 4px; }
+.starters-list::-webkit-scrollbar-track { background: transparent; }
+.starters-list::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.3); border-radius: 2px; }
+
+.starter-item {
+  background: transparent;
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  color: rgba(0, 229, 255, 0.9);
+  font-family: var(--font);
+  font-size: 0.65rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.starter-item:hover {
+  background: rgba(0, 229, 255, 0.1);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 6px rgba(0, 229, 255, 0.3);
+}
+
+/* ── Class C pill in editor header ──────────────────────────────────── */
+
+.editor-class-c-pill {
+  font-family: var(--font);
+  font-size: 0.6rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  color: #00e5ff;
+  border: 1px solid rgba(0,229,255,0.5);
+  padding: 2px 8px;
+  border-radius: 2px;
+  background: rgba(0,229,255,0.1);
+  box-shadow: 0 0 8px rgba(0,229,255,0.35);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Frame navigator ─────────────────────────────────────────────────── */
+
+.frame-navigator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0,229,255,0.05);
+  border: 1px solid rgba(0,229,255,0.2);
+  border-radius: 3px;
+  padding: 6px 10px;
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.frame-nav-btn {
+  background: transparent;
+  border: 1px solid rgba(0,229,255,0.3);
+  color: #00e5ff;
+  font-family: var(--font);
+  font-size: 0.75rem;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.frame-nav-btn:hover:not(:disabled) {
+  background: rgba(0,229,255,0.12);
+  box-shadow: 0 0 6px rgba(0,229,255,0.4);
+}
+.frame-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.frame-nav-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.frame-nav-label {
+  font-family: var(--font);
+  font-size: 0.45rem;
+  color: rgba(0,229,255,0.6);
+  letter-spacing: 0.1em;
+}
+.frame-nav-index {
+  font-family: var(--font);
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: #00e5ff;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 8px rgba(0,229,255,0.6);
+}
+.frame-nav-fps {
+  font-family: var(--font);
+  font-size: 0.45rem;
+  color: rgba(0,229,255,0.5);
+  letter-spacing: 0.05em;
+}
+
+.frame-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  align-items: center;
+}
+
+.frame-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(0,229,255,0.15);
+  border: 1px solid rgba(0,229,255,0.3);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s;
+}
+.frame-dot:hover {
+  background: rgba(0,229,255,0.35);
+  border-color: #00e5ff;
+}
+.frame-dot.active {
+  background: #00e5ff;
+  border-color: #00e5ff;
+  box-shadow: 0 0 6px rgba(0,229,255,0.8);
+}

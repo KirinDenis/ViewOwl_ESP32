@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="Airlock A-7 Cycle"
+  data-vow-description="Animated hermetic airlock — Aliens-style blue CRT, door slides apart, pressure drops, status colour-codes per phase"
+  data-vow-category="scifi"
+  data-vow-tags="airlock,door,scifi,aliens,nostromo,crt"
+  data-vow-frames="16"
+  data-vow-fps="8"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+/* ── Canvas: fills viewport, drawing in logical 480×320 ─────────────────── */
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+
+const canvas = document.getElementById('c');
+canvas.width  = W;
+canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+/* ── Frame index from URL — Class C contract ────────────────────────────── */
+const FRAMES = 16;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+const initialFrame = parseInt(frameParam ?? '0', 10);
+let N = ((initialFrame % FRAMES) + FRAMES) % FRAMES;
+let T = N / FRAMES;
+
+/* ── Palette — 10 flat BGR565-safe shades, Aliens blue CRT + warning ─── */
+const C = {
+  bgDeep:  '#020618',
+  bgGlow:  '#0A1838',
+  grid:    '#0E2A55',
+  blue1:   '#1F70C8',
+  blue2:   '#3FA8FF',
+  phos:    '#E8F4FF',
+  amber:   '#FFB000',
+  red:     '#FF3030',
+  steel1:  '#2A3038',         /* dark frame                                  */
+  steel2:  '#5A6068',         /* door panel                                  */
+  yellow:  '#FFD000',         /* caution stripe                              */
+  black:   '#000000',
+};
+
+/* ── Helpers ────────────────────────────────────────────────────────────── */
+function fillRect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+function strokeRect(x, y, w, h, c, lw) {
+  ctx.strokeStyle = c; ctx.lineWidth = lw ?? 1;
+  ctx.strokeRect(x, y, w, h);
+}
+function txt(s, x, y, c, size, bold, align) {
+  ctx.fillStyle    = c;
+  ctx.font         = `${bold ? 'bold ' : ''}${size}px "Courier New", monospace`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign    = align ?? 'left';
+  ctx.fillText(s, x, y);
+}
+
+/* ── Door cycle math ─────────────────────────────────────────────────────── *
+ *  Open progress: 0 (closed) → 1 (full open) → 0 (closed) over 16 frames.
+ *  Smooth via raised cosine — natural mechanical feel without easing libs.   */
+function openProgress(t) {
+  return (1 - Math.cos(2 * Math.PI * t)) / 2;
+}
+
+/* Pressure: 100% when sealed, 0% when open */
+function pressurePct(t) { return Math.round((1 - openProgress(t)) * 100); }
+
+/* Phase status — colour-coded per frame range */
+function phaseAt(n) {
+  if (n === 0)              return { label: 'SEALED',     col: C.blue2,  blink: false };
+  if (n >= 1  && n <= 2)    return { label: 'CYCLE INIT', col: C.amber,  blink: true  };
+  if (n >= 3  && n <= 6)    return { label: 'DECOMPRESS', col: C.red,    blink: true  };
+  if (n >= 7  && n <= 9)    return { label: 'OPEN',       col: C.phos,   blink: false };
+  if (n >= 10 && n <= 13)   return { label: 'PRESSURIZE', col: C.amber,  blink: true  };
+  return                          { label: 'SEAL',        col: C.blue2,  blink: false };
+}
+
+/* ── Background — deep blue with central glow + faint grid ──────────────── */
+function drawBackground() {
+  fillRect(0, 0, VW, VH, C.bgDeep);
+  const g = ctx.createRadialGradient(VW/2, VH/2, 20, VW/2, VH/2, 240);
+  g.addColorStop(0, 'rgba(20,60,140,0.40)');
+  g.addColorStop(1, 'rgba(2,6,24,0.00)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+
+  ctx.strokeStyle = C.grid;
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= VW; x += 24) { ctx.beginPath(); ctx.moveTo(x, 28); ctx.lineTo(x, VH - 24); ctx.stroke(); }
+  for (let y = 30; y <= VH - 24; y += 24) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VW, y); ctx.stroke(); }
+}
+
+/* ── Door visualisation ──────────────────────────────────────────────────── */
+function drawDoor() {
+  const cx = VW / 2;
+  const cy = VH / 2 + 6;
+  const doorW = 200, doorH = 132;
+  const halfW = doorW / 2;
+  const maxOpen = halfW - 6;
+  const offset  = openProgress(T) * maxOpen;
+
+  /* Outer steel frame */
+  fillRect(cx - halfW - 8, cy - doorH/2 - 8, doorW + 16, doorH + 16, C.steel1);
+
+  /* Inner cavity — pure black so the open gap reads as void */
+  fillRect(cx - halfW, cy - doorH/2, doorW, doorH, C.black);
+
+  /* Two door halves — each slides outward */
+  const leftR  = cx - offset;
+  const rightL = cx + offset;
+  const leftW  = leftR - (cx - halfW);
+  const rightW = (cx + halfW) - rightL;
+
+  if (leftW > 0)  fillRect(cx - halfW, cy - doorH/2, leftW,  doorH, C.steel2);
+  if (rightW > 0) fillRect(rightL,     cy - doorH/2, rightW, doorH, C.steel2);
+
+  /* Caution stripes — flat yellow chevrons on each visible door panel */
+  if (leftW > 8)  drawStripes(cx - halfW + 4, cy - doorH/2 + 8, leftW  - 8, doorH - 16, true);
+  if (rightW > 8) drawStripes(rightL + 4,     cy - doorH/2 + 8, rightW - 8, doorH - 16, false);
+
+  /* Door inner edge highlight */
+  if (leftW > 0)  fillRect(leftR  - 2, cy - doorH/2, 2, doorH, C.amber);
+  if (rightW > 0) fillRect(rightL,     cy - doorH/2, 2, doorH, C.amber);
+
+  /* Hydraulic pistons — top + bottom rails extending as door opens */
+  drawPistons(cx, cy, halfW, doorH, offset);
+
+  /* Corner LEDs — colour by current phase, blink on alert frames */
+  const phase = phaseAt(N);
+  const ledOn = !phase.blink || (N & 1) === 0;
+  const led   = ledOn ? phase.col : C.steel1;
+  for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const lx = cx + dx * (halfW + 5) - 3;
+    const ly = cy + dy * (doorH/2 + 5) - 3;
+    fillRect(lx, ly, 6, 6, led);
+  }
+}
+
+function drawStripes(x, y, w, h, leftLean) {
+  const stripeW = 14, gap = 12, slope = 0.6;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  for (let i = -h; i < w + h; i += stripeW + gap) {
+    ctx.beginPath();
+    if (leftLean) {
+      ctx.moveTo(x + i,             y);
+      ctx.lineTo(x + i + stripeW,   y);
+      ctx.lineTo(x + i + stripeW + h * slope, y + h);
+      ctx.lineTo(x + i + h * slope, y + h);
+    } else {
+      ctx.moveTo(x + i,             y);
+      ctx.lineTo(x + i + stripeW,   y);
+      ctx.lineTo(x + i + stripeW - h * slope, y + h);
+      ctx.lineTo(x + i - h * slope, y + h);
+    }
+    ctx.closePath();
+    ctx.fillStyle = C.yellow;
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawPistons(cx, cy, halfW, doorH, offset) {
+  /* Two pistons per side (top+bottom) — bright cyan rod whose length grows
+     as the door opens. Anchored to outer frame, pushing inward. */
+  const rodLen = 10 + offset * 0.7;
+  const rodTh  = 4;
+  const yT = cy - doorH/2 - 8;
+  const yB = cy + doorH/2 + 4;
+  /* Left side */
+  fillRect(cx - halfW - 8, yT - 6, rodLen, rodTh, C.blue1);
+  fillRect(cx - halfW - 8, yB + 2, rodLen, rodTh, C.blue1);
+  /* Right side */
+  fillRect(cx + halfW + 8 - rodLen, yT - 6, rodLen, rodTh, C.blue1);
+  fillRect(cx + halfW + 8 - rodLen, yB + 2, rodLen, rodTh, C.blue1);
+}
+
+/* ── Side stats — pressure bar + status text ─────────────────────────────── */
+function drawStats() {
+  const phase = phaseAt(N);
+  const press = pressurePct(T);
+
+  /* Pressure bar — vertical, on the right edge */
+  const bx = VW - 50;
+  const by = 56;
+  const bw = 16;
+  const bh = 180;
+  fillRect(bx - 2, by - 2, bw + 4, bh + 4, C.steel1);
+  fillRect(bx,     by,     bw,     bh,     C.bgGlow);
+  const fillH = Math.round(bh * (press / 100));
+  const barColor = press > 60 ? C.blue2 : (press > 20 ? C.amber : C.red);
+  fillRect(bx, by + bh - fillH, bw, fillH, barColor);
+  /* Tick marks */
+  for (let i = 0; i <= 4; i++) {
+    const ty = by + (bh * i) / 4;
+    fillRect(bx + bw + 2, ty, 4, 1, C.blue1);
+  }
+  txt('PRESS',  bx - 2,  by - 14, C.blue2, 9, true);
+  txt(press + '%', bx - 2, by + bh + 4, barColor, 11, true);
+
+  /* Status block — left side of door */
+  const sx = 18;
+  txt('PHASE', sx, 56, C.blue2, 9, true);
+  const blinkOn = !phase.blink || (N & 1) === 0;
+  txt(phase.label, sx, 70, blinkOn ? phase.col : C.steel1, 14, true);
+
+  txt('CYCLE', sx, 110, C.blue2, 9, true);
+  txt(String(N + 1).padStart(2, '0') + '/' + FRAMES, sx, 124, C.phos, 14, true);
+
+  txt('LOCK', sx, 164, C.blue2, 9, true);
+  const locked = (N === 0 || N === 15);
+  txt(locked ? 'ENGAGED' : 'RELEASED',
+      sx, 178, locked ? C.blue2 : C.amber, 12, true);
+
+  txt('ATM', sx, 218, C.blue2, 9, true);
+  const atm = (press / 100).toFixed(2);
+  txt(atm, sx, 232, C.phos, 14, true);
+}
+
+/* ── HUD chrome ──────────────────────────────────────────────────────────── */
+function drawHud() {
+  const phase = phaseAt(N);
+
+  /* Header band */
+  fillRect(0, 0, VW, 24, 'rgba(8,28,72,0.7)');
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.strokeRect(0, 0, VW, 24);
+  txt('AIRLOCK A-7 // WEYLAND-YUTANI', 8, 7, C.blue2, 12, true);
+  ctx.textAlign = 'right';
+  txt('FR ' + String(N + 1).padStart(2, '0') + '/' + FRAMES, VW - 8, 7, C.amber, 11, true);
+  ctx.textAlign = 'left';
+
+  /* Footer band — phase summary + warnings */
+  const fy = VH - 22;
+  fillRect(0, fy, VW, 22, 'rgba(8,28,72,0.7)');
+  ctx.strokeRect(0, fy, VW, 22);
+  const danger = (phase.col === C.red);
+  const warn   = (phase.col === C.amber);
+  const hudCol = danger ? C.red : (warn ? C.amber : C.blue2);
+  txt(danger ? '⚠ HAZARD — DECOMPRESSION IN PROGRESS'
+              : (warn ? '⚠ ATMOSPHERE NOT EQUALISED'
+                       : 'NOMINAL — CYCLE STABLE'),
+      8, fy + 6, hudCol, 11, true);
+  ctx.textAlign = 'right';
+  txt('CH 07', VW - 8, fy + 6, C.blue1, 11, true);
+  ctx.textAlign = 'left';
+}
+
+/* ── 80s CRT effects ─────────────────────────────────────────────────────── */
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW, VH) * 0.35,
+                                     VW/2, VH/2, Math.max(VW, VH) * 0.65);
+  g.addColorStop(0, 'rgba(0,0,0,0.00)');
+  g.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+
+/* ── Compose ────────────────────────────────────────────────────────────── */
+function render() {
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+  drawBackground();
+  drawDoor();
+  drawStats();
+  drawHud();
+  drawScanlines();
+  drawVignette();
+}
+
+render();
+
+/* ── Dev preview — browser only, activated when no vow_frame param ──────── *
+ * Server grab always passes ?vow_frame=N, so this loop never runs during
+ * capture. Cycles all 16 frames at fps so the full animation can be checked
+ * in the admin preview / dev browser without a device. */
+if (frameParam === null) {
+  const FPS = 8;
+  let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) {
+      last = ts;
+      N = (N + 1) % FRAMES;
+      T = N / FRAMES;
+      render();
+    }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

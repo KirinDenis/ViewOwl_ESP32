@@ -1,0 +1,31 @@
+.sidebar-right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+}
+.inspector-section {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0,255,136,0.08);
+  margin-bottom: 4px;
+}
+.sidebar-empty {
+  font-family: var(--font);
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 20px 0;
+  letter-spacing: 0.1em;
+  line-height: 2;
+}
+
+.sidebar-collapse-btn-right { align-self: flex-start; margin-bottom: 2px; }
+
+/* When the right sidebar is collapsed — just the toggle strip */
+.sidebar-right.sidebar-collapsed {
+  padding: 8px 4px;
+  align-items: center;
+  overflow: hidden;
+}

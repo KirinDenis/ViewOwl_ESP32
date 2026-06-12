@@ -1,0 +1,238 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Markets</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; width: 480px; height: 320px; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="Finance" data-vow-category="rates" data-vow-description="Financial market rates display">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+function quantChannel(v, bits) {
+    const shift = 8 - bits;
+    const q = Math.min((1 << bits) - 1, v >> shift);
+    return (q << shift) | (q >> (bits - shift));
+}
+function snap565(r, g, b) {
+    return { r: quantChannel(r,5), g: quantChannel(g,6), b: quantChannel(b,5) };
+}
+function css(r, g, b) {
+    const q = snap565(r, g, b);
+    return `rgb(${q.r},${q.g},${q.b})`;
+}
+
+function dither() {
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const oR = d[i], oG = d[i+1], oB = d[i+2];
+            const q = snap565(oR, oG, oB);
+            d[i] = q.r; d[i+1] = q.g; d[i+2] = q.b;
+            const eR = oR-q.r, eG = oG-q.g, eB = oB-q.b;
+            if (x+1<W){const j=i+4;d[j]=clamp(d[j]+((eR*7)>>4));d[j+1]=clamp(d[j+1]+((eG*7)>>4));d[j+2]=clamp(d[j+2]+((eB*7)>>4));}
+            if (y+1<H){
+                if (x>0){const j=((y+1)*W+(x-1))*4;d[j]=clamp(d[j]+((eR*3)>>4));d[j+1]=clamp(d[j+1]+((eG*3)>>4));d[j+2]=clamp(d[j+2]+((eB*3)>>4));}
+                {const j=((y+1)*W+x)*4;d[j]=clamp(d[j]+((eR*5)>>4));d[j+1]=clamp(d[j+1]+((eG*5)>>4));d[j+2]=clamp(d[j+2]+((eB*5)>>4));}
+                if (x+1<W){const j=((y+1)*W+(x+1))*4;d[j]=clamp(d[j]+(eR>>4));d[j+1]=clamp(d[j+1]+(eG>>4));d[j+2]=clamp(d[j+2]+(eB>>4));}
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
+const HEADER_H = 36, FOOTER_H = 24;
+const CONTENT_Y = HEADER_H, CONTENT_H = H - HEADER_H - FOOTER_H;
+const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pad(n) { return String(n).padStart(2,'0'); }
+let clockStr = '00:00:00', dateStr = 'Mon 01 Jan';
+function tickClock() {
+    const now = new Date();
+    clockStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    dateStr = `${DAY[now.getDay()]} ${pad(now.getDate())} ${MON[now.getMonth()]}`;
+}
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
+function line(x1,y1,x2,y2,c,t){
+    ctx.strokeStyle=c;ctx.lineWidth=t||1;
+    const ox=(y1===y2)?0:0.5,oy=(x1===x2)?0:0.5;
+    ctx.beginPath();ctx.moveTo(x1+ox,y1+oy);ctx.lineTo(x2+ox,y2+oy);ctx.stroke();
+}
+function drawText(s,x,y,sz,c,align,bold){
+    ctx.fillStyle=c;
+    ctx.font=`${bold===false?'':'bold '}${sz}px Arial,Helvetica,sans-serif`;
+    ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';
+    ctx.fillText(String(s),x,y);
+}
+
+function redraw() {
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.lineWidth=1;ctx.lineCap='butt';
+    render();
+    dither();
+}
+function tick() { tickClock(); redraw(); }
+
+// --- Asset definitions ---
+// Each asset holds a base price, scale (volatility per step), and a history ring buffer.
+const ASSETS = [
+    { name: 'EUR/USD', base: 1.0850,  scale: 0.00012, history: [], price: 0, change: 0 },
+    { name: 'GBP/USD', base: 1.2650,  scale: 0.00015, history: [], price: 0, change: 0 },
+    { name: 'JPY/USD', base: 0.00667, scale: 0.000001,history: [], price: 0, change: 0 },
+    { name: 'S&P 500', base: 5120.0,  scale: 0.6,     history: [], price: 0, change: 0 },
+    { name: 'NASDAQ',  base: 18250.0, scale: 1.2,     history: [], price: 0, change: 0 },
+    { name: 'DAX',     base: 17850.0, scale: 1.0,     history: [], price: 0, change: 0 },
+];
+const HIST_LEN = 20;
+
+// Lightweight seeded LCG random number generator
+function seededRand(seed) {
+    let s = (seed >>> 0) || 1;
+    return function() {
+        s = Math.imul(s, 1664525) + 1013904223 >>> 0;
+        return s / 0x100000000;
+    };
+}
+
+function buildHistory(assetIdx, stepSeed) {
+    const a = ASSETS[assetIdx];
+    const rng = seededRand(assetIdx * 31337 + stepSeed);
+    // Walk forward from base price using consistent seed so history is stable
+    let p = a.base;
+    for (let i = 0; i < HIST_LEN; i++) {
+        p += (rng() - 0.5) * 2 * a.scale;
+        a.history[i] = p;
+    }
+    a.price = p;
+    a.change = ((p - a.history[0]) / a.history[0]) * 100;
+}
+
+function initAssets() {
+    // Use a time-bucketed seed so history is stable within a 2-second window
+    const timeSeed = Math.floor(Date.now() / 2000);
+    ASSETS.forEach((_, idx) => buildHistory(idx, timeSeed));
+}
+
+function updateAssets() {
+    // On each 2-second tick, advance one step forward
+    const timeSeed = Math.floor(Date.now() / 2000);
+    ASSETS.forEach((a, idx) => {
+        const rng = seededRand(idx * 7919 + timeSeed * 997);
+        const newPrice = a.history[a.history.length - 1] + (rng() - 0.5) * 2 * a.scale;
+        a.history.shift();
+        a.history.push(newPrice);
+        a.price = newPrice;
+        a.change = ((a.price - a.history[0]) / a.history[0]) * 100;
+    });
+}
+
+// Draw a mini 20-point sparkline chart
+function drawMiniChart(asset, x, y, w, h) {
+    const hist = asset.history;
+    if (hist.length < 2) return;
+    let mn = hist[0], mx = hist[0];
+    for (let i = 1; i < hist.length; i++) {
+        if (hist[i] < mn) mn = hist[i];
+        if (hist[i] > mx) mx = hist[i];
+    }
+    const range = mx - mn || 0.0001;
+    fillRect(x, y, w, h, css(10, 14, 18));
+    // Mid reference line
+    line(x, y + Math.round(h / 2), x + w, y + Math.round(h / 2), css(28, 32, 40));
+    // Price line
+    ctx.strokeStyle = css(0, 220, 248);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < hist.length; i++) {
+        const px = x + Math.round((i / (hist.length - 1)) * (w - 1));
+        const py = y + h - 1 - Math.round(((hist[i] - mn) / range) * (h - 3)) - 1;
+        if (i === 0) ctx.moveTo(px + 0.5, py + 0.5);
+        else ctx.lineTo(px + 0.5, py + 0.5);
+    }
+    ctx.stroke();
+}
+
+function fmtPrice(asset) {
+    if (asset.base < 0.01) return asset.price.toFixed(5);
+    if (asset.base < 10)   return asset.price.toFixed(4);
+    return asset.price.toFixed(2);
+}
+
+// Layout constants
+const ROW_H = 38;
+const COL_NAME   = 6;
+const COL_PRICE  = 100;
+const COL_CHANGE = 248;
+const COL_CHART  = 392;
+const CHART_W    = 80;
+const CHART_H    = 28;
+
+function drawRow(asset, rowY, shade) {
+    fillRect(0, rowY, W, ROW_H, shade ? css(10, 12, 20) : css(14, 18, 26));
+    // Name
+    drawText(asset.name, COL_NAME, rowY + 24, 13, css(0, 220, 248), 'left', true);
+    // Price
+    drawText(fmtPrice(asset), COL_PRICE, rowY + 24, 15, css(248, 248, 248), 'left', true);
+    // Change
+    const chg = asset.change;
+    const chgStr = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
+    drawText(chgStr, COL_CHANGE, rowY + 24, 13, chg >= 0 ? css(0, 220, 0) : css(220, 0, 0), 'left', true);
+    // Mini chart
+    drawMiniChart(asset, COL_CHART, rowY + 5, CHART_W, CHART_H);
+}
+
+function render() {
+    fillRect(0, 0, W, H, css(8, 8, 12));
+
+    // Header
+    fillRect(0, 0, W, HEADER_H, css(0, 24, 48));
+    line(0, HEADER_H - 1, W, HEADER_H - 1, css(0, 80, 160));
+    drawText('MARKETS', 8, 25, 16, css(0, 220, 248), 'left', true);
+    drawText(clockStr, W - 8, 25, 14, css(248, 248, 248), 'right', false);
+    drawText(dateStr,  W - 8, 14, 10, css(128, 160, 192), 'right', false);
+
+    // Forex section label
+    const fxLabelY = CONTENT_Y + 2;
+    drawText('FOREX', 6, fxLabelY + 11, 10, css(80, 120, 180), 'left', false);
+    line(38, fxLabelY + 5, W - 6, fxLabelY + 5, css(20, 32, 52));
+
+    const row0 = CONTENT_Y + 14;
+    for (let i = 0; i < 3; i++) drawRow(ASSETS[i], row0 + i * ROW_H, i % 2 === 0);
+
+    // Separator + Indices label
+    const sepY = row0 + 3 * ROW_H + 1;
+    line(0, sepY, W, sepY, css(0, 60, 100));
+    drawText('INDICES', 6, sepY + 11, 10, css(80, 120, 180), 'left', false);
+    line(52, sepY + 5, W - 6, sepY + 5, css(20, 32, 52));
+
+    const row3 = sepY + 13;
+    for (let i = 0; i < 3; i++) drawRow(ASSETS[3 + i], row3 + i * ROW_H, i % 2 === 0);
+
+    // Footer
+    const footY = H - FOOTER_H;
+    fillRect(0, footY, W, FOOTER_H, css(0, 16, 32));
+    line(0, footY, W, footY, css(0, 64, 128));
+    drawText('SIMULATED DATA', 8, footY + 16, 11, css(80, 100, 120), 'left', false);
+    drawText(dateStr + '  ' + clockStr, W - 8, footY + 16, 11, css(80, 100, 120), 'right', false);
+}
+
+initAssets();
+tickClock();
+redraw();
+setInterval(tick, 1000);
+setInterval(updateAssets, 2000);
+</script>
+</body>
+</html>

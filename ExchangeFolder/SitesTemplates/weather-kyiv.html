@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=480, height=320, initial-scale=1.0, user-scalable=no">
+    <title>Weather — Kyiv, UA</title>
+    <style>
+        /*
+         * Canvas-based weather display for Kyiv, UA.
+         * Based on template-canvas.html — see that file for full documentation.
+         *
+         * Layout (480 × 320):
+         *   HEADER  y=0,   h=36   city + clock
+         *   LEFT    x=0,   w=180  big temperature + icon + condition
+         *   RIGHT   x=180, w=300  wind / humidity / pressure / feels-like
+         *   STRIP   y=224, h=72   6-day forecast
+         *   FOOTER  y=296, h=24   API source + last update
+         *
+         * API: open-meteo.com (free, no key required).
+         */
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #screen {
+            display: block;
+            width: 480px;
+            height: 320px;
+            flex-shrink: 0;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+
+<!--
+    REQUIRED: id="body" — ViewOwl template identifier. Do not rename.
+-->
+<body id="body">
+
+    <canvas id="screen" width="480" height="320"></canvas>
+
+    <script>
+        'use strict';
+
+        /* ── Canvas setup ───────────────────────────────────────── */
+        const W      = 480;
+        const H      = 320;
+        const canvas = document.getElementById('screen');
+        const ctx    = canvas.getContext('2d', { alpha: false });
+        ctx.imageSmoothingEnabled = false;
+
+        /* ── BGR565 quantisation (mirrors Chrome.cs TakeScreenshotAsync) ── */
+
+        function quantChannel(v, bits) {
+            const shift = 8 - bits;
+            const q     = Math.min((1 << bits) - 1, v >> shift);
+            return (q << shift) | (q >> (bits - shift));
+        }
+
+        function snap565(r, g, b) {
+            return {
+                r: quantChannel(r, 5),
+                g: quantChannel(g, 6),
+                b: quantChannel(b, 5)
+            };
+        }
+
+        function css(r, g, b) {
+            const q = snap565(r, g, b);
+            return `rgb(${q.r},${q.g},${q.b})`;
+        }
+
+        /* ── Palette ────────────────────────────────────────────── */
+
+        const C = {
+            black:   css(  0,   0,   0),
+            white:   css(255, 255, 255),
+            dkBlue:  css(  0,   0, 128),
+            yellow:  css(248, 252,   0),
+            gray:    css(128, 128, 128),
+            ltGray:  css(192, 192, 192),
+            dkGray:  css( 64,  64,  64),
+            xltGray: css(224, 224, 224),
+        };
+
+        /* ── Drawing primitives ─────────────────────────────────── */
+
+        function fillRect(x, y, w, h, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, w, h);
+        }
+
+        function line(x1, y1, x2, y2, color, thickness) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth   = thickness || 1;
+            const ox = (y1 === y2) ? 0 : 0.5;
+            const oy = (x1 === x2) ? 0 : 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x1 + ox, y1 + oy);
+            ctx.lineTo(x2 + ox, y2 + oy);
+            ctx.stroke();
+        }
+
+        function drawText(str, x, y, size, color, align, bold) {
+            ctx.fillStyle    = color;
+            ctx.font         = `${bold === false ? '' : 'bold '}${size}px Arial,Helvetica,sans-serif`;
+            ctx.textAlign    = align || 'left';
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText(String(str), x, y);
+        }
+
+        /* ── Floyd-Steinberg dithering ──────────────────────────── */
+
+        function dither() {
+            const img = ctx.getImageData(0, 0, W, H);
+            const d   = img.data;
+            function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < W; x++) {
+                    const i  = (y * W + x) * 4;
+                    const oR = d[i], oG = d[i + 1], oB = d[i + 2];
+                    const q  = snap565(oR, oG, oB);
+                    d[i] = q.r; d[i + 1] = q.g; d[i + 2] = q.b;
+                    const eR = oR - q.r, eG = oG - q.g, eB = oB - q.b;
+
+                    if (x + 1 < W) {
+                        const j = i + 4;
+                        d[j]     = clamp(d[j]     + ((eR * 7) >> 4));
+                        d[j + 1] = clamp(d[j + 1] + ((eG * 7) >> 4));
+                        d[j + 2] = clamp(d[j + 2] + ((eB * 7) >> 4));
+                    }
+                    if (y + 1 < H) {
+                        if (x > 0) {
+                            const j = ((y + 1) * W + (x - 1)) * 4;
+                            d[j]     = clamp(d[j]     + ((eR * 3) >> 4));
+                            d[j + 1] = clamp(d[j + 1] + ((eG * 3) >> 4));
+                            d[j + 2] = clamp(d[j + 2] + ((eB * 3) >> 4));
+                        }
+                        {
+                            const j = ((y + 1) * W + x) * 4;
+                            d[j]     = clamp(d[j]     + ((eR * 5) >> 4));
+                            d[j + 1] = clamp(d[j + 1] + ((eG * 5) >> 4));
+                            d[j + 2] = clamp(d[j + 2] + ((eB * 5) >> 4));
+                        }
+                        if (x + 1 < W) {
+                            const j = ((y + 1) * W + (x + 1)) * 4;
+                            d[j]     = clamp(d[j]     + (eR >> 4));
+                            d[j + 1] = clamp(d[j + 1] + (eG >> 4));
+                            d[j + 2] = clamp(d[j + 2] + (eB >> 4));
+                        }
+                    }
+                }
+            }
+            ctx.putImageData(img, 0, 0);
+        }
+
+        /* ── Layout constants ───────────────────────────────────── */
+
+        const HEADER_H   = 36;
+        const FOOTER_H   = 24;
+        const MAIN_H     = 188;    /* 36 + 188 + 72 + 24 = 320 */
+        const STRIP_H    = 72;
+        const DIVIDER_X  = 180;    /* left panel width */
+        const MAIN_Y     = HEADER_H;
+        const STRIP_Y    = MAIN_Y + MAIN_H;
+        const FOOTER_Y   = STRIP_Y + STRIP_H;
+        const CELL_W     = 80;     /* forecast cell width (6 × 80 = 480) */
+
+        /* ── Clock & date ───────────────────────────────────────── */
+
+        const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const MON_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        function pad(n) { return String(n).padStart(2, '0'); }
+
+        let clockStr = '00:00:00';
+        let dateStr  = '';
+
+        function tickClock() {
+            const now = new Date();
+            clockStr  = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            dateStr   = `${DAY_NAMES[now.getDay()]} ${pad(now.getDate())} ${MON_NAMES[now.getMonth()]}`;
+        }
+
+        /* ── WMO weather code helpers ────────────────────────────── */
+
+        /**
+         * Maps a WMO weather interpretation code to a single emoji character.
+         * @param {number} code
+         * @returns {string}
+         */
+        function weatherIcon(code) {
+            if (code === 0)  return '\u2600';       /* ☀ clear */
+            if (code <= 2)   return '\u26C5';       /* ⛅ partly cloudy */
+            if (code <= 3)   return '\u2601';       /* ☁ overcast */
+            if (code <= 48)  return '\uD83C\uDF2B'; /* 🌫 fog */
+            if (code <= 55)  return '\uD83C\uDF26'; /* 🌦 drizzle */
+            if (code <= 65)  return '\uD83C\uDF27'; /* 🌧 rain */
+            if (code <= 77)  return '\u2744';       /* ❄ snow */
+            if (code <= 82)  return '\uD83C\uDF27'; /* 🌧 showers */
+            if (code <= 86)  return '\u2744';       /* ❄ heavy snow */
+            return '\u26C8';                        /* ⛈ thunderstorm */
+        }
+
+        /**
+         * Maps a WMO weather interpretation code to a short English string.
+         * @param {number} code
+         * @returns {string}
+         */
+        function weatherText(code) {
+            if (code === 0)  return 'Clear';
+            if (code <= 2)   return 'Partly Cloudy';
+            if (code <= 3)   return 'Cloudy';
+            if (code <= 48)  return 'Fog';
+            if (code <= 55)  return 'Drizzle';
+            if (code <= 65)  return 'Rain';
+            if (code <= 77)  return 'Snow';
+            if (code <= 82)  return 'Showers';
+            if (code <= 86)  return 'Snow Showers';
+            return 'Thunderstorm';
+        }
+
+        /**
+         * Converts wind direction in degrees to an 8-point cardinal string.
+         * @param {number} deg
+         * @returns {string}
+         */
+        function cardinal(deg) {
+            return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(deg / 45) % 8];
+        }
+
+        /**
+         * Formats a temperature with a leading + for positive values.
+         * @param {number} t - Already-rounded integer.
+         * @returns {string}
+         */
+        function fmtT(t) { return (t > 0 ? '+' : '') + t; }
+
+        /* ── Weather state ──────────────────────────────────────── */
+
+        let wx = {
+            temp:      null,
+            feels:     null,
+            icon:      '\u2601',       /* default: ☁ */
+            condition: 'Loading\u2026',
+            wind:      '--',
+            humidity:  '--',
+            pressure:  '--',
+            updated:   '--:--',
+            forecast:  []              /* array of {day, icon, hi, lo} */
+        };
+
+        /* ── Render ─────────────────────────────────────────────── */
+
+        function render() {
+
+            /* ── Header ─────────────────────────────────────────── */
+            fillRect(0, 0, W, HEADER_H, C.dkBlue);
+            drawText('\uD83C\uDF0D KYIV, UA', 10, 26, 16, C.white);
+            drawText(clockStr, W - 10, 26, 15, C.white, 'right');
+            line(0, HEADER_H, W, HEADER_H, C.yellow, 2);
+
+            /* ── Main area background ───────────────────────────── */
+            fillRect(0, MAIN_Y, W, MAIN_H, C.white);
+
+            /* Left panel: icon + temperature + condition */
+            const tempStr = wx.temp !== null
+                ? fmtT(Math.round(wx.temp)) + '\u00B0'
+                : '--\u00B0';
+
+            drawText(wx.icon,      DIVIDER_X / 2, MAIN_Y + 62,  38, C.black, 'center');
+            drawText(tempStr,      DIVIDER_X / 2, MAIN_Y + 148, 72, C.black, 'center');
+            drawText(wx.condition, DIVIDER_X / 2, MAIN_Y + 175, 13, C.gray,  'center', false);
+
+            /* Vertical divider between left and right panels */
+            line(DIVIDER_X, MAIN_Y, DIVIDER_X, MAIN_Y + MAIN_H, C.ltGray);
+
+            /* Right panel: 4 detail rows */
+            const details = [
+                ['\uD83D\uDCA8', 'Wind',       wx.wind],     /* 💨 */
+                ['\uD83D\uDCA7', 'Humidity',   wx.humidity], /* 💧 */
+                ['\uD83C\uDF21', 'Pressure',   wx.pressure], /* 🌡 */
+                ['\uD83C\uDF21', 'Feels like', wx.feels],
+            ];
+
+            const RX    = DIVIDER_X + 8;
+            const ROW_H = MAIN_H / 4;     /* 47 px per row */
+
+            details.forEach(([icon, label, value], i) => {
+                const baseY = MAIN_Y + i * ROW_H + ROW_H * 0.65;
+                drawText(icon,  RX,       baseY, 16, C.black);
+                drawText(label, RX + 26,  baseY, 12, C.gray,  'left', false);
+                drawText(String(value), W - 10, baseY, 15, C.black, 'right');
+                if (i < 3) {
+                    line(DIVIDER_X, MAIN_Y + (i + 1) * ROW_H,
+                         W,         MAIN_Y + (i + 1) * ROW_H,
+                         C.xltGray);
+                }
+            });
+
+            /* ── 6-day forecast strip ───────────────────────────── */
+            fillRect(0, STRIP_Y, W, STRIP_H, C.xltGray);
+            line(0, STRIP_Y, W, STRIP_Y, C.ltGray);
+
+            wx.forecast.forEach((fc, i) => {
+                const cx = i * CELL_W + CELL_W / 2;
+                if (i > 0) {
+                    line(i * CELL_W, STRIP_Y, i * CELL_W, STRIP_Y + STRIP_H, C.ltGray);
+                }
+                drawText(fc.day,                    cx, STRIP_Y + 16, 11, C.dkGray, 'center', false);
+                drawText(fc.icon,                   cx, STRIP_Y + 40, 22, C.black,  'center');
+                drawText(fmtT(fc.hi) + '\u00B0',    cx, STRIP_Y + 58, 12, C.black,  'center');
+                drawText(fmtT(fc.lo) + '\u00B0',    cx, STRIP_Y + 70, 11, C.gray,   'center', false);
+            });
+
+            /* ── Footer ─────────────────────────────────────────── */
+            fillRect(0, FOOTER_Y, W, FOOTER_H, C.dkGray);
+            line(0, FOOTER_Y, W, FOOTER_Y, C.gray);
+            drawText('open-meteo.com', 10, FOOTER_Y + 16, 11, C.ltGray, 'left',  false);
+            drawText('Updated ' + wx.updated, W - 10, FOOTER_Y + 16, 11, C.ltGray, 'right', false);
+        }
+
+        /* ── Redraw ─────────────────────────────────────────────── */
+
+        function redraw() {
+            ctx.textAlign    = 'left';
+            ctx.textBaseline = 'alphabetic';
+            ctx.lineWidth    = 1;
+            render();
+            dither();
+        }
+
+        function tick() {
+            tickClock();
+            redraw();
+        }
+
+        /* ── Weather fetch ──────────────────────────────────────── */
+
+        const LAT      = 50.4501;
+        const LON      = 30.5234;
+        const TIMEZONE = 'Europe%2FKyiv';
+
+        /**
+         * Fetches current weather and 6-day daily forecast from open-meteo.com.
+         * No API key required. Updates wx state and triggers redraw() on success.
+         */
+        async function fetchWeather() {
+            const url =
+                'https://api.open-meteo.com/v1/forecast' +
+                `?latitude=${LAT}&longitude=${LON}` +
+                '&current=temperature_2m,apparent_temperature' +
+                ',relative_humidity_2m,weather_code' +
+                ',surface_pressure,wind_speed_10m,wind_direction_10m' +
+                '&daily=temperature_2m_max,temperature_2m_min,weather_code' +
+                `&timezone=${TIMEZONE}&forecast_days=7`;
+
+            try {
+                const resp = await fetch(url);
+                const data = await resp.json();
+                const c    = data.current;
+                const d    = data.daily;
+
+                wx.temp      = c.temperature_2m;
+                wx.feels     = `${fmtT(Math.round(c.apparent_temperature))}\u00B0C`;
+                wx.icon      = weatherIcon(c.weather_code);
+                wx.condition = weatherText(c.weather_code);
+                wx.wind      = `${Math.round(c.wind_speed_10m)} km/h ${cardinal(c.wind_direction_10m)}`;
+                wx.humidity  = `${c.relative_humidity_2m}%`;
+                wx.pressure  = `${Math.round(c.surface_pressure)} hPa`;
+
+                const now    = new Date();
+                wx.updated   = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+                /* Build 6-day forecast (skip index 0 = today) */
+                wx.forecast  = [];
+                const count  = Math.min(6, d.time.length - 1);
+                for (let i = 1; i <= count; i++) {
+                    /* Parse at noon local time to avoid UTC-midnight day-shift */
+                    const date = new Date(d.time[i] + 'T12:00:00');
+                    wx.forecast.push({
+                        day:  DAY_NAMES[date.getDay()],
+                        icon: weatherIcon(d.weather_code[i]),
+                        hi:   Math.round(d.temperature_2m_max[i]),
+                        lo:   Math.round(d.temperature_2m_min[i])
+                    });
+                }
+
+                redraw();
+            } catch (err) {
+                wx.condition = 'API error';
+                console.error('weather-kyiv: fetch failed:', err);
+                redraw();
+            }
+        }
+
+        /* ── Start ──────────────────────────────────────────────── */
+
+        tick();
+        setInterval(tick, 1000);
+
+        fetchWeather();
+        setInterval(fetchWeather, 10 * 60 * 1000);   /* refresh every 10 minutes */
+    </script>
+
+</body>
+</html>

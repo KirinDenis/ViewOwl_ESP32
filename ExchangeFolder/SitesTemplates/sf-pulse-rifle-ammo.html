@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="M41A Pulse Rifle"
+  data-vow-description="Iconic Aliens M41A ammo counter — LED digits tick 99→00, heat builds, RED alarm under 10 rounds"
+  data-vow-category="scifi"
+  data-vow-tags="weapon,m41a,pulse,rifle,aliens,counter,led,80s"
+  data-vow-frames="16"
+  data-vow-fps="6"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+const FRAMES = 16;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+let N = ((parseInt(frameParam ?? '0', 10) % FRAMES) + FRAMES) % FRAMES;
+
+const C = {
+  bg:    '#020618',
+  blue1: '#103E78',
+  blue2: '#3FA8FF',
+  blue3: '#9FD8FF',
+  phos:  '#E8F4FF',
+  red:   '#FF3030',
+  redD:  '#7C1010',
+  amber: '#FFB000',
+};
+
+/* ── Ammo state — 99 round mag, decrements ~6/frame so frame 15 is empty ── */
+function ammo()   { return Math.max(0, 99 - N * 7); }
+function heat()   { return Math.min(1, (N / FRAMES) * 0.95 + 0.05); }
+function lowAmmo(){ return ammo() <= 10; }
+
+/* ── 7-segment digit primitive ──────────────────────────────────────────── *
+ *  Segments laid out as classic 7-seg:                                       *
+ *      _a_                                                                    *
+ *     |   |  b right-top                                                      *
+ *    f|   |b                                                                  *
+ *     |_g_|                                                                   *
+ *    e|   |c                                                                  *
+ *     |   |                                                                   *
+ *     |_d_|                                                                   */
+const SEGS = {
+  '0': [1,1,1,1,1,1,0],
+  '1': [0,1,1,0,0,0,0],
+  '2': [1,1,0,1,1,0,1],
+  '3': [1,1,1,1,0,0,1],
+  '4': [0,1,1,0,0,1,1],
+  '5': [1,0,1,1,0,1,1],
+  '6': [1,0,1,1,1,1,1],
+  '7': [1,1,1,0,0,0,0],
+  '8': [1,1,1,1,1,1,1],
+  '9': [1,1,1,1,0,1,1],
+};
+function drawDigit(x, y, w, h, ch, lit, dim) {
+  const s = SEGS[ch] ?? [0,0,0,0,0,0,0];
+  const t = Math.max(4, Math.round(w * 0.16));   /* segment thickness        */
+  const m = 4;                                    /* gap between segments     */
+  const segs = [
+    /* a top    */ [x + t,         y,                    w - 2 * t,         t],
+    /* b r-top  */ [x + w - t,     y + t,                t,                 (h - t) / 2 - m],
+    /* c r-bot  */ [x + w - t,     y + h / 2 + m,        t,                 (h - t) / 2 - m],
+    /* d bottom */ [x + t,         y + h - t,            w - 2 * t,         t],
+    /* e l-bot  */ [x,             y + h / 2 + m,        t,                 (h - t) / 2 - m],
+    /* f l-top  */ [x,             y + t,                t,                 (h - t) / 2 - m],
+    /* g middle */ [x + t,         y + h / 2 - t / 2,    w - 2 * t,         t],
+  ];
+  for (let i = 0; i < 7; i++) {
+    const col = s[i] ? lit : dim;
+    if (s[i]) { ctx.shadowColor = lit; ctx.shadowBlur = 8; }
+    else      { ctx.shadowBlur = 0; }
+    ctx.fillStyle = col;
+    ctx.fillRect(...segs[i]);
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawBackground() {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, VW, VH);
+
+  /* Faint grid suggesting display housing */
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  for (let y = 32; y < VH - 24; y += 16) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VW, y); ctx.stroke();
+  }
+}
+
+function drawHousing() {
+  /* Outer LED housing — chunky bezel */
+  ctx.strokeStyle = C.blue2; ctx.lineWidth = 2;
+  ctx.shadowColor = C.blue2; ctx.shadowBlur = 4;
+  ctx.strokeRect(40, 80, VW - 80, 160);
+  ctx.shadowBlur = 0;
+  /* Inner LED panel inset */
+  ctx.fillStyle = '#040820';
+  ctx.fillRect(50, 90, VW - 100, 140);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1;
+  ctx.strokeRect(50, 90, VW - 100, 140);
+
+  /* Bolts in 4 corners */
+  for (const [bx, by] of [[44, 84], [VW - 50, 84], [44, 236], [VW - 50, 236]]) {
+    ctx.fillStyle = C.blue2; ctx.shadowColor = C.blue2; ctx.shadowBlur = 3;
+    ctx.beginPath(); ctx.arc(bx, by, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+function drawAmmoDigits() {
+  const a = ammo();
+  const lit = lowAmmo() ? C.red   : C.amber;
+  const dim = lowAmmo() ? C.redD  : '#3a2400';
+  const tens = Math.floor(a / 10);
+  const ones = a % 10;
+  /* Two huge digits centered */
+  const dw = 100, dh = 130;
+  const gap = 24;
+  const totalW = dw * 2 + gap;
+  const ox = (VW - totalW) / 2;
+  const oy = 95;
+  drawDigit(ox,                oy, dw, dh, String(tens), lit, dim);
+  drawDigit(ox + dw + gap,     oy, dw, dh, String(ones), lit, dim);
+}
+
+function drawHeatBar() {
+  /* Heat tube along the bottom — 30 cells, fills to current heat level */
+  const cells = 30;
+  const cellW = 12, cellH = 10;
+  const totalW = cells * (cellW + 1);
+  const x0 = (VW - totalW) / 2;
+  const y0 = VH - 50;
+
+  ctx.fillStyle = C.blue2; ctx.shadowBlur = 0;
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillText('HEAT', x0, y0 - 12);
+
+  const filled = Math.round(heat() * cells);
+  for (let i = 0; i < cells; i++) {
+    let col;
+    if (i < filled) {
+      col = i > cells * 0.75 ? C.red
+          : i > cells * 0.5  ? C.amber
+                              : C.blue2;
+    } else col = C.blue1;
+    ctx.fillStyle = col;
+    ctx.fillRect(x0 + i * (cellW + 1), y0, cellW, cellH);
+  }
+}
+
+function drawHud() {
+  /* Header */
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, 0, VW, 24);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  ctx.strokeRect(0, 0, VW, 24);
+
+  ctx.font         = 'bold 12px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle    = C.blue2;
+  ctx.shadowColor  = C.blue2; ctx.shadowBlur = 3;
+  ctx.fillText('M41A PULSE RIFLE // 10mm', 8, 7);
+
+  ctx.textAlign = 'right';
+  const blinkOn = !lowAmmo() || (N & 1) === 0;
+  ctx.fillStyle = lowAmmo() ? (blinkOn ? C.red : C.redD) : C.amber;
+  ctx.shadowColor = ctx.fillStyle;
+  ctx.fillText(lowAmmo() ? '⚠ AMMO LOW' : 'BURST MODE', VW - 8, 7);
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'left';
+
+  /* AMMO label above digits */
+  ctx.font = 'bold 11px "Courier New", monospace';
+  ctx.fillStyle = C.blue3;
+  ctx.shadowColor = C.blue3; ctx.shadowBlur = 2;
+  ctx.fillText('AMMO', 60, 100);
+  ctx.shadowBlur = 0;
+
+  /* Footer */
+  const fy = VH - 18;
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, fy, VW, 18);
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(0, fy, VW, 18);
+
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('FR ' + String(N + 1).padStart(2, '0') + '/' + FRAMES + ' // ARMSTECH', 8, fy + 4);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.blue3;
+  ctx.fillText('SAFE OFF', VW - 8, fy + 4);
+  ctx.textAlign = 'left';
+}
+
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+
+function render() {
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+  drawBackground();
+  drawHousing();
+  drawAmmoDigits();
+  drawHeatBar();
+  drawHud();
+  drawScanlines();
+}
+
+render();
+
+if (frameParam === null) {
+  const FPS = 6;
+  let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) {
+      last = ts;
+      N = (N + 1) % FRAMES;
+      render();
+    }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!--
+        Viewport locked to 480×320. PuppeteerSharp also calls
+        SetViewportAsync(480, 320) in Chrome.cs.
+    -->
+    <meta name="viewport" content="width=480, height=320, initial-scale=1.0, user-scalable=no">
+    <title>ViewOwl — Canvas Template</title>
+    <style>
+        /*
+         * ╔══════════════════════════════════════════════════════════════╗
+         *   ViewOwl canvas template  ·  480 × 320 px  ·  BGR565 LCD
+         * ╚══════════════════════════════════════════════════════════════╝
+         *
+         * WHY CANVAS?
+         *   DOM rendering → Chromium rasterises "beautifully" → PNG → BGR565
+         *   Every intermediate shade becomes a quantisation artefact.
+         *
+         *   Canvas + dithering → colours are snapped to BGR565 levels
+         *   BEFORE the screenshot. Chrome.cs conversion is then near-lossless.
+         *
+         * PIPELINE:
+         *   render()  → draw to ctx with BGR565-snapped colours
+         *   dither()  → Floyd-Steinberg over the full 480×320 buffer
+         *   PuppeteerSharp screenshots the dithered canvas
+         *   Chrome.cs converts PNG → BGR565 (almost no data loss)
+         *
+         * Note: Chrome.cs also injects  filter: saturate(0.1)  globally.
+         * Palette entries here are already in near-greyscale to match.
+         *
+         * LAYOUT (480×320):
+         *   HEADER   y=0,   h=36   — title + clock
+         *   CONTENT  y=36,  h=260  — your content
+         *   FOOTER   y=296, h=24   — source + date
+         */
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #000;     /* letterbox in dev browser */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #screen {
+            display: block;
+            width: 480px;
+            height: 320px;
+            flex-shrink: 0;
+            /* Disable browser-level resampling on the canvas element itself */
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+
+<!--
+    REQUIRED: id="body"
+    ViewOwl uses this attribute to identify pages rendered by its
+    template system. Do not remove or rename this attribute.
+-->
+<body id="body">
+
+    <canvas id="screen" width="480" height="320"></canvas>
+
+    <script>
+        'use strict';
+
+        /* ══════════════════════════════════════════════════════════
+         *  CANVAS SETUP
+         * ══════════════════════════════════════════════════════════ */
+
+        const W      = 480;
+        const H      = 320;
+        const canvas = document.getElementById('screen');
+        const ctx    = canvas.getContext('2d', { alpha: false });
+
+        /* Disable all canvas-internal interpolation */
+        ctx.imageSmoothingEnabled = false;
+
+        /* ══════════════════════════════════════════════════════════
+         *  BGR565 QUANTISATION
+         * ══════════════════════════════════════════════════════════ */
+
+        /**
+         * Quantises an 8-bit channel to n-bit depth and expands back to 8-bit
+         * using the same bit-replication formula as Chrome.cs TakeScreenshotAsync.
+         *
+         * @param {number} v    - Input 0-255.
+         * @param {number} bits - Target bit depth (5 for R/B, 6 for G).
+         * @returns {number} Quantised+expanded 0-255 value.
+         */
+        function quantChannel(v, bits) {
+            const shift  = 8 - bits;
+            const q      = Math.min((1 << bits) - 1, v >> shift);
+            /* Bit-replicate low bits to fill the full 8-bit range */
+            return (q << shift) | (q >> (bits - shift));
+        }
+
+        /**
+         * Snaps an RGB triplet to the nearest BGR565-representable colour.
+         * Returns the expanded-back RGB888 equivalent.
+         *
+         * @param {number} r @param {number} g @param {number} b
+         * @returns {{r:number, g:number, b:number}}
+         */
+        function snap565(r, g, b) {
+            return {
+                r: quantChannel(r, 5),
+                g: quantChannel(g, 6),
+                b: quantChannel(b, 5)
+            };
+        }
+
+        /**
+         * Returns a BGR565-snapped CSS rgb() string.
+         * Use this to define all palette entries — never hand-write colour strings.
+         *
+         * @param {number} r @param {number} g @param {number} b
+         * @returns {string} e.g. "rgb(0,0,132)"
+         */
+        function css(r, g, b) {
+            const q = snap565(r, g, b);
+            return `rgb(${q.r},${q.g},${q.b})`;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+         *  PALETTE  (all entries are BGR565-snapped)
+         *
+         *  Note: Chrome.cs injects filter:saturate(0.1) globally.
+         *  These colours will be further desaturated before the final
+         *  screenshot. Near-greyscale palette gives the most predictable
+         *  results on the physical LCD.
+         * ══════════════════════════════════════════════════════════ */
+
+        const C = {
+            black:   css(  0,   0,   0),
+            white:   css(255, 255, 255),
+            dkBlue:  css(  0,   0, 128),    /* header background */
+            blue:    css(  0,   0, 248),
+            yellow:  css(248, 252,   0),    /* accent / borders */
+            red:     css(248,   0,   0),
+            green:   css(  0, 252,   0),
+            gray:    css(128, 128, 128),
+            ltGray:  css(192, 192, 192),    /* dividers, secondary bg */
+            dkGray:  css( 64,  64,  64),    /* footer bg */
+            xltGray: css(224, 224, 224),    /* light bg areas */
+        };
+
+        /* ══════════════════════════════════════════════════════════
+         *  DRAWING PRIMITIVES
+         * ══════════════════════════════════════════════════════════ */
+
+        /**
+         * Fills the entire canvas with a solid colour.
+         * @param {string} color
+         */
+        function clear(color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        /**
+         * Draws a filled rectangle.
+         * @param {number} x @param {number} y @param {number} w @param {number} h
+         * @param {string} color
+         */
+        function fillRect(x, y, w, h, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, w, h);
+        }
+
+        /**
+         * Draws a pixel-crisp horizontal or vertical line.
+         * Off-axis half-pixel offset prevents sub-pixel blurring.
+         *
+         * @param {number} x1 @param {number} y1 @param {number} x2 @param {number} y2
+         * @param {string} color @param {number} [thickness=1]
+         */
+        function line(x1, y1, x2, y2, color, thickness) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth   = thickness || 1;
+            /* Offset along the non-moving axis to snap to pixel grid */
+            const ox = (y1 === y2) ? 0 : 0.5;
+            const oy = (x1 === x2) ? 0 : 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x1 + ox, y1 + oy);
+            ctx.lineTo(x2 + ox, y2 + oy);
+            ctx.stroke();
+        }
+
+        /**
+         * Draws text. y is the text baseline.
+         *
+         * @param {string} str
+         * @param {number} x @param {number} y   - baseline position
+         * @param {number} size                  - font size in px
+         * @param {string} color
+         * @param {string} [align='left']        - 'left' | 'center' | 'right'
+         * @param {boolean} [bold=true]
+         */
+        function drawText(str, x, y, size, color, align, bold) {
+            ctx.fillStyle    = color;
+            ctx.font         = `${bold === false ? '' : 'bold '}${size}px Arial,Helvetica,sans-serif`;
+            ctx.textAlign    = align || 'left';
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText(String(str), x, y);
+        }
+
+        /* ══════════════════════════════════════════════════════════
+         *  FLOYD-STEINBERG DITHERING
+         *
+         *  Reads the full canvas pixel buffer, diffuses quantisation
+         *  error to 4 neighbouring pixels (right 7/16, below-left 3/16,
+         *  below 5/16, below-right 1/16), and writes the result back.
+         *
+         *  Call ONCE at the end of render() — NEVER between draw calls.
+         * ══════════════════════════════════════════════════════════ */
+
+        function dither() {
+            const img  = ctx.getImageData(0, 0, W, H);
+            const d    = img.data;
+
+            function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < W; x++) {
+                    const i = (y * W + x) * 4;
+
+                    const oldR = d[i];
+                    const oldG = d[i + 1];
+                    const oldB = d[i + 2];
+                    /* alpha channel (d[i+3]) is left unchanged */
+
+                    const q    = snap565(oldR, oldG, oldB);
+                    d[i]       = q.r;
+                    d[i + 1]   = q.g;
+                    d[i + 2]   = q.b;
+
+                    const eR   = oldR - q.r;
+                    const eG   = oldG - q.g;
+                    const eB   = oldB - q.b;
+
+                    /* Distribute error using integer arithmetic (>> 4 = / 16).
+                     * JavaScript >> is arithmetic (sign-preserving), so negative
+                     * errors propagate correctly without extra clamping. */
+
+                    if (x + 1 < W) {                         /* right: 7/16 */
+                        const j = i + 4;
+                        d[j]     = clamp(d[j]     + ((eR * 7) >> 4));
+                        d[j + 1] = clamp(d[j + 1] + ((eG * 7) >> 4));
+                        d[j + 2] = clamp(d[j + 2] + ((eB * 7) >> 4));
+                    }
+
+                    if (y + 1 < H) {
+                        if (x > 0) {                         /* below-left: 3/16 */
+                            const j = ((y + 1) * W + (x - 1)) * 4;
+                            d[j]     = clamp(d[j]     + ((eR * 3) >> 4));
+                            d[j + 1] = clamp(d[j + 1] + ((eG * 3) >> 4));
+                            d[j + 2] = clamp(d[j + 2] + ((eB * 3) >> 4));
+                        }
+                        {                                    /* below: 5/16 */
+                            const j = ((y + 1) * W + x) * 4;
+                            d[j]     = clamp(d[j]     + ((eR * 5) >> 4));
+                            d[j + 1] = clamp(d[j + 1] + ((eG * 5) >> 4));
+                            d[j + 2] = clamp(d[j + 2] + ((eB * 5) >> 4));
+                        }
+                        if (x + 1 < W) {                    /* below-right: 1/16 */
+                            const j = ((y + 1) * W + (x + 1)) * 4;
+                            d[j]     = clamp(d[j]     + (eR >> 4));
+                            d[j + 1] = clamp(d[j + 1] + (eG >> 4));
+                            d[j + 2] = clamp(d[j + 2] + (eB >> 4));
+                        }
+                    }
+                }
+            }
+
+            ctx.putImageData(img, 0, 0);
+        }
+
+        /* ══════════════════════════════════════════════════════════
+         *  LAYOUT CONSTANTS
+         * ══════════════════════════════════════════════════════════ */
+
+        const HEADER_H  = 36;
+        const FOOTER_H  = 24;
+        const HEADER_Y  = 0;
+        const FOOTER_Y  = H - FOOTER_H;
+        const CONTENT_Y = HEADER_H;
+        const CONTENT_H = H - HEADER_H - FOOTER_H;   /* 260 px */
+
+        /* ══════════════════════════════════════════════════════════
+         *  CLOCK & DATE
+         * ══════════════════════════════════════════════════════════ */
+
+        const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const MON_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        function pad(n) { return String(n).padStart(2, '0'); }
+
+        let clockStr = '00:00:00';
+        let dateStr  = 'Mon 01 Jan';
+
+        function tickClock() {
+            const now = new Date();
+            clockStr  = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            dateStr   = `${DAY_NAMES[now.getDay()]} ${pad(now.getDate())} ${MON_NAMES[now.getMonth()]}`;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+         *  RENDER  ← override this function in your page
+         *
+         *  Draw all visual elements here using the primitives above.
+         *  Use only colours from C{} or css(r,g,b) — no raw rgb strings.
+         *  Call redraw() after async data arrives.
+         * ══════════════════════════════════════════════════════════ */
+
+        function render() {
+
+            /* ── Header ─────────────────────────────────────────── */
+            fillRect(0, HEADER_Y, W, HEADER_H, C.dkBlue);
+            drawText('Page Title', 10, 26, 18, C.white);
+            drawText(clockStr, W - 10, 26, 16, C.white, 'right');
+            line(0, HEADER_H, W, HEADER_H, C.yellow, 2);
+
+            /* ── Content ─────────────────────────────────────────── */
+            fillRect(0, CONTENT_Y, W, CONTENT_H, C.white);
+            drawText('[ content goes here ]',
+                W / 2, CONTENT_Y + CONTENT_H / 2 + 7,
+                18, C.gray, 'center', false);
+
+            /* ── Footer ─────────────────────────────────────────── */
+            fillRect(0, FOOTER_Y, W, FOOTER_H, C.dkGray);
+            drawText('Source', 10, FOOTER_Y + 16, 12, C.ltGray, 'left', false);
+            drawText(dateStr, W - 10, FOOTER_Y + 16, 12, C.ltGray, 'right', false);
+        }
+
+        /* ══════════════════════════════════════════════════════════
+         *  REDRAW LOOP
+         * ══════════════════════════════════════════════════════════ */
+
+        /**
+         * Full render pass: reset ctx state → render() → dither().
+         * Call whenever data changes.
+         */
+        function redraw() {
+            /* Reset any leftover context state from previous frame */
+            ctx.textAlign    = 'left';
+            ctx.textBaseline = 'alphabetic';
+            ctx.lineWidth    = 1;
+
+            render();
+            dither();
+        }
+
+        function tick() {
+            tickClock();
+            redraw();
+        }
+
+        tick();
+        setInterval(tick, 1000);
+
+        /* ════ Add async data-fetch functions below ════════════════
+         *
+         * Pattern:
+         *   let myData = null;
+         *
+         *   async function fetchMyData() {
+         *       try {
+         *           const resp = await fetch('https://api.example.com/...');
+         *           myData = await resp.json();
+         *           redraw();   // ← triggers immediate repaint with new data
+         *       } catch (err) {
+         *           console.error('fetch failed:', err);
+         *       }
+         *   }
+         *
+         *   fetchMyData();
+         *   setInterval(fetchMyData, 5 * 60 * 1000);   // refresh every 5 min
+         *
+         * ══════════════════════════════════════════════════════════ */
+    </script>
+
+</body>
+</html>

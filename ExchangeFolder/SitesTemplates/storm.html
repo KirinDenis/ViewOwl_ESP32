@@ -1,0 +1,488 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=480">
+<title>STORM CMD v2.7</title>
+<style>
+  /* ── Reset & base ── */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 480px; height: 320px; overflow: hidden;
+    background: #120820;
+    color: #e0e8ff;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+  }
+
+  /* ── Lightning flash overlay ── */
+  body::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,0,170,0.18);
+    pointer-events: none;
+    animation: lightning 8s infinite;
+    z-index: 100;
+  }
+
+  @keyframes lightning {
+    0%,94%,96%,100% { opacity: 0; }
+    95%             { opacity: 1; }
+  }
+
+  /* ── Header ── */
+  #header {
+    height: 28px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 8px;
+    background: linear-gradient(90deg, #1a0530, #2d0a50, #1a0530);
+    border-bottom: 1px solid #cc44ff;
+  }
+
+  #header-title {
+    font-size: 13px; font-weight: bold;
+    color: #ff00aa;
+    text-shadow: 0 0 8px #ff00aa, 0 0 16px #ff00aa;
+    letter-spacing: 2px;
+  }
+
+  #clock {
+    font-size: 12px;
+    color: #ff00aa;
+    text-shadow: 0 0 6px #ff00aa;
+    animation: pulse-magenta 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse-magenta {
+    0%,100% { opacity: 1; text-shadow: 0 0 6px #ff00aa; }
+    50%     { opacity: 0.7; text-shadow: 0 0 14px #ff00aa, 0 0 28px #cc44ff; }
+  }
+
+  /* ── 3-column city grid ── */
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 4px;
+    height: 260px; /* header=28 footer=32 */
+  }
+
+  /* ── City panel with hexagonal-ish border ── */
+  .panel {
+    position: relative;
+    background: linear-gradient(160deg, #1c0835, #0e0520);
+    border: 1px solid #cc44ff;
+    border-radius: 4px;
+    padding: 5px 5px 4px;
+    overflow: hidden;
+    display: flex; flex-direction: column; gap: 2px;
+    /* Hexagonal clip via clip-path */
+    clip-path: polygon(6px 0%, calc(100% - 6px) 0%, 100% 6px, 100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0% calc(100% - 6px), 0% 6px);
+  }
+
+  /* Inner glow on panel */
+  .panel::after {
+    content: '';
+    position: absolute; inset: 0;
+    box-shadow: inset 0 0 12px rgba(204,68,255,0.25);
+    pointer-events: none;
+  }
+
+  .city-name {
+    font-size: 11px; font-weight: bold; letter-spacing: 1px;
+    color: #cc44ff;
+    text-shadow: 0 0 6px #cc44ff;
+  }
+
+  .temp-main {
+    font-size: 26px; font-weight: bold; line-height: 1;
+    color: #ff00aa;
+    text-shadow: 0 0 10px #ff00aa;
+  }
+
+  .feels {
+    font-size: 9px; color: #8860bb;
+  }
+
+  .weather-emoji {
+    font-size: 14px;
+    display: inline-block;
+  }
+
+  /* ── Wind compass rose ── */
+  .compass-wrap {
+    display: flex; align-items: center; gap: 4px;
+    margin-top: 2px;
+  }
+
+  .compass {
+    position: relative; width: 36px; height: 36px; flex-shrink: 0;
+  }
+
+  .compass svg { width: 36px; height: 36px; }
+
+  .wind-info {
+    font-size: 9px; color: #b080e0; line-height: 1.4;
+  }
+
+  /* ── UV index bar ── */
+  .uv-row {
+    display: flex; align-items: center; gap: 4px;
+    margin-top: 1px;
+  }
+
+  .uv-label { font-size: 8px; color: #8860bb; width: 16px; }
+
+  .uv-bar-bg {
+    flex: 1; height: 5px;
+    background: #2a1045;
+    border-radius: 3px; overflow: hidden;
+  }
+
+  .uv-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #44ff88, #ffff00, #ff6600, #ff0000);
+    border-radius: 3px;
+    transition: width 1s ease;
+  }
+
+  .uv-val { font-size: 8px; color: #ffcc88; width: 16px; text-align: right; }
+
+  /* ── 12h mini temperature chart ── */
+  .chart-wrap {
+    margin-top: 3px;
+    flex: 1;
+    display: flex; flex-direction: column;
+  }
+
+  .chart-label { font-size: 8px; color: #6040a0; margin-bottom: 2px; }
+
+  .chart-canvas {
+    flex: 1;
+  }
+
+  /* ── Humidity / pressure row ── */
+  .stats-row {
+    display: flex; justify-content: space-between;
+    font-size: 8px; color: #9070c0;
+    margin-top: 2px;
+  }
+
+  .stat-val { color: #cc44ff; }
+
+  /* ── Footer: signal bars ── */
+  #footer {
+    height: 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 10px;
+    background: linear-gradient(90deg, #0e0520, #1a0530, #0e0520);
+    border-top: 1px solid #330066;
+  }
+
+  .footer-label { font-size: 9px; color: #6040a0; }
+
+  .signal-bars {
+    display: flex; align-items: flex-end; gap: 3px;
+  }
+
+  .bar {
+    width: 6px;
+    border-radius: 1px 1px 0 0;
+    animation: signal-pulse 2s ease-in-out infinite;
+  }
+
+  .bar:nth-child(1) { height: 6px;  background: #ff3333; animation-delay: 0s; }
+  .bar:nth-child(2) { height: 10px; background: #ff8800; animation-delay: 0.2s; }
+  .bar:nth-child(3) { height: 14px; background: #ffcc00; animation-delay: 0.4s; }
+  .bar:nth-child(4) { height: 18px; background: #88ff00; animation-delay: 0.6s; }
+  .bar:nth-child(5) { height: 22px; background: #00ff88; animation-delay: 0.8s; }
+
+  @keyframes signal-pulse {
+    0%,100% { opacity: 1; }
+    50%     { opacity: 0.5; }
+  }
+
+  .footer-upd { font-size: 9px; color: #6040a0; }
+
+  /* ── Error state ── */
+  .error-msg { font-size: 9px; color: #ff4444; }
+</style>
+</head>
+<body data-vow-name="Storm" data-vow-category="ambient" data-vow-description="Storm weather ambient animation">
+
+<div id="header">
+  <span id="header-title">⚡ STORM CMD v2.7 ⚡</span>
+  <span id="clock">00:00:00</span>
+</div>
+
+<div id="grid">
+  <!-- Panels injected by JS -->
+  <div class="panel" id="panel-berlin">
+    <div class="city-name">BERLIN</div>
+    <div class="temp-main" id="temp-berlin">--°</div>
+    <div class="feels" id="feels-berlin">feels --°</div>
+    <span class="weather-emoji" id="emoji-berlin">🌐</span>
+    <div class="compass-wrap">
+      <div class="compass">
+        <svg id="compass-berlin" viewBox="0 0 36 36">
+          <circle cx="18" cy="18" r="16" fill="none" stroke="#330066" stroke-width="1"/>
+          <text x="18" y="5"  text-anchor="middle" fill="#6040a0" font-size="4">N</text>
+          <text x="18" y="34" text-anchor="middle" fill="#6040a0" font-size="4">S</text>
+          <text x="33" y="19" text-anchor="middle" fill="#6040a0" font-size="4">E</text>
+          <text x="3"  y="19" text-anchor="middle" fill="#6040a0" font-size="4">W</text>
+          <!-- Needle rotated by JS -->
+          <line id="needle-berlin" x1="18" y1="18" x2="18" y2="6" stroke="#ff00aa" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="18" cy="18" r="2" fill="#cc44ff"/>
+        </svg>
+      </div>
+      <div class="wind-info">
+        <div>WIND <span class="stat-val" id="wind-berlin">-- km/h</span></div>
+        <div>HUM <span class="stat-val" id="hum-berlin">--%</span></div>
+      </div>
+    </div>
+    <div class="uv-row">
+      <span class="uv-label">UV</span>
+      <div class="uv-bar-bg"><div class="uv-bar-fill" id="uv-bar-berlin" style="width:0%"></div></div>
+      <span class="uv-val" id="uv-val-berlin">-</span>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-label">12H TEMP</div>
+      <canvas class="chart-canvas" id="chart-berlin" width="138" height="30"></canvas>
+    </div>
+    <div class="stats-row">
+      <span>PRES <span class="stat-val" id="pres-berlin">----</span></span>
+      <span>PREC <span class="stat-val" id="prec-berlin">-</span></span>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-dubai">
+    <div class="city-name">DUBAI</div>
+    <div class="temp-main" id="temp-dubai">--°</div>
+    <div class="feels" id="feels-dubai">feels --°</div>
+    <span class="weather-emoji" id="emoji-dubai">🌐</span>
+    <div class="compass-wrap">
+      <div class="compass">
+        <svg id="compass-dubai" viewBox="0 0 36 36">
+          <circle cx="18" cy="18" r="16" fill="none" stroke="#330066" stroke-width="1"/>
+          <text x="18" y="5"  text-anchor="middle" fill="#6040a0" font-size="4">N</text>
+          <text x="18" y="34" text-anchor="middle" fill="#6040a0" font-size="4">S</text>
+          <text x="33" y="19" text-anchor="middle" fill="#6040a0" font-size="4">E</text>
+          <text x="3"  y="19" text-anchor="middle" fill="#6040a0" font-size="4">W</text>
+          <line id="needle-dubai" x1="18" y1="18" x2="18" y2="6" stroke="#ff00aa" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="18" cy="18" r="2" fill="#cc44ff"/>
+        </svg>
+      </div>
+      <div class="wind-info">
+        <div>WIND <span class="stat-val" id="wind-dubai">-- km/h</span></div>
+        <div>HUM <span class="stat-val" id="hum-dubai">--%</span></div>
+      </div>
+    </div>
+    <div class="uv-row">
+      <span class="uv-label">UV</span>
+      <div class="uv-bar-bg"><div class="uv-bar-fill" id="uv-bar-dubai" style="width:0%"></div></div>
+      <span class="uv-val" id="uv-val-dubai">-</span>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-label">12H TEMP</div>
+      <canvas class="chart-canvas" id="chart-dubai" width="138" height="30"></canvas>
+    </div>
+    <div class="stats-row">
+      <span>PRES <span class="stat-val" id="pres-dubai">----</span></span>
+      <span>PREC <span class="stat-val" id="prec-dubai">-</span></span>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-sydney">
+    <div class="city-name">SYDNEY</div>
+    <div class="temp-main" id="temp-sydney">--°</div>
+    <div class="feels" id="feels-sydney">feels --°</div>
+    <span class="weather-emoji" id="emoji-sydney">🌐</span>
+    <div class="compass-wrap">
+      <div class="compass">
+        <svg id="compass-sydney" viewBox="0 0 36 36">
+          <circle cx="18" cy="18" r="16" fill="none" stroke="#330066" stroke-width="1"/>
+          <text x="18" y="5"  text-anchor="middle" fill="#6040a0" font-size="4">N</text>
+          <text x="18" y="34" text-anchor="middle" fill="#6040a0" font-size="4">S</text>
+          <text x="33" y="19" text-anchor="middle" fill="#6040a0" font-size="4">E</text>
+          <text x="3"  y="19" text-anchor="middle" fill="#6040a0" font-size="4">W</text>
+          <line id="needle-sydney" x1="18" y1="18" x2="18" y2="6" stroke="#ff00aa" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="18" cy="18" r="2" fill="#cc44ff"/>
+        </svg>
+      </div>
+      <div class="wind-info">
+        <div>WIND <span class="stat-val" id="wind-sydney">-- km/h</span></div>
+        <div>HUM <span class="stat-val" id="hum-sydney">--%</span></div>
+      </div>
+    </div>
+    <div class="uv-row">
+      <span class="uv-label">UV</span>
+      <div class="uv-bar-bg"><div class="uv-bar-fill" id="uv-bar-sydney" style="width:0%"></div></div>
+      <span class="uv-val" id="uv-val-sydney">-</span>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-label">12H TEMP</div>
+      <canvas class="chart-canvas" id="chart-sydney" width="138" height="30"></canvas>
+    </div>
+    <div class="stats-row">
+      <span>PRES <span class="stat-val" id="pres-sydney">----</span></span>
+      <span>PREC <span class="stat-val" id="prec-sydney">-</span></span>
+    </div>
+  </div>
+</div>
+
+<div id="footer">
+  <span class="footer-label">SIG STRENGTH</span>
+  <div class="signal-bars">
+    <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
+  </div>
+  <span class="footer-upd" id="last-upd">UPD: --:--</span>
+</div>
+
+<script>
+// ── Weather code → emoji mapping ──────────────────────────────────────────
+function wmoEmoji(code) {
+  if (code === 0)               return '☀️';
+  if (code <= 2)                return '⛅';
+  if (code === 3)               return '☁️';
+  if (code >= 45 && code <= 48) return '🌫️';
+  if (code >= 51 && code <= 57) return '🌦️';
+  if (code >= 61 && code <= 67) return '🌧️';
+  if (code >= 71 && code <= 77) return '❄️';
+  if (code >= 80 && code <= 82) return '🌧️';
+  if (code >= 95 && code <= 99) return '⛈️';
+  return '🌐';
+}
+
+// ── Clock ─────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  document.getElementById('clock').textContent =
+    pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Draw 12h mini chart on canvas ─────────────────────────────────────────
+function drawChart(canvasId, temps) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !temps || temps.length === 0) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Subset first 12 hours
+  const data = temps.slice(0, 12);
+  const minT = Math.min(...data);
+  const maxT = Math.max(...data);
+  const range = maxT - minT || 1;
+
+  const pts = data.map((t, i) => ({
+    x: (i / (data.length - 1)) * (w - 4) + 2,
+    y: h - 2 - ((t - minT) / range) * (h - 4)
+  }));
+
+  // Fill gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(255,0,170,0.5)');
+  grad.addColorStop(1, 'rgba(255,0,170,0)');
+
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, h);
+  pts.forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.lineTo(pts[pts.length - 1].x, h);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.strokeStyle = '#ff00aa';
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = '#ff00aa';
+  ctx.shadowBlur = 4;
+  ctx.stroke();
+}
+
+// ── Rotate compass needle ─────────────────────────────────────────────────
+function rotateNeedle(id, degrees) {
+  const needle = document.getElementById(id);
+  if (!needle) return;
+  // Needle points north by default (up), rotate by wind direction
+  const cx = 18, cy = 18;
+  const rad = (degrees - 180) * Math.PI / 180; // arrow points FROM where wind comes
+  const len = 12;
+  const x2 = cx + len * Math.sin(rad);
+  const y2 = cy - len * Math.cos(rad);
+  needle.setAttribute('x2', x2.toFixed(1));
+  needle.setAttribute('y2', y2.toFixed(1));
+}
+
+// ── Fetch one city ────────────────────────────────────────────────────────
+async function fetchCity(key, lat, lon) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,` +
+    `weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,uv_index` +
+    `&hourly=temperature_2m&forecast_days=1&timezone=auto`;
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const d = await resp.json();
+    const c = d.current;
+    const hourlyTemps = d.hourly.temperature_2m;
+
+    document.getElementById('temp-' + key).textContent = Math.round(c.temperature_2m) + '°';
+    document.getElementById('feels-' + key).textContent = 'feels ' + Math.round(c.apparent_temperature) + '°';
+    document.getElementById('emoji-' + key).textContent = wmoEmoji(c.weather_code);
+    document.getElementById('wind-' + key).textContent = Math.round(c.wind_speed_10m) + ' km/h';
+    document.getElementById('hum-' + key).textContent = c.relative_humidity_2m + '%';
+    document.getElementById('pres-' + key).textContent = Math.round(c.surface_pressure);
+    document.getElementById('prec-' + key).textContent = c.precipitation.toFixed(1) + 'mm';
+
+    // UV bar (max UV ~11 for display purposes)
+    const uvPct = Math.min(100, (c.uv_index / 11) * 100);
+    document.getElementById('uv-bar-' + key).style.width = uvPct + '%';
+    document.getElementById('uv-val-' + key).textContent = c.uv_index.toFixed(1);
+
+    // Compass needle
+    rotateNeedle('needle-' + key, c.wind_direction_10m);
+
+    // Mini chart
+    drawChart('chart-' + key, hourlyTemps);
+
+  } catch (e) {
+    document.getElementById('temp-' + key).textContent = 'ERR';
+    console.error('Fetch error for ' + key + ':', e);
+  }
+}
+
+// ── Load all cities ───────────────────────────────────────────────────────
+async function loadAll() {
+  const pad = n => String(n).padStart(2, '0');
+  const now = new Date();
+  document.getElementById('last-upd').textContent =
+    'UPD: ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+
+  await Promise.all([
+    fetchCity('berlin', 52.52, 13.41),
+    fetchCity('dubai',  25.20, 55.27),
+    fetchCity('sydney', -33.87, 151.21)
+  ]);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+loadAll();
+// Refresh every 10 minutes
+setInterval(loadAll, 10 * 60 * 1000);
+</script>
+</body>
+</html>

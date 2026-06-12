@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="Sulaco Tactical Scan"
+  data-vow-description="Detailed wireframe military hauler — Motion-Tracker blue CRT, scan beam sweeps hull, range readout in red"
+  data-vow-category="scifi"
+  data-vow-tags="ship,vector,wireframe,scifi,aliens,sulaco,tactical,m314,80s"
+  data-vow-frames="16"
+  data-vow-fps="6"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+/* ── Canvas — fills viewport, drawing in logical 480×320 ────────────────── */
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+
+const canvas = document.getElementById('c');
+canvas.width  = W;
+canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+/* ── Class C frame contract ─────────────────────────────────────────────── */
+const FRAMES = 16;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+let N = ((parseInt(frameParam ?? '0', 10) % FRAMES) + FRAMES) % FRAMES;
+let T = N / FRAMES;
+
+/* ── Palette — ALL blue gradient (Motion-Tracker M314), red ONLY on alarms ── */
+const C = {
+  bgDeep: '#020618',
+  grid:   '#0E2A55',
+  blue1:  '#103E78',           /* faintest detail                            */
+  blue2:  '#1F70C8',           /* secondary lines                            */
+  blue3:  '#3FA8FF',           /* primary outlines                           */
+  bright: '#9FD8FF',           /* highlight                                  */
+  phos:   '#E8F4FF',           /* phosphor scan                              */
+  red:    '#FF3030',           /* RANGE / alarm only                         */
+  redDim: '#7C1010',
+};
+
+/* ── Vector helpers (same pattern as undock-vector / narcissus-eject) ───── */
+function vstroke(color, lw, glow) {
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = glow ?? 4;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = lw ?? 1.4;
+  ctx.stroke();
+  ctx.shadowBlur  = 0;
+}
+function vline(x1, y1, x2, y2, color, lw, glow) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  vstroke(color, lw, glow);
+}
+function vpoly(points, color, lw, closed) {
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  if (closed !== false) ctx.closePath();
+  vstroke(color, lw);
+}
+function vellipse(cx, cy, rx, ry, color, lw) {
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  vstroke(color, lw);
+}
+function vrect(x, y, w, h, color, lw) {
+  vpoly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], color, lw, true);
+}
+
+/* ── Ship sections — for scan-beam highlight + status readout ───────────── *
+ *  X coordinates in logical 480×320 space; nose right, stern left.            */
+const SECTIONS = [
+  { x0:  40, x1:  90, name: 'ENGINE BLOCK', status: 'THRUST 88%',  warn: false },
+  { x0:  90, x1: 135, name: 'REACTOR',      status: 'OVERLOAD',     warn: true  },
+  { x0: 135, x1: 180, name: 'MIDSHIP',      status: 'NOMINAL',      warn: false },
+  { x0: 180, x1: 360, name: 'CARGO 1-4',    status: 'SECURED',      warn: false },
+  { x0: 360, x1: 400, name: 'GUN DECK',     status: 'STAND-BY',     warn: false },
+  { x0: 400, x1: 440, name: 'BRIDGE',       status: 'CREW NOMINAL', warn: false },
+];
+
+function scanX() { return 40 + T * 400; }
+function currentSection() {
+  const x = scanX();
+  for (const s of SECTIONS) if (x >= s.x0 && x < s.x1) return s;
+  return SECTIONS[SECTIONS.length - 1];
+}
+
+/* ── Background — deep blue + faint engineering grid ────────────────────── */
+function drawBackground() {
+  ctx.fillStyle = C.bgDeep; ctx.fillRect(0, 0, VW, VH);
+
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  for (let x = 0; x <= VW; x += 20) {
+    ctx.beginPath(); ctx.moveTo(x, 28); ctx.lineTo(x, VH - 60); ctx.stroke();
+  }
+  for (let y = 32; y <= VH - 60; y += 20) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VW, y); ctx.stroke();
+  }
+}
+
+/* ── Ship hull — detailed military hauler, side view ────────────────────── *
+ *  Sections (l→r):  engines | reactor | midship | cargo spine + containers   *
+ *                   | gun deck | bridge wedge + sensor mast.                  *
+ *  The whole hull is highlighted (phosphor) in the section currently scanned. */
+function drawShip(highlightSection) {
+  const isHL = (s) => highlightSection && highlightSection.name === s;
+  const cHull = (s) => isHL(s) ? C.phos : C.blue3;
+
+  /* Main hull outline — single continuous polygon, nose right */
+  vpoly([
+    [ 90, 145],     /* engine block top-left                              */
+    [130, 132],     /* reactor top-left                                   */
+    [180, 128],     /* midship top                                        */
+    [340, 130],     /* cargo spine top                                    */
+    [360, 130],     /* gun deck top join                                  */
+    [395, 144],     /* gun deck top-right                                 */
+    [430, 156],     /* bridge top                                         */
+    [440, 168],     /* bow tip                                            */
+    [430, 180],     /* bridge bot                                         */
+    [395, 192],     /* gun deck bot-right                                 */
+    [360, 206],     /* gun deck bot                                       */
+    [340, 206],     /* cargo spine bot                                    */
+    [180, 208],     /* midship bot                                        */
+    [130, 204],     /* reactor bot                                        */
+    [ 90, 191],     /* engine block bot-left                              */
+  ], C.blue3, 1.6, true);
+
+  /* Section dividers (vertical hull frame ribs) — lighter cyan */
+  vline( 90, 145,  90, 191, C.blue2, 1);
+  vline(130, 132, 130, 204, C.blue2, 1);
+  vline(180, 128, 180, 208, C.blue2, 1);
+  vline(340, 130, 340, 206, C.blue2, 1);
+  vline(360, 130, 360, 206, C.blue2, 1);
+  vline(400, 145, 400, 192, C.blue2, 1);
+  vline(420, 152, 420, 184, C.blue2, 1);
+
+  /* Mid spine (deck line through hull) */
+  vline( 90, 168, 440, 168, C.blue1, 1);
+
+  /* ── ENGINES — twin bell nozzles, concentric rings ───────────────────── */
+  drawEngineBell( 60, 150, isHL('ENGINE BLOCK'));
+  drawEngineBell( 60, 186, isHL('ENGINE BLOCK'));
+  /* Engine block stub connecting bells to hull */
+  vrect(75, 145, 18, 46, C.blue3, 1.4);
+  vline(75, 168, 93, 168, C.blue1, 1);
+
+  /* ── REACTOR — circular plant with cooling vents ─────────────────────── */
+  vellipse(112, 168, 14, 26, isHL('REACTOR') ? C.phos : C.blue3, 1.4);
+  vellipse(112, 168, 7, 14,  isHL('REACTOR') ? C.phos : C.blue2, 1);
+  vline(98, 168, 126, 168, C.blue1, 1);
+  /* Cooling vent stripes */
+  for (let vx = 100; vx < 124; vx += 6) {
+    vline(vx, 138, vx, 144, C.blue2, 1);
+    vline(vx, 192, vx, 198, C.blue2, 1);
+  }
+
+  /* ── CARGO 1-4 — four containers hanging under spine ─────────────────── */
+  const containers = [
+    { x0: 188, x1: 222 },
+    { x0: 230, x1: 264 },
+    { x0: 272, x1: 306 },
+    { x0: 314, x1: 348 },
+  ];
+  ctx.shadowBlur = 0;
+  for (const c of containers) {
+    /* Container box hanging below cargo spine */
+    vrect(c.x0, 208, c.x1 - c.x0, 26, isHL('CARGO 1-4') ? C.phos : C.blue3, 1.3);
+    /* Ribs */
+    for (let rx = c.x0 + 6; rx < c.x1 - 4; rx += 7) {
+      vline(rx, 212, rx, 230, C.blue1, 1);
+    }
+    /* Mounting clamp at top */
+    vline((c.x0 + c.x1) / 2, 206, (c.x0 + c.x1) / 2, 208, C.blue2, 1);
+  }
+  /* Cargo top deck panel divisions */
+  for (let x = 200; x < 340; x += 18) {
+    vline(x, 130, x, 168, C.blue1, 1);
+  }
+
+  /* ── MIDSHIP — central bay with hatches ──────────────────────────────── */
+  vrect(140, 154, 36, 28, isHL('MIDSHIP') ? C.phos : C.blue2, 1);
+  vline(158, 154, 158, 182, C.blue1, 1);
+
+  /* ── GUN DECK — two protruding turrets top + bottom ──────────────────── */
+  const gColor = isHL('GUN DECK') ? C.phos : C.blue3;
+  vpoly([[365, 130], [385, 116], [395, 116], [395, 144]], gColor, 1.3, true);
+  vpoly([[365, 206], [385, 220], [395, 220], [395, 192]], gColor, 1.3, true);
+  /* Barrel projections */
+  vline(380, 116, 380, 104, C.blue2, 1);
+  vline(380, 220, 380, 232, C.blue2, 1);
+
+  /* ── BRIDGE — forward wedge + window strip + sensor mast ─────────────── */
+  const bColor = isHL('BRIDGE') ? C.phos : C.blue3;
+  /* Bridge window row — small bright dashes */
+  for (let wx = 412; wx <= 432; wx += 5) {
+    vline(wx, 162, wx + 3, 162, C.bright, 1.2, 5);
+  }
+  /* Antenna mast above bridge */
+  vline(415, 156, 415, 110, C.blue2, 1);
+  vline(408, 110, 422, 110, C.blue2, 1);
+  vellipse(415, 104, 5, 3, C.blue3, 1.2);
+  /* Forward sensor cone */
+  vline(440, 168, 460, 162, C.blue2, 1);
+  vline(440, 168, 460, 174, C.blue2, 1);
+
+  /* Hull marking */
+  ctx.font         = 'bold 8px "Courier New", monospace';
+  ctx.fillStyle    = C.blue2;
+  ctx.shadowColor  = C.blue2; ctx.shadowBlur = 2;
+  ctx.textBaseline = 'top';
+  ctx.textAlign    = 'left';
+  ctx.fillText('USS SULACO // CM-88', 200, 142);
+  ctx.shadowBlur   = 0;
+}
+
+function drawEngineBell(cx, cy, hl) {
+  const col = hl ? C.phos : C.blue3;
+  /* Outer rim ellipse */
+  vellipse(cx, cy, 18, 12, col, 1.4);
+  /* Inner concentric rings — depth illusion */
+  vellipse(cx + 3, cy, 13, 9, C.blue2, 1);
+  vellipse(cx + 5, cy,  9, 6, C.blue2, 1);
+  vellipse(cx + 7, cy,  5, 3, C.blue1, 1);
+  /* Spokes */
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+    const x1 = cx + Math.cos(a) * 5;
+    const y1 = cy + Math.sin(a) * 3;
+    const x2 = cx + Math.cos(a) * 18;
+    const y2 = cy + Math.sin(a) * 12;
+    vline(x1, y1, x2, y2, C.blue1, 1);
+  }
+}
+
+/* ── Three RED contact blips overlaid on hull (M314 reference) ──────────── */
+const CONTACTS = [
+  { x: 215, y: 160 },
+  { x: 305, y: 175 },
+  { x: 408, y: 188 },
+];
+function drawContacts() {
+  for (const c of CONTACTS) {
+    /* Pulse intensity tied to scan-beam proximity (deterministic) */
+    const dx = c.x - scanX();
+    const pulse = Math.max(0, 1 - Math.abs(dx) / 30);
+    const r = 3 + pulse * 4;
+    /* Soft red halo */
+    const halo = ctx.createRadialGradient(c.x, c.y, 1, c.x, c.y, r * 2.2);
+    halo.addColorStop(0, 'rgba(255,80,80,' + (0.4 + 0.5 * pulse) + ')');
+    halo.addColorStop(1, 'rgba(255,48,48,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(c.x, c.y, r * 2.2, 0, Math.PI * 2); ctx.fill();
+    /* Crisp red core */
+    ctx.fillStyle   = C.red;
+    ctx.shadowColor = C.red; ctx.shadowBlur = 4;
+    ctx.beginPath(); ctx.arc(c.x, c.y, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur  = 0;
+  }
+}
+
+/* ── Scan beam — vertical line moving over hull ─────────────────────────── */
+function drawScanBeam() {
+  const sx = scanX();
+  /* Soft cyan glow either side */
+  const grad = ctx.createLinearGradient(sx - 24, 0, sx + 24, 0);
+  grad.addColorStop(0,    'rgba(63,168,255,0)');
+  grad.addColorStop(0.5,  'rgba(159,216,255,0.35)');
+  grad.addColorStop(1,    'rgba(63,168,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(sx - 24, 96, 48, 156);
+  /* Hard bright leading edge */
+  vline(sx, 96, sx, 252, C.phos, 1.5, 8);
+  /* Marker chevrons at top + bottom */
+  vpoly([[sx - 6, 90], [sx, 96], [sx + 6, 90]], C.bright, 1.2);
+  vpoly([[sx - 6, 258], [sx, 252], [sx + 6, 258]], C.bright, 1.2);
+}
+
+/* ── HUD — header, telemetry, footer ─────────────────────────────────────── */
+function drawHud() {
+  const sec = currentSection();
+
+  /* Header */
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, 0, VW, 24);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  ctx.strokeRect(0, 0, VW, 24);
+
+  ctx.font         = 'bold 12px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle    = C.blue3;
+  ctx.shadowColor  = C.blue3; ctx.shadowBlur = 3;
+  ctx.fillText('SULACO // TACTICAL SCAN', 8, 7);
+
+  /* RNG readout — RED, M314 style, right-aligned */
+  ctx.shadowColor = C.red; ctx.shadowBlur = 8;
+  ctx.fillStyle   = C.red;
+  ctx.textAlign   = 'right';
+  const rng = ((440 - scanX()) * 1.5).toFixed(1).padStart(5, '0');
+  ctx.font = 'bold 14px "Courier New", monospace';
+  ctx.fillText('RNG ' + rng + ' M', VW - 8, 6);
+  ctx.shadowBlur  = 0;
+  ctx.textAlign   = 'left';
+
+  /* Telemetry block — bottom strip */
+  const ty = VH - 56;
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, ty, VW, 40);
+  ctx.strokeStyle = C.blue2;
+  ctx.strokeRect(0, ty, VW, 40);
+
+  /* SECTION label + name */
+  ctx.font         = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle    = C.blue2; ctx.shadowBlur = 0;
+  ctx.fillText('SECTION', 10, ty + 6);
+  ctx.font = 'bold 14px "Courier New", monospace';
+  ctx.fillStyle = C.bright;
+  ctx.shadowColor = C.bright; ctx.shadowBlur = 3;
+  ctx.fillText(sec.name, 10, ty + 19);
+  ctx.shadowBlur = 0;
+
+  /* STATUS — RED if warn (e.g., REACTOR OVERLOAD), blue otherwise */
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('STATUS', 180, ty + 6);
+  ctx.font = 'bold 14px "Courier New", monospace';
+  const blinkOn = !sec.warn || (N & 1) === 0;
+  const stCol   = sec.warn ? (blinkOn ? C.red : C.redDim) : C.bright;
+  ctx.fillStyle   = stCol;
+  ctx.shadowColor = stCol; ctx.shadowBlur = sec.warn ? 6 : 3;
+  ctx.fillText(sec.status, 180, ty + 19);
+  ctx.shadowBlur = 0;
+
+  /* CONTACTS counter — RED, hostile contact count */
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.textAlign = 'right';
+  ctx.fillText('CONTACTS', VW - 10, ty + 6);
+  ctx.font = 'bold 14px "Courier New", monospace';
+  ctx.fillStyle   = C.red;
+  ctx.shadowColor = C.red; ctx.shadowBlur = 6;
+  ctx.fillText(String(CONTACTS.length).padStart(2, '0'), VW - 10, ty + 19);
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'left';
+
+  /* Footer */
+  const fy = VH - 16;
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, fy, VW, 16);
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(0, fy, VW, 16);
+
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('FR ' + String(N + 1).padStart(2, '0') + '/' + FRAMES + ' // VECTOR-CRT', 8, fy + 4);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.blue3;
+  ctx.fillText('CH 07 // M314-COMPAT', VW - 8, fy + 4);
+  ctx.textAlign = 'left';
+}
+
+/* ── CRT effects ─────────────────────────────────────────────────────────── */
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW, VH) * 0.4,
+                                     VW/2, VH/2, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+
+/* ── Compose ────────────────────────────────────────────────────────────── */
+function render() {
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+
+  const sec = currentSection();
+
+  drawBackground();
+  drawShip(sec);
+  drawContacts();
+  drawScanBeam();
+  drawHud();
+  drawScanlines();
+  drawVignette();
+}
+
+render();
+
+/* ── Dev preview — browser only when no vow_frame param ─────────────────── */
+if (frameParam === null) {
+  const FPS = 6;
+  let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) {
+      last = ts;
+      N = (N + 1) % FRAMES;
+      T = N / FRAMES;
+      render();
+    }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

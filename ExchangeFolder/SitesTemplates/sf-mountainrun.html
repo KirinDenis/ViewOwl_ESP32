@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body"
+  data-vow-name="Mountain Run"
+  data-vow-category="scifi"
+  data-vow-description="Low-level flight over smooth wireframe mountains while a spider drone passes head-on — hidden-surface terrain, contact countdown HUD; indigo and cornflower phosphor look"
+  data-vow-class="C"
+  data-vow-frames="16"
+  data-vow-fps="4"
+  data-vow-refresh="0">
+<canvas id="screen"></canvas>
+<script>
+'use strict'
+/* Logical design space is 480x320; the canvas matches the real viewport and
+ * is scaled, so backend grabs at 320x240 render natively (no cropping). */
+const W=480,H=320
+const cv=document.getElementById('screen')
+const VW=window.innerWidth||W, VH=window.innerHeight||H
+cv.width=VW; cv.height=VH
+const cx=cv.getContext('2d')
+
+const FRAME_COUNT=16
+
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+
+/* Floyd-Steinberg dithering to the BGR565 grid — runs over real pixels. */
+function dither(){
+  const id=cx.getImageData(0,0,VW,VH),d=id.data
+  for(let y=0;y<VH;y++)for(let x=0;x<VW;x++){
+    const i=(y*VW+x)*4
+    for(let c=0;c<3;c++){
+      const bits=c===1?6:5,max=(1<<bits)-1,old=d[i+c]
+      const nv=Math.round(old/255*max)/max*255,err=old-nv
+      d[i+c]=nv
+      if(x+1<VW)d[i+4+c]+=err*7/16
+      if(y+1<VH){if(x>0)d[i+(VW-1)*4+c]+=err*3/16;d[i+VW*4+c]+=err*5/16;if(x+1<VW)d[i+(VW+1)*4+c]+=err/16}
+    }
+  }
+  cx.putImageData(id,0,0)
+}
+
+/* Indigo / cornflower phosphor palette — same family as the city series. */
+const P={
+  sky:  css(4,6,22),   gnd: css(2,4,16),  body:css(5,9,28),
+  far:  css(56,76,176),mid: css(100,132,236),near:css(176,204,255),
+  vio:  css(156,118,252),vioD:css(70,52,140),
+  horz: css(132,160,255),
+  bdr:  css(64,96,224),bdr2:css(28,40,110),
+  am:   css(255,190,96),
+  tx:   css(238,244,255),tx2: css(154,176,238),tx3:css(94,110,180),
+  wh:   css(250,252,255),
+}
+
+function fill(x,y,w,h,c){cx.fillStyle=c;cx.fillRect(x,y,w,h)}
+function ln(x1,y1,x2,y2,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()}
+function box(x,y,w,h,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.strokeRect(x,y,w,h)}
+function dot(x,y,r,c){cx.beginPath();cx.arc(x,y,r,0,Math.PI*2);cx.fillStyle=c;cx.fill()}
+function poly(ps,fc,sc,lw=1){
+  cx.beginPath();cx.moveTo(ps[0][0],ps[0][1])
+  for(let i=1;i<ps.length;i++)cx.lineTo(ps[i][0],ps[i][1])
+  cx.closePath()
+  if(fc){cx.fillStyle=fc;cx.fill()}
+  if(sc){cx.strokeStyle=sc;cx.lineWidth=lw;cx.stroke()}
+}
+function txt(s,x,y,c,sz=9,al='left',bold=false){
+  cx.font=`${bold?'bold ':''}${sz}px monospace`;cx.fillStyle=c;cx.textAlign=al;cx.fillText(s,x,y);cx.textAlign='left'
+}
+
+/* ── World constants ─────────────────────────────────────────────────── */
+const CELL=60                 /* terrain mesh pitch (world units)          */
+const STEP=30                 /* camera advance per frame — gentle pace    */
+const PZ=FRAME_COUNT*STEP     /* terrain period in Z = travel per loop:
+                               * every Z frequency below is an integer
+                               * multiple of 2π/PZ, so frame 16 is
+                               * pixel-identical to frame 0               */
+const FOCAL=260, CAMY=75
+const HOR=H*0.42              /* screen horizon (level camera)             */
+const NEARZ=40, FARZ=1340
+
+/* Smooth rolling mountains — sum of low-frequency sines, periodic in Z.
+ * The centre valley (|x| < ~60) stays low: that is the flight corridor.  */
+function terr(x,z){
+  const w=Math.PI*2/PZ
+  const a=Math.min(1,Math.max(0,(Math.abs(x)-50)/130))   /* valley mask   */
+  const m=38
+    +30*Math.sin(w*z+x*0.011)
+    +22*Math.sin(2*w*z+1.7+x*0.023)
+    +14*Math.sin(x*0.013+2.1)
+  return a*Math.max(0,m)+4*Math.sin(2*w*z+x*0.05)+4
+}
+
+/* Fixed star field above the horizon (index-derived). */
+const STARS=[]
+for(let i=0;i<26;i++)STARS.push([8+(i*89)%464,10+(i*37)%((~~HOR)-40),i%3])
+
+/* ── Spider drone — wireframe octopod, drawn in screen space ─────────── */
+function spider(sx,sy,k,th,frame,col){
+  const lw=Math.max(0.8,1.4*Math.min(1.6,k))
+  /* dangling legs first (painter: behind the body) — gait loops with th  */
+  for(const s of[-1,1])for(let i=0;i<4;i++){
+    const phw=th*4+i*1.7+(s>0?0:2.4)
+    const hipX=sx+s*(6+i*4)*k,  hipY=sy-2*k
+    const kneX=sx+s*(15+i*5)*k, kneY=sy+(-9+3*Math.sin(phw))*k
+    const ftX =sx+s*(21+i*6)*k, ftY =sy+(7+4*Math.sin(phw+1.1))*k
+    ln(hipX,hipY,kneX,kneY,col,lw)
+    ln(kneX,kneY,ftX,ftY,col,lw*0.85)
+    dot(ftX,ftY,Math.max(0.6,1.2*k),col)
+  }
+  /* thruster glow underneath — it flies                                  */
+  cx.globalAlpha=0.35+0.15*Math.sin(th*4)
+  dot(sx,sy+6*k,5.5*k,P.vioD);cx.globalAlpha=1
+  /* hull — flat hexagon, filled opaque                                   */
+  poly([[sx-16*k,sy],[sx-8*k,sy-7*k],[sx+8*k,sy-7*k],
+        [sx+16*k,sy],[sx+8*k,sy+6*k],[sx-8*k,sy+6*k]],P.body,col,lw)
+  /* head dome + amber eyes, facing us                                    */
+  poly([[sx-5*k,sy-7*k],[sx+5*k,sy-7*k],[sx+3*k,sy-11*k],[sx-3*k,sy-11*k]],
+       P.body,col,lw*0.85)
+  dot(sx-2.4*k,sy-4*k,Math.max(0.7,1.5*k),P.am)
+  dot(sx+2.4*k,sy-4*k,Math.max(0.7,1.5*k),P.am)
+  /* top nav beacon — slow blink                                          */
+  if((frame>>1)%2===0)dot(sx,sy-12.5*k,Math.max(0.7,1.3*k),P.vio)
+}
+
+function render(frame){
+  frame=((frame%FRAME_COUNT)+FRAME_COUNT)%FRAME_COUNT
+  cx.setTransform(VW/W,0,0,VH/H,0,0)
+  const bl=(frame%4)<2
+  const ph=frame/FRAME_COUNT
+  const th=ph*Math.PI*2
+
+  const camZ=frame*STEP
+  const camX=Math.sin(th)*4
+  const camY=CAMY+Math.sin(th*2)*1.5
+
+  const px=(wx,dz)=>W/2+(wx-camX)*FOCAL/dz
+  const py=(wy,dz)=>HOR+(camY-wy)*FOCAL/dz
+
+  /* ── Sky / stars / static distant ridge ── */
+  fill(0,0,W,HOR,P.sky)
+  fill(0,HOR,W,H-HOR,P.gnd)
+  for(const[sx,sy,m]of STARS){
+    cx.fillStyle=m===0?P.tx2:m===1?P.tx3:P.bdr2
+    cx.fillRect(sx,sy,m===0?2:1,m===0?2:1)
+  }
+  /* far ridge silhouette — effectively at infinity, so it stays static   */
+  cx.strokeStyle=P.bdr2;cx.lineWidth=1;cx.beginPath()
+  for(let x=0;x<=W;x+=16){
+    const y=HOR-6-10*Math.abs(Math.sin(x*0.021+1.3))-6*Math.abs(Math.sin(x*0.041))
+    x===0?cx.moveTo(x,y):cx.lineTo(x,y)
+  }
+  cx.stroke()
+  ln(0,HOR,W,HOR,P.horz,1.2)
+
+  /* ── Spider flight path: head-on pass, off-screen at both loop ends ── */
+  const spdDz=1300-frame*88          /* relative distance, closing fast    */
+  const spdVisible=spdDz>55
+  const spdX=85, spdY=86+Math.sin(th*2)*4
+
+  /* ── Terrain — quad strips, far row first (painter hides far valleys);
+   *    the spider is injected between rows at its own depth ── */
+  const r0=Math.ceil((camZ+NEARZ)/CELL)
+  let spiderDrawn=!spdVisible
+  for(let k=r0+21;k>=r0;k--){
+    const zf=(k+1)*CELL,zn=k*CELL
+    const dzn=zn-camZ
+    if(dzn<NEARZ||zf-camZ>FARZ)continue
+    /* draw the spider as soon as terrain in front of it starts           */
+    if(!spiderDrawn&&dzn<spdDz){
+      const sk=FOCAL/spdDz
+      spider(px(spdX,spdDz),py(spdY,spdDz),sk,th,frame,
+             spdDz>800?P.far:spdDz>340?P.mid:P.near)
+      spiderDrawn=true
+    }
+    const tier=dzn>760?0:dzn>320?1:2
+    const col=tier===0?P.far:tier===1?P.mid:P.near
+    const lw=tier===2?1.1:tier===1?0.8:0.6
+    for(let i=-8;i<8;i++){
+      const xa=i*CELL,xb=(i+1)*CELL
+      const q=[
+        [px(xa,dzn),py(terr(xa,zn),dzn)],
+        [px(xb,dzn),py(terr(xb,zn),dzn)],
+        [px(xb,zf-camZ),py(terr(xb,zf),zf-camZ)],
+        [px(xa,zf-camZ),py(terr(xa,zf),zf-camZ)],
+      ]
+      if(q[0][0]>W+40||q[1][0]<-40)continue
+      poly(q,P.body,col,lw)
+    }
+  }
+  if(!spiderDrawn){
+    const sk=FOCAL/spdDz
+    spider(px(spdX,spdDz),py(spdY,spdDz),sk,th,frame,P.near)
+  }
+
+  /* ── Flight-path marker ── */
+  const fpx=W/2,fpy=HOR+30
+  cx.strokeStyle=P.near;cx.lineWidth=1.2
+  cx.beginPath();cx.arc(fpx,fpy,5,0,Math.PI*2);cx.stroke()
+  ln(fpx-13,fpy,fpx-5,fpy,P.near,1.2);ln(fpx+5,fpy,fpx+13,fpy,P.near,1.2)
+  ln(fpx,fpy-9,fpx,fpy-5,P.near,1.2)
+
+  /* ── Screen bezel — double border + corner cross ticks ── */
+  box(2,2,W-4,H-4,P.bdr,1.5)
+  box(6,6,W-12,H-12,P.bdr2,0.8)
+  for(const[mx,my]of[[64,54],[W-64,54],[64,H-54],[W-64,H-54]]){
+    ln(mx-7,my,mx+7,my,P.bdr,0.9);ln(mx,my-7,mx,my+7,P.bdr,0.9)
+  }
+
+  /* ── Header strip ── */
+  fill(7,7,W-14,15,css(8,12,40))
+  ln(7,22,W-7,22,P.bdr2)
+  txt('TERRAIN RUN — RIDGE 7G',13,18,P.tx,10,'left',true)
+  txt('TERRAIN-FOLLOW ACTIVE',W/2+14,18,P.tx3,8)
+  txt(`SYS ${(44.2+ph).toFixed(2)}`,W-13,18,P.tx2,8,'right')
+
+  /* ── HUD: corner data ── */
+  const vel=120+Math.round(3*Math.sin(th))
+  const agl=Math.round(camY-terr(camX,camZ+60))
+  const ctc=Math.max(0,Math.round(spdDz))
+  const hh=10*3600+47*60+frame*2
+  const hts=`${String(~~(hh/3600)).padStart(2,'0')}:${String(~~(hh/60)%60).padStart(2,'0')}:${String(hh%60).padStart(2,'0')}`
+
+  txt('VEL',13,38,P.tx3,8)
+  txt(`${String(vel).padStart(4,'0')} m/s`,13,50,P.near,11,'left',true)
+  fill(13,54,70,4,css(10,16,48))
+  fill(13,54,~~(70*(vel-90)/60),4,P.mid)
+
+  txt('AGL',W-13,38,P.tx3,8,'right')
+  txt(`00${agl} m`,W-13,50,P.near,11,'right',true)
+  for(let t=0;t<5;t++)ln(W-16,56+t*5,W-13,56+t*5,t===2?P.near:P.tx3,t===2?1.4:0.8)
+
+  /* bottom-left: contact countdown — the spider on an opposing course    */
+  txt('CONTACT — OPPOSING',13,H-34,P.tx3,8)
+  if(ctc>0){
+    const hot=ctc<420
+    txt(`CTC ${String(ctc).padStart(4,'0')} m`,13,H-22,
+        hot?(bl?P.am:P.tx2):P.near,11,'left',true)
+    txt(hot?'! CLOSING FAST':'TRACKING DRONE K-8',13,H-11,
+        hot?P.am:P.tx3,8,'left',hot)
+  }else{
+    txt('CTC ———— m',13,H-22,P.tx3,11,'left',true)
+    txt('CONTACT PASSED',13,H-11,P.tx3,8)
+  }
+
+  txt(`SYNC ${String(frame+1).padStart(2,'0')}/${FRAME_COUNT}`,W-13,H-34,P.tx2,9,'right')
+  txt('HDG 000.0°',W-13,H-22,P.near,10,'right',true)
+  dot(W-66,H-14,3,bl?P.vio:P.vioD)
+  txt('A-NAV',W-13,H-11,bl?P.tx2:P.tx3,8,'right',true)
+
+  dither()
+}
+
+/* ── Driver ───────────────────────────────────────────────────────────
+ * Grab path: server appends ?vow_frame=N → render exactly that frame.
+ * Preview path: self-animate so the dashboard thumbnail shows motion. */
+const vf=new URLSearchParams(location.search).get('vow_frame')
+if(vf!==null){
+  render(parseInt(vf,10)||0)
+}else{
+  let pf=0
+  render(pf)
+  setInterval(()=>{pf=(pf+1)%FRAME_COUNT;render(pf)},250)
+}
+</script></body></html>

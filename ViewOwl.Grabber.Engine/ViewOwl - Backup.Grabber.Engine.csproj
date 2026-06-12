@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0-windows</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+
+		<UseWPF>true</UseWPF>
+		<Nullable>warnings</Nullable>
+		<EnableNETAnalyzers>true</EnableNETAnalyzers>
+		<AnalysisMode>AllEnabledByDefault</AnalysisMode>
+		<WarningLevel>5</WarningLevel>
+		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+		<Features>strict</Features>
+
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Selenium.WebDriver" Version="4.38.0" />
+
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\ViewOwl.Grabber.DTO\ViewOwl.DTO.csproj" />
+	</ItemGroup>
+
+</Project>

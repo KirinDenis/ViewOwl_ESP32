@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!--
+        width=480 locks Chromium's layout viewport to 480 px.
+        PuppeteerSharp also calls SetViewportAsync(480, 320) in Chrome.cs,
+        so the captured frame is always exactly 480 x 320 px.
+    -->
+    <meta name="viewport" content="width=480, height=320, initial-scale=1.0, user-scalable=no">
+    <title>ViewOwl — DOM Template</title>
+    <style>
+        /*
+         * ╔══════════════════════════════════════════════════════════════╗
+         *   ViewOwl DOM template  ·  480 × 320 px  ·  BGR565 LCD
+         * ╚══════════════════════════════════════════════════════════════╝
+         *
+         * COLOR RULES (BGR565 = 5 red bits, 6 green bits, 5 blue bits):
+         *   1. Flat solid colors only — no CSS gradients.
+         *   2. No rgba() with fractional alpha.
+         *   3. No box-shadow / text-shadow with blur.
+         *   4. border-radius <= 4 px.
+         *   5. Chrome.cs injects  filter: saturate(0.1)  globally —
+         *      colors will be desaturated to 10% before BGR565 conversion.
+         *      Use grayscale or near-grayscale palette for predictable results.
+         *
+         * LAYOUT:
+         *   html/body fill the viewport (100%/100%) and center #frame.
+         *   #frame is hard-locked to 480×320 px.
+         *   In Chromium headless (480×320 viewport) → #frame fills exactly.
+         *   In dev browser (any size)               → #frame centered.
+         *   This allows local visual testing without changing any sizes.
+         *
+         * NOTE: for data-driven pages prefer template-canvas.html which
+         * applies Floyd-Steinberg dithering for better BGR565 output.
+         */
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #000;           /* letterbox color in dev browser */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            font-family: Arial, Helvetica, sans-serif;
+            font-weight: bold;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Outer frame — always exactly 480×320 */
+        #frame {
+            width: 480px;
+            height: 320px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        /* ── Header bar (36 px) ─────────────────────────────────── */
+        #header {
+            flex: 0 0 36px;
+            background: #000080;         /* BGR565-safe dark blue */
+            color: #FFFFFF;
+            border-bottom: 2px solid #F8FC00;   /* yellow accent */
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 8px;
+            font-size: 18px;
+        }
+
+        /* ── Content area (260 px = 320 - 36 - 24) ─────────────── */
+        #content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            background: #FFFFFF;
+            color: #000000;
+        }
+
+        /* ── Footer bar (24 px) ─────────────────────────────────── */
+        #footer {
+            flex: 0 0 24px;
+            background: #404040;
+            color: #C0C0C0;
+            border-top: 1px solid #808080;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 8px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<!--
+    REQUIRED: id="body"
+    ViewOwl uses this attribute to identify pages produced by the
+    template system. Do not remove or rename this attribute.
+-->
+<body id="body">
+
+    <div id="frame">
+
+        <!-- ── Header: title left, clock right ──────────────────── -->
+        <div id="header">
+            <span id="page-title">Page Title</span>
+            <span id="clock">00:00:00</span>
+        </div>
+
+        <!-- ── Main content ─────────────────────────────────────── -->
+        <div id="content">
+            <!--
+                Replace this with your layout. Available: 480 x 260 px.
+
+                Two-column example:
+                  <div style="width:200px; border-right:2px solid #C0C0C0; padding:8px;">left</div>
+                  <div style="flex:1; padding:8px;">right</div>
+
+                Full-width example:
+                  <div style="width:100%; padding:8px;">full width</div>
+            -->
+            <div style="margin:auto; font-size:18px; color:#808080; font-weight:normal;">
+                [ content goes here ]
+            </div>
+        </div>
+
+        <!-- ── Footer: source left, date right ──────────────────── -->
+        <div id="footer">
+            <span id="footer-left">Source</span>
+            <span id="footer-right">Mon 01 Jan</span>
+        </div>
+
+    </div>
+
+    <script>
+        'use strict';
+
+        const DAY_NAMES   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                             'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        function pad(n) { return String(n).padStart(2, '0'); }
+
+        function tick() {
+            const now = new Date();
+            document.getElementById('clock').textContent =
+                `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            document.getElementById('footer-right').textContent =
+                `${DAY_NAMES[now.getDay()]} ${pad(now.getDate())} ${MONTH_NAMES[now.getMonth()]}`;
+        }
+
+        tick();
+        setInterval(tick, 1000);
+
+        /* ════ Add async data-fetch functions below ════════════════
+         *
+         * async function fetchData() {
+         *     const resp = await fetch('https://api.example.com/...');
+         *     const data = await resp.json();
+         *     document.getElementById('some-id').textContent = data.value;
+         * }
+         * fetchData();
+         * setInterval(fetchData, 5 * 60 * 1000);
+         *
+         * ══════════════════════════════════════════════════════════ */
+    </script>
+
+</body>
+</html>

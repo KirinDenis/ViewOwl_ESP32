@@ -1,0 +1,171 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body
+  data-vow-class="B"
+  data-vow-name="ALIEN // OVERMONITORING ADDRESS MATRIX"
+  data-vow-description="Alien 1979 MUTHUR 9000 terminal — OVERMONITORING ADDRESS MATRIX with scanning cursor, green phosphor CRT"
+  data-vow-category="scifi"
+  data-vow-tags="alien,terminal,crt,scifi,muthur,nostromo,phosphor,vt323"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d');
+
+/* Scale all drawing to logical 480×320 — matches original pixel layout exactly */
+const SX = W / 480, SY = H / 320;
+ctx.setTransform(SX, 0, 0, SY, 0, 0);
+
+/* ── Content — copied verbatim from original HTML ────────────────────────── */
+const LEFT = [
+  ['CRFX',          'OM2077AM'],
+  ['ATTITUDE',      'SM2078'  ],
+  ['WASTE HEAT',    '2080'    ],
+  ['RAD',           '2081'    ],
+  ['VENT',          '2082AM'  ],
+  ['NAVIGATION',    'M2083'   ],
+  ['TIME',          'M2084'   ],
+  ['GAL POS',       ''        ],
+  ['COMMAND',       '2086SC'  ],
+  ['INTERFACE',     '2037'    ],
+  ['ATTN',          '2087SC'  ],
+  ['ALERT',         '2088SC'  ],
+  ['MARTIAL',       '2090'    ],
+  ['OVERLOCK',      'M2091'   ],
+];
+const RIGHT = [
+  ['L ALLIGNMENT',  'SM2093'  ],
+  ['PHOTO F',       'SM2094'  ],
+  ['MAINS',         ''        ],
+  ['IUA',           'SM2096'  ],
+  ['2LA',           'SM2097'  ],
+  ['3RA',           'SM2098'  ],
+  ['4LHA',          'SM2099'  ],
+  ['GRAY GRIDS',    ''        ],
+  ['INERTIAL DAMP', '3002AM'  ],
+  ['DECK A',        'A3003'   ],
+  ['DECK B',        'A3004'   ],
+  ['DECK C',        'A3005'   ],
+  ['LIFE SUPPORT',  ''        ],
+  ['0%',            'M3003AM' ],
+];
+
+/* ── Layout — derived from original CSS keyframes ────────────────────────── *
+ * Grid top = 40px. Row N baseline-top = 40 + N×18.                          *
+ * Cursor (2px underline) = 40 + N×18 + 15 − 3 (--dy) = 40 + N×18 + 12.   *
+ * Left col:  x = 16 … 235 (219 px wide).                                    *
+ * Right col: x = 245 … 464 (219 px wide).                                   */
+const GRID_TOP  = 40;
+const ROW_H     = 18;
+const COL_L     = 16;
+const COL_L_END = 235;
+const COL_R     = 245;
+const COL_R_END = 464;
+const CUR_DY    = -3;   /* --dy from original */
+
+/* 28 steps: 14 left, 14 right — one per 500 ms (2 fps) */
+const STEPS = [
+  ...LEFT.map( (_, i) => ({ col: 'L', row: i })),
+  ...RIGHT.map((_, i) => ({ col: 'R', row: i })),
+];
+
+let step = 0;
+
+/* ── Render ──────────────────────────────────────────────────────────────── */
+function render() {
+  const cur = STEPS[step];
+
+  /* Background */
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, 480, 320);
+
+  /* ── Header ── */
+  ctx.font          = "16px 'VT323', monospace";
+  ctx.letterSpacing = '2.24px';   /* letter-spacing: 0.14em × 16px */
+  ctx.textBaseline  = 'top';
+  ctx.textAlign     = 'left';
+  ctx.shadowColor   = 'rgba(40,180,70,0.60)';
+  ctx.shadowBlur    = 5;
+  ctx.fillStyle     = '#5fe070';
+  ctx.fillText('OVERMONITORING ADDRESS MATRIX', COL_L, 12);
+
+  /* ── Grid rows ── */
+  ctx.font          = "15px 'VT323', monospace";
+  ctx.letterSpacing = '0.75px';   /* letter-spacing: 0.05em × 15px */
+  ctx.shadowColor   = 'rgba(40,170,60,0.55)';
+  ctx.shadowBlur    = 4;
+
+  function drawRow(items, x1, x2, colId) {
+    items.forEach(([label, value], row) => {
+      const y = GRID_TOP + row * ROW_H;
+
+      /* Label — left-aligned */
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#5fe070';
+      ctx.fillText(label, x1, y);
+
+      /* Value — right-aligned */
+      if (value) {
+        ctx.textAlign = 'right';
+        ctx.fillText(value, x2, y);
+      }
+
+      /* Cursor underline — white, 2 px, matches original .cur */
+      if (cur.col === colId && cur.row === row) {
+        const cy = y + 15 + CUR_DY;    /* 15 ≈ font cap height, then −3 px dy */
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur  = 10;
+        ctx.fillStyle   = '#ffffff';
+        ctx.fillRect(x1, cy, x2 - x1, 2);
+        /* restore text glow for next row */
+        ctx.shadowColor = 'rgba(40,170,60,0.55)';
+        ctx.shadowBlur  = 4;
+      }
+    });
+  }
+
+  drawRow(LEFT,  COL_L, COL_L_END, 'L');
+  drawRow(RIGHT, COL_R, COL_R_END, 'R');
+
+  ctx.shadowBlur = 0;
+
+  /* ── Scanlines — matches original ::before repeating-linear-gradient ───── */
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  for (let y = 2; y < 320; y += 4) ctx.fillRect(0, y, 480, 2);
+}
+
+/* ── Animation loop — 2 fps, steps(1) matches original CSS animation ─────── */
+function tick(ts) {
+  requestAnimationFrame(tick);
+}
+
+document.fonts.load("15px 'VT323'").then(() => {
+  render();
+  setInterval(() => {
+    step = (step + 1) % STEPS.length;
+    render();
+  }, 500);
+}).catch(() => {
+  /* Fallback: render immediately with system font if Google Fonts unavailable */
+  render();
+  setInterval(() => { step = (step + 1) % STEPS.length; render(); }, 500);
+});
+</script>
+</body>
+</html>

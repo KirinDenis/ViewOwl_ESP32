@@ -1,0 +1,213 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=480, height=320, initial-scale=1.0, user-scalable=no">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #05091a;
+    font-family: "Courier New", monospace;
+    color: #cfe3ff;
+    overflow: hidden;
+  }
+  #frame {
+    position: relative;
+    width: 480px; height: 320px;
+    background:
+      radial-gradient(ellipse at 50% 60%, rgba(40,90,170,0.55) 0%, rgba(5,9,26,0.0) 65%),
+      linear-gradient(180deg, #050b1f 0%, #0a1333 100%);
+    border: 2px solid #2a5ea8;
+    overflow: hidden;
+  }
+  #frame::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,0.32) 2px,
+      rgba(0,0,0,0.32) 3px
+    );
+    pointer-events: none;
+    mix-blend-mode: multiply;
+  }
+  header {
+    height: 32px;
+    padding: 8px 14px;
+    background: linear-gradient(90deg, #112a55 0%, #1f4b8f 100%);
+    border-bottom: 1px solid #ffb000;
+    display: flex; justify-content: space-between; align-items: center;
+    font-weight: bold; font-size: 12px;
+    color: #ffd668;
+    letter-spacing: 1px;
+    text-shadow: 0 0 6px rgba(255,180,60,0.8);
+  }
+  header .corp { color: #9fd8ff; text-shadow: 0 0 6px rgba(120,200,255,0.6); }
+
+  .body { display: flex; height: 264px; }
+
+  .temp-col {
+    width: 220px;
+    padding: 18px 0 0 18px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .label { font-size: 11px; color: #8cbfff; letter-spacing: 2px; }
+  .primary {
+    font-size: 96px;
+    font-weight: bold;
+    line-height: 1;
+    color: #e8f4ff;
+    text-shadow: 0 0 18px rgba(140,200,255,0.9), 0 0 4px #ffffff;
+  }
+  .primary .unit { font-size: 36px; color: #ffb000; margin-left: 4px; text-shadow: 0 0 10px rgba(255,180,60,0.8); }
+  .condition {
+    font-size: 18px; font-weight: bold; color: #ffd668;
+    text-shadow: 0 0 8px rgba(255,180,60,0.6);
+    padding-bottom: 14px;
+    letter-spacing: 1px;
+  }
+  .city {
+    font-size: 14px; color: #9fd8ff;
+    padding-bottom: 18px;
+    letter-spacing: 2px;
+  }
+
+  .stats {
+    flex: 1;
+    padding: 18px 16px 14px 8px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .stat {
+    border-left: 2px solid #3fa8ff;
+    padding: 2px 0 2px 10px;
+    background: rgba(20,60,140,0.35);
+  }
+  .stat-label { font-size: 10px; color: #8cbfff; letter-spacing: 2px; }
+  .stat-val   { font-size: 24px; font-weight: bold; color: #e8f4ff;
+                text-shadow: 0 0 6px rgba(140,200,255,0.7); }
+  .stat-val .u { font-size: 12px; color: #ffb000; margin-left: 3px; }
+
+  .bar {
+    position: relative;
+    height: 6px; margin-top: 4px;
+    background: rgba(16,40,80,0.8);
+    border: 1px solid #2a5ea8;
+  }
+  .bar > i {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: linear-gradient(90deg, #3fa8ff, #ffb000);
+    box-shadow: 0 0 6px rgba(255,180,60,0.6);
+  }
+
+  footer {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 24px;
+    background: linear-gradient(90deg, #0a1a3a 0%, #112a55 100%);
+    border-top: 1px solid #2a5ea8;
+    padding: 6px 14px;
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: #9fd8ff;
+    letter-spacing: 1px;
+  }
+  footer .ok { color: #7cff7c; text-shadow: 0 0 6px rgba(80,255,80,0.6); }
+</style>
+</head>
+<body id="body"
+  data-vow-class="A"
+  data-vow-name="Orbital Weather Dossier"
+  data-vow-description="Nostromo-style full-color weather readout — live data from Warsaw, glowing CRT panels"
+  data-vow-category="weather"
+  data-vow-tags="weather,scifi,alien,nostromo,crt"
+  data-vow-refresh="5"
+>
+<div id="frame">
+  <header>
+    <span class="corp">WEYLAND-YUTANI // ATMO-NET</span>
+    <span>DOSSIER <span id="time">--:--</span></span>
+  </header>
+
+  <div class="body">
+    <div class="temp-col">
+      <div>
+        <div class="label">SURFACE TEMP</div>
+        <div class="primary"><span id="t">--</span><span class="unit">°C</span></div>
+      </div>
+      <div>
+        <div class="city">STATION // WARSAW 52.23°N 21.01°E</div>
+        <div class="condition" id="cond">STAND BY</div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-label">HUMIDITY</div>
+        <div class="stat-val"><span id="h">--</span><span class="u">%</span></div>
+        <div class="bar"><i id="h-bar" style="width:0%"></i></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">WIND</div>
+        <div class="stat-val"><span id="w">--</span><span class="u">km/h</span></div>
+        <div class="bar"><i id="w-bar" style="width:0%"></i></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">PRESSURE</div>
+        <div class="stat-val"><span id="p">--</span><span class="u">hPa</span></div>
+        <div class="bar"><i id="p-bar" style="width:0%"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span class="ok" id="status">LINK-OK</span>
+    <span>CH-07 / ENCRYPTED / 480x320</span>
+  </footer>
+</div>
+
+<script>
+'use strict';
+
+const WMO = {
+  0: 'CLEAR', 1: 'MAINLY CLEAR', 2: 'PARTLY CLOUDY', 3: 'OVERCAST',
+  45: 'FOG', 48: 'RIME FOG',
+  51: 'DRIZZLE LIGHT', 53: 'DRIZZLE', 55: 'DRIZZLE DENSE',
+  61: 'RAIN LIGHT', 63: 'RAIN', 65: 'RAIN HEAVY',
+  71: 'SNOW LIGHT', 73: 'SNOW', 75: 'SNOW HEAVY',
+  80: 'SHOWERS', 81: 'SHOWERS', 82: 'SHOWERS VIOLENT',
+  95: 'THUNDERSTORM', 96: 'TSTORM+HAIL', 99: 'TSTORM+HAIL',
+};
+
+function set(id, v) { document.getElementById(id).textContent = v; }
+function bar(id, pct) { document.getElementById(id).style.width = Math.max(0, Math.min(100, pct)) + '%'; }
+
+async function load() {
+  const url = 'https://api.open-meteo.com/v1/forecast'
+    + '?latitude=52.23&longitude=21.01'
+    + '&current=temperature_2m,relative_humidity_2m,wind_speed_10m,surface_pressure,weather_code';
+  try {
+    const r = await fetch(url);
+    const j = await r.json();
+    const c = j.current;
+    set('t', Math.round(c.temperature_2m));
+    set('h', Math.round(c.relative_humidity_2m));
+    set('w', Math.round(c.wind_speed_10m));
+    set('p', Math.round(c.surface_pressure));
+    set('cond', WMO[c.weather_code] ?? 'UNKNOWN');
+
+    bar('h-bar', c.relative_humidity_2m);
+    bar('w-bar', (c.wind_speed_10m / 60) * 100);
+    bar('p-bar', ((c.surface_pressure - 970) / 70) * 100);
+
+    const d = new Date(c.time);
+    set('time', d.toISOString().substring(11, 16));
+    document.getElementById('status').textContent = 'LINK-OK';
+  } catch (e) {
+    document.getElementById('status').textContent = 'LINK-FAIL';
+  }
+}
+load();
+</script>
+</body>
+</html>

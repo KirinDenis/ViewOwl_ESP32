@@ -1,0 +1,179 @@
+﻿<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body" data-vow-name="Sectors" data-vow-category="scifi" data-vow-description="Sci-fi sector status grid">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict'
+const W=480,H=320,cv=document.getElementById('screen'),cx=cv.getContext('2d')
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+function dither(){
+  const id=cx.getImageData(0,0,W,H),d=id.data
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=(y*W+x)*4
+    for(let c=0;c<3;c++){
+      const bits=c===1?6:5,max=(1<<bits)-1,old=d[i+c]
+      const nv=Math.round(old/255*max)/max*255,err=old-nv
+      d[i+c]=nv
+      if(x+1<W)d[i+4+c]+=err*7/16
+      if(y+1<H){if(x>0)d[i+(W-1)*4+c]+=err*3/16;d[i+W*4+c]+=err*5/16;if(x+1<W)d[i+(W+1)*4+c]+=err/16}
+    }
+  }
+  cx.putImageData(id,0,0)
+}
+const P={
+  bg:css(0,8,16),pan:css(0,18,32),bdr:css(0,80,108),bdrd:css(0,32,48),
+  cy:css(0,216,248),cy2:css(0,144,180),cy3:css(0,44,68),
+  gn:css(0,208,64),gnd:css(0,56,24),
+  am:css(240,152,0),amd:css(72,44,0),
+  rd:css(240,32,32),rdd:css(64,8,8),
+  tx:css(120,196,216),tx2:css(52,104,128),
+  wh:css(208,236,248),hl:css(0,180,240)
+}
+function fill(x,y,w,h,col){cx.fillStyle=col;cx.fillRect(x,y,w,h)}
+function line(x1,y1,x2,y2,col,lw=1){cx.strokeStyle=col;cx.lineWidth=lw;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()}
+function txt(s,x,y,col,sz=9,al='left'){cx.font=`${sz}px monospace`;cx.fillStyle=col;cx.textAlign=al;cx.fillText(s,x,y);cx.textAlign='left'}
+function dot(x,y,col){cx.beginPath();cx.arc(x,y,3,0,Math.PI*2);cx.fillStyle=col;cx.fill()}
+
+// 8 compartments, each with: label, x,y,w,h (in ship diagram), crew, o2, temp, prs, status
+const ROOMS=[
+  {id:'BRIDGE',   x:10,y:8, w:60,h:36,crew:4,o2:21,tmp:22,prs:101,stat:'OK'},
+  {id:'MEDBAY',   x:10,y:48,w:60,h:32,crew:2,o2:21,tmp:24,prs:101,stat:'OK'},
+  {id:'ENGINEERING',x:10,y:84,w:60,h:40,crew:3,o2:21,tmp:28,prs:100,stat:'OK'},
+  {id:'CARGO',    x:10,y:128,w:60,h:32,crew:0,o2:20,tmp:18,prs:98, stat:'LOW-TEMP'},
+  {id:'REACTOR',  x:74,y:84,w:44,h:40,crew:1,o2:20,tmp:35,prs:103,stat:'ELEVATED'},
+  {id:'HABITATS', x:74,y:8, w:44,h:72,crew:8,o2:21,tmp:23,prs:101,stat:'OK'},
+  {id:'AIRLOCK A',x:74,y:128,w:44,h:16,crew:0,o2:0, tmp:-8,prs:0,  stat:'VACUUM'},
+  {id:'AIRLOCK B',x:74,y:148,w:44,h:12,crew:0,o2:0, tmp:-8,prs:0,  stat:'VACUUM'},
+]
+
+// Crew positions per frame (cycles through active/moving crew)
+const CREW_POS=[
+  [[38,26],[38,64],[22,104],[88,26],[88,44],[88,60],[88,76],[88,92]],
+  [[18,16],[38,56],[30,96],[88,18],[88,34],[98,44],[88,56],[88,70]],
+  [[28,20],[20,54],[26,90],[96,26],[88,40],[92,50],[88,64],[88,80]],
+  [[22,30],[42,62],[34,100],[88,30],[88,48],[88,58],[88,68],[88,84]],
+]
+
+// Active/focus sector per frame
+const FOCUS=[0,1,2,4, 5,6,3,7]
+
+let fi=0,tk=0
+
+function statusColor(s){
+  if(s==='OK')return P.gn
+  if(s==='VACUUM')return P.cy2
+  if(s==='ELEVATED')return P.am
+  return P.am
+}
+
+function tick(){
+  const bl=(tk++%2)===0
+  const nw=new Date(),ts=`${String(nw.getHours()).padStart(2,'0')}:${String(nw.getMinutes()).padStart(2,'0')}:${String(nw.getSeconds()).padStart(2,'0')}`
+  const focus=FOCUS[fi%FOCUS.length]
+  const fr=ROOMS[focus]
+
+  fill(0,0,W,H,P.bg)
+  cx.strokeStyle=P.cy3;cx.lineWidth=0.5
+  for(let x=0;x<W;x+=40)line(x,0,x,H,P.cy3,0.5)
+  for(let y=0;y<H;y+=40)line(0,y,W,y,P.cy3,0.5)
+
+  // Header
+  fill(0,0,W,24,P.pan);line(0,24,W,24,P.bdrd)
+  cx.fillStyle=P.cy;cx.font='bold 11px monospace';cx.fillText('⬡ VESSEL SECTOR MONITOR',8,16)
+  txt('DECK A–D  SURVEY',220,16,P.tx2)
+  txt(ts,W-8,16,P.tx2,9,'right')
+
+  // === LEFT: Ship diagram ===
+  const SX=8,SY=30,SC=2.5  // Scale factor to draw rooms
+  fill(SX,SY,120,180,css(0,10,20))
+  cx.strokeStyle=P.bdrd;cx.lineWidth=1;cx.strokeRect(SX,SY,120,180)
+  txt('DECK PLAN',SX+4,SY+192,P.tx2,7)
+
+  // Draw all rooms
+  for(let i=0;i<ROOMS.length;i++){
+    const r=ROOMS[i]
+    const rx=SX+r.x*SC/2,ry=SY+r.y*SC/2,rw=r.w*SC/2,rh=r.h*SC/2
+    const isFocus=i===focus
+    const sc=statusColor(r.stat)
+    fill(rx,ry,rw,rh,isFocus?css(0,28,48):css(0,12,22))
+    cx.strokeStyle=isFocus?P.hl:sc
+    cx.lineWidth=isFocus?2:0.5;cx.strokeRect(rx,ry,rw,rh)
+    if(rw>14){txt(r.id.slice(0,5),rx+1,ry+8,isFocus?P.hl:P.tx2,5)}
+    // Status dot
+    dot(rx+rw-4,ry+4,isFocus&&bl?P.wh:sc)
+  }
+
+  // Draw crew dots
+  const cp=CREW_POS[fi%4]
+  for(let i=0;i<cp.length;i++){
+    const[cx0,cy0]=cp[i]
+    dot(SX+cx0*SC/3,SY+cy0*SC/2,bl&&i<fr.crew?P.wh:P.cy2)
+  }
+
+  // Ship outline hull
+  cx.strokeStyle=P.bdr;cx.lineWidth=1.5
+  cx.beginPath();cx.moveTo(SX+60,SY+2)
+  cx.lineTo(SX+118,SY+10);cx.lineTo(SX+118,SY+168);cx.lineTo(SX+60,SY+178)
+  cx.lineTo(SX+2,SY+168);cx.lineTo(SX+2,SY+10);cx.closePath();cx.stroke()
+
+  // === CENTER: Detail panel for focused sector ===
+  const DX=136,DY=30,DW=200,DH=256
+  fill(DX,DY,DW,DH,P.pan);cx.strokeStyle=P.bdr;cx.lineWidth=1.5;cx.strokeRect(DX,DY,DW,DH)
+
+  // Section header
+  fill(DX,DY,DW,24,statusColor(fr.stat)===P.gn?css(0,40,24):css(40,28,0))
+  txt(fr.id,DX+DW/2,DY+16,P.wh,13,'center')
+
+  // Readings grid
+  const fields=[
+    ['CREW ONBOARD',fr.crew+' PERSONNEL'],
+    ['ATMOSPHERE',fr.o2+'% O₂'],
+    ['TEMPERATURE',fr.tmp+'°C'],
+    ['PRESSURE',fr.prs+' kPa'],
+    ['STATUS',fr.stat],
+    ['LAST SCAN',ts],
+  ]
+  for(let i=0;i<fields.length;i++){
+    const[lab,val]=fields[i],ty=DY+38+i*32
+    line(DX+8,ty+8,DX+DW-8,ty+8,P.bdrd,0.5)
+    txt(lab,DX+10,ty+22,P.tx2,8)
+    const vc=lab==='STATUS'?statusColor(fr.stat):P.cy
+    txt(val,DX+DW-10,ty+22,vc,10,'right')
+  }
+
+  // Alert if not OK
+  if(fr.stat!=='OK'&&bl){
+    fill(DX+8,DY+DH-36,DW-16,20,P.amd)
+    txt('⚠ CONDITION: '+fr.stat,DX+DW/2,DY+DH-21,P.am,9,'center')
+  }
+
+  // === RIGHT: All sectors summary ===
+  const RX=344,RY=30,RW=132,RH=256
+  fill(RX,RY,RW,RH,P.pan);cx.strokeStyle=P.bdrd;cx.lineWidth=1;cx.strokeRect(RX,RY,RW,RH)
+  txt('ALL SECTORS',RX+4,RY+14,P.tx2,8)
+  line(RX,RY+18,RX+RW,RY+18,P.bdrd)
+
+  for(let i=0;i<ROOMS.length;i++){
+    const r=ROOMS[i],ty=RY+24+i*28
+    const isFocus=i===focus
+    if(isFocus)fill(RX+2,ty-2,RW-4,22,css(0,24,40))
+    txt(r.id.slice(0,10),RX+4,ty+8,isFocus?P.hl:P.tx2,7)
+    dot(RX+RW-10,ty+4,statusColor(r.stat))
+    txt(r.stat.slice(0,7),RX+4,ty+18,P.tx2,6)
+    txt(r.crew+'👤',RX+RW-28,ty+18,r.crew>0?P.cy2:P.tx2,6)
+  }
+
+  // Bottom bar
+  fill(0,290,W,30,P.pan);line(0,290,W,290,P.bdrd)
+  txt(`▶ MONITORING: ${fr.id}`,8,307,P.cy,9)
+  txt(`CREW TOTAL: ${ROOMS.reduce((a,r)=>a+r.crew,0)} / 18`,200,307,P.tx,8)
+  txt(`SECTOR ${fi%8+1}/8`,W-8,307,P.gn,8,'right')
+
+  dither()
+  fi=(fi+1)%8
+}
+tick();setInterval(tick,1000)
+</script></body></html>

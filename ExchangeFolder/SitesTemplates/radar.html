@@ -1,0 +1,356 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Radar SWP</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 480px; height: 320px; overflow: hidden; background: #000; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="Radar" data-vow-category="scifi" data-vow-description="Sci-fi radar sweep display">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+function quantChannel(v, bits) {
+    const shift = 8 - bits;
+    const q = Math.min((1 << bits) - 1, v >> shift);
+    return (q << shift) | (q >> (bits - shift));
+}
+function snap565(r, g, b) {
+    return { r: quantChannel(r,5), g: quantChannel(g,6), b: quantChannel(b,5) };
+}
+function css(r, g, b) {
+    const q = snap565(r, g, b);
+    return `rgb(${q.r},${q.g},${q.b})`;
+}
+
+function dither() {
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const oR = d[i], oG = d[i+1], oB = d[i+2];
+            const q = snap565(oR, oG, oB);
+            d[i] = q.r; d[i+1] = q.g; d[i+2] = q.b;
+            const eR = oR-q.r, eG = oG-q.g, eB = oB-q.b;
+            if (x+1<W){const j=i+4;d[j]=clamp(d[j]+((eR*7)>>4));d[j+1]=clamp(d[j+1]+((eG*7)>>4));d[j+2]=clamp(d[j+2]+((eB*7)>>4));}
+            if (y+1<H){
+                if (x>0){const j=((y+1)*W+(x-1))*4;d[j]=clamp(d[j]+((eR*3)>>4));d[j+1]=clamp(d[j+1]+((eG*3)>>4));d[j+2]=clamp(d[j+2]+((eB*3)>>4));}
+                {const j=((y+1)*W+x)*4;d[j]=clamp(d[j]+((eR*5)>>4));d[j+1]=clamp(d[j+1]+((eG*5)>>4));d[j+2]=clamp(d[j+2]+((eB*5)>>4));}
+                if (x+1<W){const j=((y+1)*W+(x+1))*4;d[j]=clamp(d[j]+(eR>>4));d[j+1]=clamp(d[j+1]+(eG>>4));d[j+2]=clamp(d[j+2]+(eB>>4));}
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
+const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pad(n) { return String(n).padStart(2,'0'); }
+let clockStr = '00:00:00', dateStr = 'Mon 01 Jan';
+function tickClock() {
+    const now = new Date();
+    clockStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    dateStr = `${DAY[now.getDay()]} ${pad(now.getDate())} ${MON[now.getMonth()]}`;
+}
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
+function line(x1,y1,x2,y2,c,t){
+    ctx.strokeStyle=c;ctx.lineWidth=t||1;
+    const ox=(y1===y2)?0:0.5,oy=(x1===x2)?0:0.5;
+    ctx.beginPath();ctx.moveTo(x1+ox,y1+oy);ctx.lineTo(x2+ox,y2+oy);ctx.stroke();
+}
+function drawText(s,x,y,sz,c,align,bold){
+    ctx.fillStyle=c;
+    ctx.font=`${bold===false?'':'bold '}${sz}px Arial,Helvetica,sans-serif`;
+    ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';
+    ctx.fillText(String(s),x,y);
+}
+
+function tick() { tickClock(); }
+
+// ---- Weather label helper ----
+function wLabel(code) {
+    if (code === 0) return 'CLEAR';
+    if (code <= 2) return 'P.CLOUDY';
+    if (code <= 3) return 'CLOUDY';
+    if (code <= 48) return 'FOGGY';
+    if (code <= 67) return 'RAINY';
+    if (code <= 77) return 'SNOWY';
+    if (code <= 82) return 'SHOWERS';
+    return 'STORMY';
+}
+
+// ---- Palette ----
+const C = {
+    bg:       css(  0,   8,   4),
+    radarBg:  css(  0,  12,   6),
+    bright:   css(  0, 248,  68),
+    mid:      css(  0, 192,  52),
+    dim:      css(  0,  64,  16),
+    vdim:     css(  0,  28,   8),
+    white:    css(255, 255, 255),
+    gray:     css(140, 150, 140),
+    dimGray:  css( 60,  70,  60),
+    border:   css(  0,  80,  24),
+    panelBg:  css(  0,  16,   8),
+    yellow:   css(220, 220,   0),
+    blue:     css( 60, 140, 220),
+    red:      css(220,  60,  60),
+};
+
+// ---- Radar geometry ----
+const RADAR_CX = 114;
+const RADAR_CY = 160;
+const RADAR_R  = 100;
+
+// Fixed blip positions (polar: angle fraction 0..1, radius fraction 0..1)
+const BLIPS = [
+    { af: 0.08, rf: 0.42 },
+    { af: 0.19, rf: 0.71 },
+    { af: 0.31, rf: 0.55 },
+    { af: 0.45, rf: 0.83 },
+    { af: 0.58, rf: 0.38 },
+    { af: 0.67, rf: 0.62 },
+    { af: 0.77, rf: 0.90 },
+    { af: 0.88, rf: 0.47 },
+    { af: 0.95, rf: 0.76 },
+    { af: 0.13, rf: 0.29 },
+    { af: 0.52, rf: 0.68 },
+    { af: 0.72, rf: 0.22 },
+];
+
+// Each blip gets a brightness that fades after the sweep passes over it
+const blipBright = new Array(BLIPS.length).fill(0);
+
+// Sweep angle state — full rotation in 4 seconds at 60 fps => ~1.5 deg/frame
+let sweepAngle = 0;   // radians, 0 = right, increases clockwise
+const SWEEP_SPEED = (2 * Math.PI) / (4 * 60);  // 4-second full rotation at ~60 fps
+
+// Trail length in radians (about 90 degrees of glow)
+const TRAIL_LEN = Math.PI / 2;
+
+// Sweep angle tracks which blips were just passed
+function updateBlips() {
+    BLIPS.forEach((b, i) => {
+        // Map blip angle to same space (clockwise from top = -PI/2 base)
+        const ba = b.af * Math.PI * 2 - Math.PI / 2;
+        // Normalise to 0..2PI
+        const normBA = ((ba % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+        const normSA = ((sweepAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+        // If sweep just crossed this blip (within one step), light it up
+        const delta = ((normSA - normBA + Math.PI * 2) % (Math.PI * 2));
+        if (delta < SWEEP_SPEED * 2) {
+            blipBright[i] = 255;
+        } else {
+            // Decay proportional to angular distance behind sweep
+            blipBright[i] = Math.max(0, blipBright[i] - 6);
+        }
+    });
+}
+
+function drawRadar() {
+    // Radar background circle
+    ctx.fillStyle = C.radarBg;
+    ctx.beginPath();
+    ctx.arc(RADAR_CX, RADAR_CY, RADAR_R, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Concentric rings at 25%, 50%, 75%, 100%
+    [0.25, 0.5, 0.75, 1.0].forEach(f => {
+        ctx.strokeStyle = C.dim;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(RADAR_CX, RADAR_CY, RADAR_R * f, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+
+    // Cross-hair lines
+    line(RADAR_CX - RADAR_R, RADAR_CY, RADAR_CX + RADAR_R, RADAR_CY, C.dim, 1);
+    line(RADAR_CX, RADAR_CY - RADAR_R, RADAR_CX, RADAR_CY + RADAR_R, C.dim, 1);
+
+    // ---- Sweep trail (from sweepAngle back by TRAIL_LEN) ----
+    // Draw as filled arc sectors with diminishing brightness
+    const TRAIL_STEPS = 16;
+    for (let s = TRAIL_STEPS; s >= 0; s--) {
+        const fraction = s / TRAIL_STEPS;  // 1 = at sweep head, 0 = trail end
+        const startA = sweepAngle - TRAIL_LEN * (1 - fraction);
+        const endA   = sweepAngle - TRAIL_LEN * (1 - fraction) + (TRAIL_LEN / TRAIL_STEPS);
+
+        // Trail colour: bright green fading to very dim
+        const gv = Math.floor(fraction * 180);
+        ctx.fillStyle = css(0, gv, Math.floor(gv * 0.25));
+        ctx.beginPath();
+        ctx.moveTo(RADAR_CX, RADAR_CY);
+        ctx.arc(RADAR_CX, RADAR_CY, RADAR_R - 1, startA, endA);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    // Sweep line itself
+    ctx.strokeStyle = C.bright;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(RADAR_CX, RADAR_CY);
+    ctx.lineTo(
+        RADAR_CX + Math.cos(sweepAngle) * RADAR_R,
+        RADAR_CY + Math.sin(sweepAngle) * RADAR_R
+    );
+    ctx.stroke();
+
+    // Clip blips to radar circle, draw them
+    BLIPS.forEach((b, i) => {
+        if (blipBright[i] <= 0) return;
+        const a = b.af * Math.PI * 2 - Math.PI / 2;
+        const bx = RADAR_CX + Math.cos(a) * b.rf * RADAR_R;
+        const by = RADAR_CY + Math.sin(a) * b.rf * RADAR_R;
+        const gv = blipBright[i];
+        ctx.fillStyle = css(gv > 200 ? gv - 200 : 0, Math.min(255, gv), Math.floor(gv * 0.3));
+        ctx.beginPath();
+        ctx.arc(bx, by, 3, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // Outer ring
+    ctx.strokeStyle = C.mid;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(RADAR_CX, RADAR_CY, RADAR_R, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Center dot
+    ctx.fillStyle = C.bright;
+    ctx.beginPath();
+    ctx.arc(RADAR_CX, RADAR_CY, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Label
+    ctx.fillStyle = C.dim;
+    ctx.font = '9px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('SWP-7', RADAR_CX, RADAR_CY + RADAR_R + 12);
+}
+
+// ---- City weather ----
+const CITIES = [
+    { name: 'PARIS',  lat: 48.85, lon:  2.35 },
+    { name: 'WARSAW', lat: 52.23, lon: 21.01 },
+    { name: 'CAIRO',  lat: 30.06, lon: 31.24 },
+];
+const cityWx = CITIES.map(() => ({ temp: '---', label: '---', wind: '--' }));
+
+function fetchCityWeather(i) {
+    const c = CITIES[i];
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m,weathercode,windspeed_10m&timezone=auto`)
+        .then(r => r.json())
+        .then(data => {
+            const cur = data.current;
+            cityWx[i].temp  = Math.round(cur.temperature_2m) + '\u00b0C';
+            cityWx[i].label = wLabel(cur.weathercode);
+            cityWx[i].wind  = Math.round(cur.windspeed_10m) + ' km/h';
+        })
+        .catch(() => {});
+}
+
+CITIES.forEach((_, i) => fetchCityWeather(i));
+setInterval(() => CITIES.forEach((_, i) => fetchCityWeather(i)), 600000);
+
+// ---- Right panel: 3 city cards ----
+const PANEL_X = 228;
+const PANEL_W = W - PANEL_X;
+const CARD_H  = Math.floor(H / 3);
+
+function drawCityCards() {
+    fillRect(PANEL_X, 0, PANEL_W, H, C.panelBg);
+    line(PANEL_X, 0, PANEL_X, H, C.border, 1);
+
+    // Panel header
+    ctx.fillStyle = C.bright;
+    ctx.font = 'bold 10px "Courier New", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(clockStr, PANEL_X + 8, 14);
+    ctx.fillStyle = C.dim;
+    ctx.font = '9px "Courier New", monospace';
+    ctx.fillText(dateStr, PANEL_X + 8, 26);
+
+    CITIES.forEach((city, i) => {
+        const cy = i * CARD_H;
+        const mx = PANEL_X + 8;
+
+        // Separator (not on first card top)
+        if (i > 0) line(PANEL_X, cy, W, cy, C.border, 1);
+
+        // City name
+        ctx.fillStyle = C.bright;
+        ctx.font = 'bold 13px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(city.name, mx, cy + 22);
+
+        // Temperature — colour by warmth
+        const tmp = parseInt(cityWx[i].temp);
+        const tempCol = isNaN(tmp) ? C.gray : (tmp >= 20 ? C.yellow : tmp >= 5 ? C.white : C.blue);
+        ctx.fillStyle = tempCol;
+        ctx.font = 'bold 22px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(cityWx[i].temp, mx, cy + 52);
+
+        // Condition
+        ctx.fillStyle = C.mid;
+        ctx.font = '11px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(cityWx[i].label, mx, cy + 68);
+
+        // Wind
+        ctx.fillStyle = C.dimGray;
+        ctx.font = '10px Arial, sans-serif';
+        ctx.fillText('Wind: ' + cityWx[i].wind, mx, cy + 82);
+
+        // Small accent line under city name
+        line(mx, cy + 26, mx + 80, cy + 26, C.dim, 1);
+    });
+}
+
+// ---- Full render ----
+function renderFrame() {
+    fillRect(0, 0, W, H, C.bg);
+    drawRadar();
+    drawCityCards();
+    dither();
+}
+
+// ---- Animation loop ----
+let lastFrameTime = 0;
+const FRAME_MS = 16;  // ~60 fps for smooth sweep
+
+function animLoop(ts) {
+    if (ts - lastFrameTime >= FRAME_MS) {
+        lastFrameTime = ts;
+        sweepAngle += SWEEP_SPEED;
+        if (sweepAngle >= Math.PI * 2) sweepAngle -= Math.PI * 2;
+        updateBlips();
+        renderFrame();
+    }
+    requestAnimationFrame(animLoop);
+}
+
+// Start
+tickClock();
+setInterval(tick, 1000);
+requestAnimationFrame(animLoop);
+</script>
+</body>
+</html>

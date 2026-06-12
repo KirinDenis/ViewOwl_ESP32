@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ViewOwl — Dashboard</title>
+  <!-- Bootstrap 5.3.3 base CSS loaded FIRST — AdminKit is designed to layer
+       on top of Bootstrap and override where needed. Without this, Bootstrap
+       modal styles (display:none, position:fixed, backdrop, etc.) are absent
+       because AdminKit's app.css bundle does not include the modal component. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <!-- AdminKit (Bootstrap 5 based — overrides Bootstrap visual styles) -->
+  <link rel="stylesheet" href="https://unpkg.com/@adminkit/core@3.4.0/dist/css/app.css" />
+  <!-- FontAwesome 5 — keep v5 so all page icon classes remain unchanged -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" />
+  <!-- toastr notifications -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.min.css" />
+  <!-- CodeMirror 5 — htmlmixed editor used in the template editor modal -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css" />
+
+  <style>
+    /* ── Page-content fade + slide up on every navigation ───────────────── */
+    @keyframes vo-fade-up {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0);    }
+    }
+    .page-anim { animation: vo-fade-up .28s ease both; }
+
+    /* ── Card hover: deepen shadow only — no transform/zoom (eye fatigue) ── */
+    .card { transition: box-shadow .18s ease; }
+    .card:hover { box-shadow: 0 4px 18px rgba(0, 0, 0, .11) !important; }
+
+    /* ── Stat card accent icon ───────────────────────────────────────────── */
+    .stat-icon { font-size: 1.8rem; line-height: 1; }
+
+    /* ── Centered spinner shown while a page module loads ───────────────── */
+    .page-spinner {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 4rem;
+      color: var(--bs-primary, #3b7ddd);
+    }
+
+    /* ── FontAwesome icon inside sidebar-link ───────────────────────────── */
+    .sidebar-link .fas,
+    .sidebar-link .far,
+    .sidebar-link .fab {
+      width: 20px;
+      text-align: center;
+      margin-right: .5rem;
+      opacity: .7;
+    }
+    .sidebar-item.active .sidebar-link .fas,
+    .sidebar-item.active .sidebar-link .far {
+      opacity: 1;
+    }
+
+    /* ── Subtle table-row hover transition ──────────────────────────────── */
+    .table tbody tr { transition: background-color .12s ease; }
+
+    /* ── Login shake on error (reused from index.html keyframe) ─────────── */
+    @keyframes vo-shake {
+      0%, 100% { transform: translateX(0); }
+      20%       { transform: translateX(-6px); }
+      40%       { transform: translateX(6px); }
+      60%       { transform: translateX(-4px); }
+      80%       { transform: translateX(4px); }
+    }
+
+    /* ── Sidebar toggle button reset ────────────────────────────────────── */
+    /* AdminKit looks for .js-sidebar-toggle and toggles .collapsed on the  */
+    /* .js-sidebar element. We keep .sidebar-toggle for AdminKit's margin    */
+    /* styling only. Our old .vo-sidebar-toggle + body class approach was    */
+    /* wrong — AdminKit never used body classes for sidebar state.           */
+    .js-sidebar-toggle {
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    /* ── Dark mode toggle button ─────────────────────────────────────────── */
+    #btn-theme-toggle {
+      background: none;
+      border: none;
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 0.35rem 0.5rem;
+      border-radius: 50%;
+      line-height: 1;
+      transition: background 0.15s;
+    }
+    #btn-theme-toggle:hover { background: rgba(128,128,128,0.15); }
+
+    /* ── Dark mode overrides (Bootstrap 5.3 + AdminKit) ─────────────────── */
+    [data-bs-theme="dark"] body,
+    [data-bs-theme="dark"] .wrapper { background: #1a1f2e; }
+
+    [data-bs-theme="dark"] .sidebar { background: #151a27; }
+    [data-bs-theme="dark"] .sidebar-brand { color: #e0e6f0; }
+    [data-bs-theme="dark"] .sidebar-link { color: #9aacbb; }
+    [data-bs-theme="dark"] .sidebar-item.active .sidebar-link { color: #4dd0e1; }
+    [data-bs-theme="dark"] .sidebar-header { color: #5a6a7a; }
+
+    [data-bs-theme="dark"] .navbar-bg {
+      background: #1e2535 !important;
+      border-bottom: 1px solid #2a3550;
+    }
+    [data-bs-theme="dark"] .navbar-light .navbar-nav .nav-link { color: #c0ccd8; }
+    [data-bs-theme="dark"] .navbar-light .navbar-brand { color: #e0e6f0; }
+
+    [data-bs-theme="dark"] .main,
+    [data-bs-theme="dark"] .content { background: #1a1f2e; }
+
+    [data-bs-theme="dark"] .card {
+      background: #1e2535;
+      border-color: #2a3550;
+      color: #c0ccd8;
+    }
+    [data-bs-theme="dark"] .card-header { border-bottom-color: #2a3550; }
+
+    [data-bs-theme="dark"] .table { color: #c0ccd8; }
+    [data-bs-theme="dark"] .table > :not(caption) > * > * { border-bottom-color: #2a3550; }
+    [data-bs-theme="dark"] .table-hover tbody tr:hover > * { background-color: rgba(255,255,255,0.03); }
+
+    [data-bs-theme="dark"] .footer { background: #151a27; border-top-color: #2a3550; }
+    [data-bs-theme="dark"] .text-muted { color: #7a8a9a !important; }
+
+    [data-bs-theme="dark"] .form-control,
+    [data-bs-theme="dark"] .form-select {
+      background: #252f3e;
+      border-color: #3a4a5a;
+      color: #c0ccd8;
+    }
+    [data-bs-theme="dark"] .form-control:focus,
+    [data-bs-theme="dark"] .form-select:focus { border-color: #4e8cff; }
+
+    [data-bs-theme="dark"] .modal-content {
+      background: #1e2535;
+      border-color: #2a3550;
+      color: #c0ccd8;
+    }
+    [data-bs-theme="dark"] .modal-header,
+    [data-bs-theme="dark"] .modal-footer { border-color: #2a3550; }
+
+    [data-bs-theme="dark"] .btn-close { filter: invert(1); }
+
+    [data-bs-theme="dark"] .badge.bg-light { background: #2a3550 !important; color: #c0ccd8 !important; }
+
+    /* Headings and generic text */
+    [data-bs-theme="dark"] h1, [data-bs-theme="dark"] h2, [data-bs-theme="dark"] h3,
+    [data-bs-theme="dark"] h4, [data-bs-theme="dark"] h5, [data-bs-theme="dark"] h6,
+    [data-bs-theme="dark"] .h1, [data-bs-theme="dark"] .h2, [data-bs-theme="dark"] .h3,
+    [data-bs-theme="dark"] .h4, [data-bs-theme="dark"] .h5, [data-bs-theme="dark"] .h6 { color: #e0e6f0; }
+    [data-bs-theme="dark"] p, [data-bs-theme="dark"] .lead { color: #c0ccd8; }
+    [data-bs-theme="dark"] .card-title { color: #e0e6f0; }
+    [data-bs-theme="dark"] label, [data-bs-theme="dark"] .col-form-label { color: #c0ccd8; }
+
+    /* Table header */
+    [data-bs-theme="dark"] .table thead th,
+    [data-bs-theme="dark"] .table thead td { background: #1e2535; color: #9aacbb; border-bottom-color: #2a3550; }
+    [data-bs-theme="dark"] .table td, [data-bs-theme="dark"] .table th { color: #c0ccd8; }
+    [data-bs-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(255,255,255,0.03); color: #c0ccd8; }
+
+    /* Bootstrap utility overrides */
+    [data-bs-theme="dark"] .bg-white { background: #1e2535 !important; }
+    [data-bs-theme="dark"] .bg-light  { background: #252f3e !important; }
+    [data-bs-theme="dark"] .border    { border-color: #2a3550 !important; }
+    [data-bs-theme="dark"] .text-dark { color: #e0e6f0 !important; }
+
+    /* AdminKit stat blocks */
+    [data-bs-theme="dark"] .stat-number { color: #e0e6f0; }
+    [data-bs-theme="dark"] .stat-label  { color: #7a8a9a; }
+
+    /* Dropdown */
+    [data-bs-theme="dark"] .dropdown-menu {
+      background: #1e2535;
+      border-color: #2a3550;
+    }
+    [data-bs-theme="dark"] .dropdown-item { color: #c0ccd8; }
+    [data-bs-theme="dark"] .dropdown-item:hover { background: #252f3e; color: #e0e6f0; }
+    [data-bs-theme="dark"] .dropdown-divider { border-color: #2a3550; }
+
+    /* Input group addons */
+    [data-bs-theme="dark"] .input-group-text {
+      background: #252f3e;
+      border-color: #3a4a5a;
+      color: #c0ccd8;
+    }
+
+    /* Table-light header used by page modules (devices, templates, users, etc.) */
+    [data-bs-theme="dark"] .table-light,
+    [data-bs-theme="dark"] .table-light th,
+    [data-bs-theme="dark"] .table-light td,
+    [data-bs-theme="dark"] thead.table-light > tr > th {
+      background-color: #1e2535 !important;
+      color: #9aacbb !important;
+      border-bottom-color: #2a3550 !important;
+    }
+
+    /* Warning badges with text-dark class */
+    [data-bs-theme="dark"] .badge.bg-warning.text-dark { color: #1a1a1a !important; }
+    [data-bs-theme="dark"] .badge.bg-info.text-dark    { color: #1a1a1a !important; }
+
+    /* List groups */
+    [data-bs-theme="dark"] .list-group-item {
+      background: #1e2535;
+      border-color: #2a3550;
+      color: #c0ccd8;
+    }
+    [data-bs-theme="dark"] .list-group-item-action:hover {
+      background: #252f3e;
+      color: #e0e6f0;
+    }
+
+    /* Alerts */
+    [data-bs-theme="dark"] .alert { color: #c0ccd8; }
+
+    /* Pagination */
+    [data-bs-theme="dark"] .page-link {
+      background: #1e2535;
+      border-color: #2a3550;
+      color: #9aacbb;
+    }
+    [data-bs-theme="dark"] .page-link:hover { background: #252f3e; color: #e0e6f0; }
+    [data-bs-theme="dark"] .page-item.active .page-link { background: #3b7ddd; border-color: #3b7ddd; }
+
+    /* Nav tabs / pills inside cards */
+    [data-bs-theme="dark"] .nav-tabs .nav-link { color: #9aacbb; }
+    [data-bs-theme="dark"] .nav-tabs .nav-link.active {
+      background: #1e2535;
+      border-color: #2a3550;
+      color: #e0e6f0;
+    }
+
+    /* Generic link color */
+    [data-bs-theme="dark"] a:not(.btn):not(.nav-link):not(.sidebar-link):not(.dropdown-item) { color: #4dd0e1; }
+
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
+  <nav id="sidebar" class="sidebar js-sidebar">
+    <div class="sidebar-content">
+      <a class="sidebar-brand" href="/dashboard.html">
+        <span class="align-middle"><strong>View</strong>Owl</span>
+      </a>
+
+      <ul class="sidebar-nav">
+        <li class="sidebar-header">Navigation</li>
+
+        <li class="sidebar-item" data-nav-route="devices">
+          <a href="#" class="sidebar-link" data-route="devices"
+             onclick="router.navigate('devices'); return false;">
+            <i class="fas fa-tv"></i>
+            <span class="align-middle">Devices</span>
+          </a>
+        </li>
+
+        <li class="sidebar-item" data-nav-route="templates">
+          <a href="#" class="sidebar-link" data-route="templates"
+             onclick="router.navigate('templates'); return false;">
+            <i class="fas fa-file-code"></i>
+            <span class="align-middle">Templates</span>
+          </a>
+        </li>
+
+        <li class="sidebar-item" data-nav-route="stats">
+          <a href="#" class="sidebar-link" data-route="stats"
+             onclick="router.navigate('stats'); return false;">
+            <i class="fas fa-chart-bar"></i>
+            <span class="align-middle">Stats</span>
+          </a>
+        </li>
+
+        <li class="sidebar-item" data-nav-route="system">
+          <a href="#" class="sidebar-link" data-route="system"
+             onclick="router.navigate('system'); return false;">
+            <i class="fas fa-server"></i>
+            <span class="align-middle">System</span>
+          </a>
+        </li>
+
+        <!-- Shown only for Admin role — toggled by JS after profile load -->
+        <li class="sidebar-item d-none" id="nav-users-item" data-nav-route="users">
+          <a href="#" class="sidebar-link" data-route="users"
+             onclick="router.navigate('users'); return false;">
+            <i class="fas fa-users"></i>
+            <span class="align-middle">Users</span>
+          </a>
+        </li>
+
+        <li class="sidebar-header">Account</li>
+
+        <!-- Sessions — visible to all authenticated users -->
+        <li class="sidebar-item" data-nav-route="sessions">
+          <a href="#" class="sidebar-link" data-route="sessions"
+             onclick="router.navigate('sessions'); return false;">
+            <i class="fas fa-shield-alt"></i>
+            <span class="align-middle">My Sessions</span>
+          </a>
+        </li>
+
+        <!-- Security monitor — admin only, opens in new tab -->
+        <li class="sidebar-item d-none" id="nav-security-item">
+          <a href="/admin/security.html" class="sidebar-link" target="_blank" rel="noopener">
+            <i class="fas fa-lock"></i>
+            <span class="align-middle">Security</span>
+            <i class="fas fa-external-link-alt ms-auto" style="font-size:.65rem;opacity:.5"></i>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ── Main area ────────────────────────────────────────────────────────── -->
+  <div class="main">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand navbar-light navbar-bg">
+      <!-- Sidebar toggle — MUST have class js-sidebar-toggle so AdminKit's app.js
+           finds it and toggles .collapsed on the .js-sidebar element.
+           sidebar-toggle is kept only for AdminKit's margin-right styling. -->
+      <button type="button" class="js-sidebar-toggle sidebar-toggle d-flex me-2 align-items-center"
+              id="btn-sidebar-toggle" aria-label="Toggle sidebar">
+        <i class="hamburger align-self-center"></i>
+      </button>
+
+      <div class="navbar-collapse collapse">
+        <ul class="navbar-nav navbar-align align-items-center">
+          <li class="nav-item">
+            <span class="nav-link fw-semibold text-muted" id="nav-username"></span>
+          </li>
+          <!-- Link to React sci-fi dashboard -->
+          <li class="nav-item">
+            <a href="/dashboard" class="nav-link" title="Open React Flow Dashboard">
+              ⬡ Flow Dashboard
+            </a>
+          </li>
+          <!-- Dark / light mode toggle -->
+          <li class="nav-item">
+            <button id="btn-theme-toggle" class="nav-link" title="Toggle dark/light mode">
+              🌙
+            </button>
+          </li>
+          <li class="nav-item">
+            <a href="#" class="nav-link" id="btn-logout" title="Sign out">
+              <i class="fas fa-sign-out-alt"></i>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- Page content -->
+    <main class="content">
+      <div class="container-fluid p-0">
+        <div id="page-content">
+          <div class="page-spinner">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading…</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="container-fluid">
+        <div class="row text-muted">
+          <div class="col-6 text-start">
+            <strong>ViewOwl</strong> &mdash; ESP32 Display Manager
+          </div>
+          <div class="col-6 text-end" style="font-size:.8rem">
+            <a href="/legal/privacy.html" target="_blank" rel="noopener" class="text-muted me-2">Privacy</a>
+            <a href="/legal/terms.html"   target="_blank" rel="noopener" class="text-muted">Terms</a>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- ── Bootstrap 5 modal dialogs (replace native prompt / confirm) ─────── -->
+
+<!-- Prompt modal -->
+<div class="modal fade" id="vo-prompt-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" id="vo-prompt-title">Enter value</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input  type="text"  class="form-control"      id="vo-prompt-field"    />
+        <textarea            class="form-control d-none" id="vo-prompt-ta" rows="8"></textarea>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-primary" id="vo-prompt-ok">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm modal -->
+<div class="modal fade" id="vo-confirm-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" id="vo-confirm-title">Confirm</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="vo-confirm-msg">Are you sure?</div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-danger" id="vo-confirm-ok">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Template editor modal (xl, CodeMirror HTML editor) -->
+<!-- Note: modal-dialog-scrollable is intentionally omitted — combining it
+     with modal-dialog-centered breaks vertical centering in AdminKit's
+     Bootstrap build. Overflow is controlled on the modal-body instead. -->
+<div class="modal fade" id="tpl-editor-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="tpl-editor-title">Template editor</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;max-height:calc(100vh - 180px);">
+        <div class="mb-3">
+          <label for="tpl-editor-name" class="form-label fw-semibold">Template name</label>
+          <input type="text" class="form-control" id="tpl-editor-name" placeholder="e.g. Café Menu" />
+        </div>
+        <div class="mb-1">
+          <label class="form-label fw-semibold">
+            HTML content
+            <small class="text-muted fw-normal ms-1">Ctrl+S to save</small>
+          </label>
+        </div>
+        <div id="tpl-editor-cm-wrap" style="border:1px solid #495057;border-radius:4px;overflow:hidden;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="tpl-editor-save">
+          <i class="fas fa-save me-1"></i>Save
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Vendor JS ─────────────────────────────────────────────────────────── -->
+<!-- jQuery kept for toastr -->
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<!-- Bootstrap 5 (includes Popper for dropdowns/modals) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- AdminKit sidebar/hamburger toggle -->
+<script src="https://unpkg.com/@adminkit/core@3.4.0/dist/js/app.js"></script>
+<!-- toastr notifications -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.min.js"></script>
+<script>
+  toastr.options = {
+    positionClass: "toast-bottom-right",
+    timeOut: 3000,
+    closeButton: true,
+    progressBar: true,
+    showMethod: "fadeIn",
+    hideMethod: "fadeOut"
+  };
+</script>
+
+<!-- ── CodeMirror 5 scripts (htmlmixed = xml + css + js modes) ──────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+
+<!-- ── Dialog helper — Bootstrap 5 modals replacing window.prompt/confirm ─ -->
+<script>
+/**
+ * Async modal dialogs that replace the browser-native window.prompt() and
+ * window.confirm().  Both methods return Promises and are safe to await.
+ */
+const dialog = (() => {
+  /**
+   * Displays a prompt modal with a text input (or textarea for multiline).
+   * @param {string}  title        Modal title.
+   * @param {string}  [placeholder]
+   * @param {string}  [defaultValue]
+   * @param {boolean} [multiline]  Use textarea instead of single-line input.
+   * @returns {Promise<string|null>}  The entered value, or null if cancelled.
+   */
+  function prompt(title, placeholder = "", defaultValue = "", multiline = false) {
+    return new Promise((resolve) => {
+      const el    = document.getElementById("vo-prompt-modal");
+      const field = document.getElementById("vo-prompt-field");
+      const ta    = document.getElementById("vo-prompt-ta");
+      const okBtn = document.getElementById("vo-prompt-ok");
+
+      document.getElementById("vo-prompt-title").textContent = title;
+
+      if (multiline) {
+        field.classList.add("d-none");
+        ta.classList.remove("d-none");
+        ta.value = defaultValue;
+      } else {
+        ta.classList.add("d-none");
+        field.classList.remove("d-none");
+        field.placeholder = placeholder;
+        field.value = defaultValue;
+      }
+
+      const bsModal = bootstrap.Modal.getOrCreateInstance(el);
+
+      // Capture the chosen value here; null means the user cancelled.
+      // resolve() is called ONLY from hidden.bs.modal so that the next
+      // dialog.prompt() call isn't issued while this modal is still animating.
+      let result = null;
+
+      function onOk() {
+        result = multiline ? ta.value : field.value;
+        bsModal.hide();
+      }
+
+      function onKey(e) {
+        if (e.key === "Enter" && !multiline) { e.preventDefault(); onOk(); }
+      }
+
+      function onHidden() {
+        okBtn.removeEventListener("click", onOk);
+        field.removeEventListener("keydown", onKey);
+        resolve(result);
+      }
+
+      okBtn.addEventListener("click", onOk, { once: true });
+      el.addEventListener("hidden.bs.modal", onHidden, { once: true });
+      field.addEventListener("keydown", onKey);
+
+      bsModal.show();
+      // Focus the active input after the modal's fade-in finishes
+      setTimeout(() => (multiline ? ta : field).focus(), 350);
+    });
+  }
+
+  /**
+   * Displays a confirmation modal.
+   * @param {string} message    Body message.
+   * @param {string} [okLabel]  Label on the confirm button (default "Delete").
+   * @returns {Promise<boolean>}
+   */
+  function confirm(message, okLabel = "Delete") {
+    return new Promise((resolve) => {
+      const el    = document.getElementById("vo-confirm-modal");
+      const okBtn = document.getElementById("vo-confirm-ok");
+
+      document.getElementById("vo-confirm-msg").textContent = message;
+      okBtn.textContent = okLabel;
+
+      const bsModal = bootstrap.Modal.getOrCreateInstance(el);
+
+      // Same pattern as prompt(): resolve only after hidden.bs.modal fires.
+      let confirmed = false;
+
+      function onOk() {
+        confirmed = true;
+        bsModal.hide();
+      }
+
+      function onHidden() {
+        okBtn.removeEventListener("click", onOk);
+        resolve(confirmed);
+      }
+
+      okBtn.addEventListener("click", onOk, { once: true });
+      el.addEventListener("hidden.bs.modal", onHidden, { once: true });
+
+      bsModal.show();
+    });
+  }
+
+  return { prompt, confirm };
+})();
+</script>
+
+<!-- ── SignalR client ─────────────────────────────────────────────────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+
+<!-- ── App modules ────────────────────────────────────────────────────────── -->
+<!-- Order matters: config → auth → api → realtime → router → pages → init -->
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/api.js"></script>
+<script src="js/realtime.js"></script>
+<script src="js/router.js"></script>
+<script src="js/pages/devices.js"></script>
+<script src="js/pages/templates.js"></script>
+<script src="js/pages/users.js"></script>
+<script src="js/pages/stats.js"></script>
+<script src="js/pages/system.js"></script>
+<script src="js/pages/sessions.js"></script>
+
+<script>
+  // Redirect to login if not authenticated
+  if (!auth.isLoggedIn()) {
+    window.location.href = "/login.html";
+  }
+
+  // Fetch current user profile, configure routes, then render
+  (async () => {
+    const me = await api.get("/api/me");
+    if (!me) return; // api.js already called logout() on 401
+
+    localStorage.setItem(CONFIG.USER_KEY, JSON.stringify(me));
+    document.getElementById("nav-username").textContent = me.login;
+
+    // Connect SignalR hub — token read from localStorage so we don't re-expose it
+    const token = localStorage.getItem(CONFIG.TOKEN_KEY);
+    if (token) await realtime.connect(token);
+
+    if (me.role === "Admin") {
+      document.getElementById("nav-users-item")?.classList.remove("d-none");
+      document.getElementById("nav-security-item")?.classList.remove("d-none");
+    }
+
+    router.register("devices",   devicesPage);
+    router.register("templates", templatesPage);
+    router.register("stats",     statsPage);
+    router.register("system",    systemPage);
+    router.register("sessions",  sessionsPage);
+    if (me.role === "Admin") {
+      router.register("users", usersPage);
+    }
+
+    await router.render();
+  })();
+
+  document.getElementById("btn-logout")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    auth.logout();
+  });
+
+  // ── Sidebar toggle ────────────────────────────────────────────────────────
+  // AdminKit's app.js finds .js-sidebar-toggle and toggles .collapsed on
+  // .js-sidebar natively — no custom handler needed.
+  // CSS: desktop .sidebar.collapsed → margin-left:-260px (hidden)
+  //      mobile  .sidebar.collapsed → margin-left:0      (visible, default is off-screen)
+
+  // ── Dark / light mode toggle ─────────────────────────────────────────────
+  (function initTheme() {
+    const btn  = document.getElementById("btn-theme-toggle");
+    const html = document.documentElement;
+
+    // Restore saved preference (default: dark)
+    const saved = localStorage.getItem("vo-theme") || "dark";
+    applyTheme(saved);
+
+    btn?.addEventListener("click", () => {
+      const current = html.getAttribute("data-bs-theme") || "light";
+      const next    = current === "dark" ? "light" : "dark";
+      applyTheme(next);
+      localStorage.setItem("vo-theme", next);
+    });
+
+    function applyTheme(theme) {
+      html.setAttribute("data-bs-theme", theme);
+      if (btn) btn.textContent = theme === "dark" ? "☀️" : "🌙";
+    }
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,206 @@
+/* ── FlowCanvas — ISA-101 calm ───────────────────────────────────────────── */
+
+.flow-canvas {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+  border: none;
+}
+
+.react-flow-dark {
+  background: var(--bg);
+}
+
+.react-flow__node {
+  font-family: var(--font);
+}
+
+/* Edge default — neutral, no glow */
+.react-flow__edge-path {
+  stroke: var(--border-bright);
+  stroke-width: 1.5;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--text-dim);
+  stroke-width: 2;
+}
+
+.react-flow__handle {
+  background: var(--border-bright);
+  border: 2px solid var(--bg);
+  width: 12px;
+  height: 12px;
+}
+
+.react-flow__handle:hover {
+  background: var(--text-dim);
+}
+
+/* Controls panel — neutral */
+.react-flow__controls {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.react-flow__controls-button {
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 28px;
+  height: 28px;
+}
+
+.react-flow__controls-button svg {
+  fill: var(--text-dim);
+  width: 14px;
+  height: 14px;
+}
+
+.react-flow__controls-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.react-flow__controls-button:hover svg {
+  fill: var(--text);
+}
+
+/* Minimap — neutral */
+.react-flow__minimap {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(255, 255, 255, 0.04);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.react-flow__minimap-node {
+  stroke: var(--border-bright);
+  stroke-width: 1;
+}
+
+/* ── SignalR connection indicator ────────────────────────────────────────── */
+
+.signalr-indicator {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  transition: border-color 0.15s;
+  pointer-events: none;
+  font-family: var(--font);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Connected — neutral; healthy state has no color emphasis (ISA-101) */
+.signalr-indicator.connected {
+  border-color: var(--border);
+}
+
+/* Reconnecting — amber border for warning state */
+.signalr-indicator.reconnecting {
+  border-color: var(--status-warn);
+}
+
+/* Disconnected / failed — red border */
+.signalr-indicator.disconnected,
+.signalr-indicator.failed {
+  border-color: var(--status-error);
+}
+
+.indicator-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+/* ISA-101: connected = white (status-ok), static, no ambient pulse */
+.signalr-indicator.connected .indicator-dot {
+  background: var(--status-ok);
+}
+
+/* Reconnecting dot — amber, opacity blink (warning state, animation allowed) */
+.signalr-indicator.reconnecting .indicator-dot {
+  background: var(--status-warn);
+  animation: indicator-blink 1.2s ease-in-out infinite;
+}
+
+.signalr-indicator.disconnected .indicator-dot,
+.signalr-indicator.failed .indicator-dot {
+  background: var(--status-error);
+}
+
+@keyframes indicator-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+.indicator-text {
+  color: var(--text);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+  font-family: var(--font);
+}
+
+/* ── Edge state variants ─────────────────────────────────────────────────── */
+
+/* Animated edge — marching ants indicate active connection; no glow */
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke-dasharray: 5;
+  animation: dash 0.5s linear infinite;
+}
+
+@keyframes dash {
+  to { stroke-dashoffset: -10; }
+}
+
+/* Offline device edges — red */
+.react-flow__edge.edge-offline .react-flow__edge-path {
+  stroke: var(--status-error);
+}
+
+/* Warning device edges — amber */
+.react-flow__edge.edge-warning .react-flow__edge-path {
+  stroke: var(--status-warn);
+}
+
+/* ── Notification column ─────────────────────────────────────────────────── */
+
+.notification-column {
+  position: fixed;
+  right: 0;
+  bottom: 48px;
+  width: 280px;
+  padding: 0 8px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.notification-column > * {
+  pointer-events: all;
+}
+
+.toast-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}

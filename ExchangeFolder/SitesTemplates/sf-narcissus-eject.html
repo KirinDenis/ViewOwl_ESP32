@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="Narcissus Eject"
+  data-vow-description="Top-down escape pod launch — Aliens style: clamps retract, floor airlock opens, pod drops into void"
+  data-vow-category="scifi"
+  data-vow-tags="escape,pod,vector,scifi,aliens,nostromo,narcissus,topdown,80s"
+  data-vow-frames="16"
+  data-vow-fps="6"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+/* ── Canvas — fills viewport, drawing in logical 480×320 ────────────────── */
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+
+const canvas = document.getElementById('c');
+canvas.width  = W;
+canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+/* ── Class C frame contract ─────────────────────────────────────────────── */
+const FRAMES = 16;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+let N = ((parseInt(frameParam ?? '0', 10) % FRAMES) + FRAMES) % FRAMES;
+let T = N / FRAMES;
+
+/* ── Palette — Aliens blue CRT + amber/red ──────────────────────────────── */
+const C = {
+  bgDeep: '#020618',
+  bayBg:  '#0A1424',
+  grid:   '#0A2240',
+  blue1:  '#1F70C8',
+  blue2:  '#3FA8FF',
+  phos:   '#E8F4FF',
+  amber:  '#FFB000',
+  amDim:  '#7A4F00',
+  red:    '#FF3030',
+  void:   '#000000',
+  yellow: '#FFD000',
+  steel:  '#3A4048',
+};
+
+/* ── Vector helpers (same pattern as undock-vector) ─────────────────────── */
+function vstroke(color, lw, glow) {
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = glow ?? 4;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = lw ?? 1.4;
+  ctx.stroke();
+  ctx.shadowBlur  = 0;
+}
+function vline(x1, y1, x2, y2, color, lw) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  vstroke(color, lw);
+}
+function vpoly(points, color, lw, closed) {
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  if (closed !== false) ctx.closePath();
+  vstroke(color, lw);
+}
+function vellipse(cx, cy, rx, ry, color, lw) {
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  vstroke(color, lw);
+}
+
+/* ── Launch sequence model ──────────────────────────────────────────────── *
+ *  0-1: SECURED                                                              *
+ *  2:   LAUNCH ARMED (lights amber)                                          *
+ *  3-5: clamps retract (1.0 → 0)                                             *
+ *  6-8: doors open    (0   → 1)                                              *
+ *  9:   EJECT READY (pause for tension)                                      *
+ * 10-15: pod descends (scale 1 → 0.18, ease-in)                              */
+function launchState() {
+  let clamp = 1, door = 0, pod = 1;
+  let status = 'SECURED', warn = false;
+
+  if (N <= 1) {
+    /* defaults */
+  } else if (N === 2) {
+    status = 'LAUNCH ARMED';   warn = true;
+  } else if (N >= 3 && N <= 5) {
+    clamp  = 1 - (N - 2) / 3;
+    status = N < 5 ? 'CLAMPS RETRACT' : 'CLAMPS CLEAR';
+    warn   = true;
+  } else if (N >= 6 && N <= 8) {
+    clamp = 0;
+    door  = (N - 5) / 3;
+    status = N < 8 ? 'HATCH CYCLING' : 'HATCH OPEN';
+    warn   = true;
+  } else if (N === 9) {
+    clamp = 0; door = 1;
+    status = 'EJECT READY'; warn = true;
+  } else {
+    const u = (N - 10) / 5;          /* 0..1 */
+    clamp = 0; door = 1;
+    pod   = 1 - Math.pow(u, 1.4) * 0.82;
+    status = u > 0.85 ? 'AWAY' : 'EJECTING';
+    warn   = u <= 0.85;
+  }
+  return { clamp, door, pod, status, warn };
+}
+
+/* ── Bay layout constants — top-down view ────────────────────────────────── */
+const BAY = { x: 80, y: 38, w: 320, h: 240 };
+const POD = { cx: 240, cy: 165 };
+
+/* ── Background — bay floor with chevrons + frame ───────────────────────── */
+function drawBay() {
+  ctx.fillStyle = C.bgDeep;
+  ctx.fillRect(0, 0, VW, VH);
+
+  /* Outer space (around bay) — faint receding grid for depth */
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  for (let x = 0; x <= VW; x += 40) {
+    if (x >= BAY.x && x <= BAY.x + BAY.w) continue;
+    ctx.beginPath(); ctx.moveTo(x, 28); ctx.lineTo(x, VH - 24); ctx.stroke();
+  }
+
+  /* Bay floor base */
+  ctx.fillStyle = C.bayBg;
+  ctx.fillRect(BAY.x, BAY.y, BAY.w, BAY.h);
+
+  /* Hazard chevrons — top + bottom edges of bay floor */
+  ctx.fillStyle = C.amber;
+  const stripeW = 12, gap = 10;
+  for (let x = BAY.x + 8; x < BAY.x + BAY.w - 8; x += stripeW + gap) {
+    ctx.fillRect(x, BAY.y + 4,         stripeW, 5);
+    ctx.fillRect(x, BAY.y + BAY.h - 9, stripeW, 5);
+  }
+
+  /* Bay outline frame */
+  ctx.strokeStyle = C.blue2; ctx.lineWidth = 1.6;
+  ctx.shadowColor = C.blue2; ctx.shadowBlur = 4;
+  ctx.strokeRect(BAY.x, BAY.y, BAY.w, BAY.h);
+  ctx.shadowBlur = 0;
+
+  /* Floor stencil text */
+  ctx.font         = 'bold 10px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle    = C.blue1;
+  ctx.textAlign    = 'left';
+  ctx.fillText('LAUNCH BAY 7', BAY.x + 10, BAY.y + 16);
+  ctx.textAlign    = 'right';
+  ctx.fillText('NARCISSUS // ESCAPE', BAY.x + BAY.w - 10, BAY.y + 16);
+  ctx.textAlign    = 'left';
+
+  /* Side rail markers — 4 alignment glyphs around pod position */
+  vellipse(BAY.x + 18, POD.cy, 4, 4, C.blue1, 1);
+  vellipse(BAY.x + BAY.w - 18, POD.cy, 4, 4, C.blue1, 1);
+}
+
+/* ── Floor airlock — two halves slide outward in X ──────────────────────── */
+function drawAirlockDoors(door) {
+  /* Sealed: two 70×200 panels meet at pod center                              *
+   * Fully open: each retracts 90px outward into bay wall                      */
+  const halfW   = 70;
+  const slot    = 200;
+  const yTop    = POD.cy - slot / 2;
+  const open    = door * 90;
+
+  /* Void revealed under doors when they begin to open */
+  if (door > 0.02) {
+    ctx.fillStyle = C.void;
+    ctx.fillRect(POD.cx - halfW + open - 2, yTop, (halfW * 2) - 2 * open + 4, slot);
+  }
+
+  /* Left half */
+  const lx = POD.cx - halfW - open;
+  drawDoorPanel(lx, yTop, halfW, slot, true);
+
+  /* Right half */
+  const rx = POD.cx + open;
+  drawDoorPanel(rx, yTop, halfW, slot, false);
+}
+
+function drawDoorPanel(x, y, w, h, leftSide) {
+  /* Steel base */
+  ctx.fillStyle = C.steel;
+  ctx.fillRect(x, y, w, h);
+
+  /* Outline */
+  ctx.strokeStyle = C.blue2; ctx.lineWidth = 1.2;
+  ctx.shadowColor = C.blue2; ctx.shadowBlur = 3;
+  ctx.strokeRect(x, y, w, h);
+  ctx.shadowBlur = 0;
+
+  /* Yellow safety chevrons */
+  ctx.fillStyle = C.yellow;
+  const spacing = 16;
+  for (let cy = y + 14; cy < y + h - 14; cy += spacing) {
+    if (leftSide) {
+      ctx.beginPath();
+      ctx.moveTo(x + 6,      cy);
+      ctx.lineTo(x + w - 4,  cy + 6);
+      ctx.lineTo(x + w - 4,  cy + 9);
+      ctx.lineTo(x + 6,      cy + 3);
+      ctx.closePath();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x + w - 6,  cy);
+      ctx.lineTo(x + 4,      cy + 6);
+      ctx.lineTo(x + 4,      cy + 9);
+      ctx.lineTo(x + w - 6,  cy + 3);
+      ctx.closePath();
+    }
+    ctx.fill();
+  }
+
+  /* Inner edge highlight (where two halves meet) — amber rail */
+  const railX = leftSide ? x + w - 2 : x;
+  ctx.fillStyle = C.amber;
+  ctx.fillRect(railX, y, 2, h);
+}
+
+/* ── Mechanical clamps — 4 arms grip pod, retract on release ────────────── */
+function drawClamps(clamp) {
+  /* Each arm: hinge at wall, grip at pod side, retract by lerping reach */
+  /* Top */
+  drawArm(POD.cx, BAY.y + 12,  POD.cx, POD.cy - 70, clamp, 'v');
+  /* Bottom */
+  drawArm(POD.cx, BAY.y + BAY.h - 12, POD.cx, POD.cy + 72, clamp, 'v');
+  /* Left */
+  drawArm(BAY.x + 12, POD.cy, POD.cx - 42, POD.cy, clamp, 'h');
+  /* Right */
+  drawArm(BAY.x + BAY.w - 12, POD.cy, POD.cx + 42, POD.cy, clamp, 'h');
+}
+
+function drawArm(hx, hy, gx, gy, engagement, axis) {
+  /* Hinge anchor */
+  vellipse(hx, hy, 4, 4, C.amber, 1.4);
+  ctx.fillStyle = engagement > 0.5 ? C.amber : (engagement > 0 ? C.amDim : C.steel);
+  ctx.fillRect(hx - 2, hy - 2, 4, 4);
+
+  /* Reach: full when engaged, partial when retracting, hidden when 0 */
+  if (engagement <= 0.02) return;
+
+  const reachX = hx + (gx - hx) * engagement;
+  const reachY = hy + (gy - hy) * engagement;
+
+  /* Shaft — bright cyan double-stroke */
+  vline(hx, hy, reachX, reachY, C.blue2, 2);
+
+  /* Gripper claw at the reach end — small orthogonal cross */
+  ctx.strokeStyle = C.amber; ctx.lineWidth = 1.4;
+  ctx.shadowColor = C.amber; ctx.shadowBlur = 3;
+  ctx.beginPath();
+  if (axis === 'v') {
+    ctx.moveTo(reachX - 8, reachY);
+    ctx.lineTo(reachX + 8, reachY);
+    ctx.moveTo(reachX - 6, reachY + (gy > hy ? -4 : 4));
+    ctx.lineTo(reachX + 6, reachY + (gy > hy ? -4 : 4));
+  } else {
+    ctx.moveTo(reachX, reachY - 8);
+    ctx.lineTo(reachX, reachY + 8);
+    ctx.moveTo(reachX + (gx > hx ? -4 : 4), reachY - 6);
+    ctx.lineTo(reachX + (gx > hx ? -4 : 4), reachY + 6);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+/* ── Escape pod — top-down vector wireframe, scales with descent ────────── */
+function drawPod(podScale) {
+  if (podScale <= 0.06) return;
+
+  ctx.save();
+  ctx.translate(POD.cx, POD.cy);
+  ctx.scale(podScale, podScale);
+
+  /* Hull outline — tear-drop with cockpit at top */
+  vpoly([
+    [   0, -70],          /* nose */
+    [  20, -55],
+    [  35, -30],
+    [  40,   0],
+    [  35,  30],
+    [  22,  58],
+    [  10,  68],
+    [ -10,  68],
+    [ -22,  58],
+    [ -35,  30],
+    [ -40,   0],
+    [ -35, -30],
+    [ -20, -55],
+  ], C.phos, 1.6);
+
+  /* Cockpit viewport — small ellipse near nose */
+  vellipse(0, -42, 12, 16, C.blue2, 1.3);
+
+  /* Cross bracing — three horizontal panel lines */
+  vline(-38, -10, 38, -10, C.blue1, 1);
+  vline(-40,  10, 40,  10, C.blue1, 1);
+  vline(-36,  35, 36,  35, C.blue1, 1);
+
+  /* Spine line */
+  vline(0, -42, 0, 60, C.blue1, 1);
+
+  /* Wing/fin spikes mid-hull */
+  vpoly([[ 40, -8], [ 50, 0], [ 40, 8]], C.amber, 1.2);
+  vpoly([[-40, -8], [-50, 0], [-40, 8]], C.amber, 1.2);
+
+  /* Engine cluster — 3 nozzle circles at tail */
+  vellipse(-14, 60, 4, 4, C.amber, 1.2);
+  vellipse(  0, 64, 4, 4, C.amber, 1.2);
+  vellipse( 14, 60, 4, 4, C.amber, 1.2);
+
+  /* Hull marking */
+  ctx.font         = 'bold 7px "Courier New", monospace';
+  ctx.fillStyle    = C.amber;
+  ctx.shadowColor  = C.amber; ctx.shadowBlur = 2;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign    = 'center';
+  ctx.fillText('NARCISSUS-17', 0, 22);
+  ctx.shadowBlur   = 0;
+
+  ctx.restore();
+}
+
+/* ── HUD — header, telemetry, footer ─────────────────────────────────────── */
+function drawHud(s) {
+  /* Header */
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, 0, VW, 24);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  ctx.strokeRect(0, 0, VW, 24);
+
+  ctx.font         = 'bold 12px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle    = C.blue2;
+  ctx.shadowColor  = C.blue2; ctx.shadowBlur = 3;
+  ctx.fillText('EJECT SEQUENCE A-7 // TOP VIEW', 8, 7);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.amber;
+  ctx.shadowColor = C.amber;
+  ctx.fillText('FR ' + String(N + 1).padStart(2, '0') + '/' + FRAMES, VW - 8, 7);
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'left';
+
+  /* Telemetry block — bottom-left of bay */
+  const tx = 8, ty = VH - 86;
+  ctx.fillStyle = 'rgba(8,28,72,0.6)';
+  ctx.fillRect(tx, ty, 70, 64);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1;
+  ctx.strokeRect(tx, ty, 70, 64);
+
+  ctx.font = 'bold 8px "Courier New", monospace';
+  ctx.fillStyle = C.blue2; ctx.shadowBlur = 0;
+  ctx.fillText('CLAMPS', tx + 4, ty + 4);
+  ctx.fillText('HATCH',  tx + 4, ty + 24);
+  ctx.fillText('POD',    tx + 4, ty + 44);
+
+  ctx.font = 'bold 10px "Courier New", monospace';
+  ctx.fillStyle = s.clamp > 0.5 ? C.amber : (s.clamp > 0 ? C.red : C.phos);
+  ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 2;
+  ctx.fillText(s.clamp > 0.5 ? 'LOCKED' : (s.clamp > 0 ? 'RETRACT' : 'CLEAR'),
+               tx + 4, ty + 13);
+  ctx.fillStyle = s.door > 0.95 ? C.phos : (s.door > 0 ? C.amber : C.blue2);
+  ctx.shadowColor = ctx.fillStyle;
+  ctx.fillText(s.door > 0.95 ? 'OPEN' : (s.door > 0 ? 'CYCLE' : 'SEALED'),
+               tx + 4, ty + 33);
+  ctx.fillStyle = s.pod < 0.5 ? C.phos : C.blue2;
+  ctx.shadowColor = ctx.fillStyle;
+  ctx.fillText(Math.round(s.pod * 100) + '%', tx + 4, ty + 53);
+  ctx.shadowBlur = 0;
+
+  /* Right side — large status text */
+  const rtx = VW - 130, rty = VH - 86;
+  ctx.fillStyle = 'rgba(8,28,72,0.6)';
+  ctx.fillRect(rtx, rty, 120, 64);
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(rtx, rty, 120, 64);
+
+  ctx.font = 'bold 8px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('STATUS', rtx + 6, rty + 4);
+  /* Blink warning text on warn frames */
+  const blinkOn = !s.warn || (N & 1) === 0;
+  const col = s.warn ? (blinkOn ? C.red : C.amber) : C.phos;
+  ctx.fillStyle   = col;
+  ctx.shadowColor = col; ctx.shadowBlur = 3;
+  ctx.font        = 'bold 13px "Courier New", monospace';
+  ctx.fillText(s.status, rtx + 6, rty + 18);
+  ctx.shadowBlur = 0;
+
+  ctx.font = 'bold 8px "Courier New", monospace';
+  ctx.fillStyle = C.amber;
+  const depth = Math.round((1 - s.pod) * 200);
+  ctx.fillText('DEPTH ' + depth + 'm', rtx + 6, rty + 42);
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('CH 07', rtx + 6, rty + 54);
+
+  /* Footer */
+  const fy = VH - 16;
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, fy, VW, 16);
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(0, fy, VW, 16);
+
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.fillStyle = s.warn ? (blinkOn ? C.red : C.amDim) : C.blue2;
+  ctx.fillText(s.warn ? '⚠ DECOMPRESSION — STAND CLEAR'
+                       : 'BAY NOMINAL — CYCLE STABLE',
+               8, fy + 3);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.blue1;
+  ctx.fillText('VECTOR-CRT', VW - 8, fy + 3);
+  ctx.textAlign = 'left';
+}
+
+/* ── CRT effects ─────────────────────────────────────────────────────────── */
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW, VH) * 0.4,
+                                     VW/2, VH/2, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+
+/* ── Compose ────────────────────────────────────────────────────────────── */
+function render() {
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+
+  const s = launchState();
+
+  drawBay();
+  drawAirlockDoors(s.door);
+  drawClamps(s.clamp);
+  drawPod(s.pod);
+  drawHud(s);
+  drawScanlines();
+  drawVignette();
+}
+
+render();
+
+/* ── Dev preview — browser only when no vow_frame param ─────────────────── */
+if (frameParam === null) {
+  const FPS = 6;
+  let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) {
+      last = ts;
+      N = (N + 1) % FRAMES;
+      T = N / FRAMES;
+      render();
+    }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,244 @@
+@import './styles/scifi-globals.css';
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  font-family: var(--font);
+  color: var(--text);
+}
+
+.app-layout {
+  display: grid;
+  grid-template-rows: 60px 1fr 40px;
+  grid-template-columns: 280px 1fr 280px;
+  grid-template-areas:
+    "header header header"
+    "sidebar-left main sidebar-right"
+    "footer footer footer";
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  transition: grid-template-columns 0.2s ease;
+}
+
+.app-layout > .app-header    { grid-area: header; }
+.app-layout > .sidebar-left  { grid-area: sidebar-left; }
+.app-layout > .main-canvas   { grid-area: main; }
+.app-layout > .sidebar-right { grid-area: sidebar-right; }
+.app-layout > .app-footer    { grid-area: footer; }
+
+.main-canvas {
+  position: relative;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Canvas area must fill remaining height so ReactFlow gets a real pixel height */
+.main-canvas > .canvas-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+
+/* Loading / Error screens */
+.fullscreen-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: var(--bg);
+  font-family: var(--font);
+  gap: 16px;
+}
+.loading-title {
+  font-size: 1.2rem;
+  color: var(--primary);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px var(--glow);
+  animation: textFlicker 3s infinite;
+}
+@keyframes textFlicker {
+  0%, 100% { opacity: 1; }
+  42%, 44%  { opacity: 0.6; }
+}
+.loading-sub {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+.error-box {
+  border: 1px solid var(--danger);
+  box-shadow: 0 0 20px var(--danger-glow);
+  padding: 24px 32px;
+  background: rgba(255, 51, 51, 0.05);
+  text-align: center;
+  max-width: 400px;
+}
+.error-title {
+  color: var(--danger);
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+.error-msg {
+  color: var(--text);
+  font-size: 0.7rem;
+  margin-bottom: 16px;
+}
+.error-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 0.7rem;
+  border: 1px solid var(--border);
+  padding: 6px 16px;
+  display: inline-block;
+  transition: all 0.2s;
+}
+.error-link:hover {
+  background: rgba(0,255,136,0.1);
+  box-shadow: 0 0 10px var(--glow);
+}
+.reload-btn {
+  background: rgba(0,255,136,0.08);
+  border: 1px solid var(--border);
+  color: var(--primary);
+  font-family: var(--font);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.reload-btn:hover {
+  background: rgba(0,255,136,0.15);
+  box-shadow: 0 0 10px var(--glow);
+}
+
+/* Add Controller mini-dialog */
+.add-ctrl-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 14, 26, 0.88);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(1px);
+}
+
+.add-ctrl-modal {
+  width: min(400px, 92vw);
+  border: 2px solid var(--secondary);
+  box-shadow: 0 0 40px rgba(0, 221, 255, 0.3);
+  background: rgba(0, 28, 58, 0.99);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.add-ctrl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0, 45, 85, 0.95);
+}
+
+.add-ctrl-title {
+  font-family: var(--font);
+  font-size: 0.7rem;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  color: var(--secondary);
+  text-transform: uppercase;
+}
+
+.add-ctrl-close {
+  background: rgba(180, 20, 20, 0.9);
+  border: 1px solid #ff3333;
+  color: #fff;
+  font-family: var(--font);
+  font-size: 1rem;
+  font-weight: bold;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  box-shadow: 0 0 8px rgba(255, 51, 51, 0.35);
+}
+.add-ctrl-close:hover { background: #ff2222; border-color: #ff5555; box-shadow: 0 0 16px rgba(255,51,51,0.6); }
+
+.add-ctrl-body {
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.add-ctrl-label {
+  font-family: var(--font);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.add-ctrl-input {
+  background: rgba(0, 20, 40, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color 0.2s;
+  width: 100%;
+}
+.add-ctrl-input:focus { border-color: var(--secondary); }
+
+.add-ctrl-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 45, 85, 0.95);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.add-ctrl-btn {
+  background: rgba(0, 190, 90, 0.82);
+  border: 1px solid var(--primary);
+  color: #fff;
+  font-family: var(--font);
+  font-size: 0.68rem;
+  font-weight: bold;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding: 7px 24px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 0 6px rgba(0, 255, 136, 0.25);
+}
+.add-ctrl-btn:hover:not(:disabled) {
+  background: var(--primary);
+  box-shadow: 0 0 14px rgba(0, 255, 136, 0.5);
+}
+.add-ctrl-btn:disabled { opacity: 0.4; cursor: not-allowed; }

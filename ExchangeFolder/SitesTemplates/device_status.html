@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!--
+        Viewport follows whatever Chrome.cs sets via SetViewportAsync — do not
+        lock width here.  width=device-width lets Chromium use the programmatic
+        viewport so window.innerWidth reflects the actual target resolution.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ViewOwl — Device Status</title>
+    <style>
+        /*
+         * ╔══════════════════════════════════════════════════════════════╗
+         *   ViewOwl device_status.html  ·  480 × 320 px  ·  BGR565 LCD
+         *
+         *   Default template: automatically assigned to every new device.
+         *   Displays live device state as seen by the server.
+         *   Data is emulated; replace fetch() calls once /api/device/{token}/status exists.
+         * ╚══════════════════════════════════════════════════════════════╝
+         */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #screen {
+            display: block;
+            /* Width/height set dynamically by JS to match actual viewport */
+            flex-shrink: 0;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+
+<!--
+    REQUIRED: id="body"
+    ViewOwl uses this attribute to identify pages rendered by its
+    template system. Do not remove or rename this attribute.
+-->
+<body id="body">
+
+    <canvas id="screen" width="480" height="320"></canvas>
+
+    <script>
+        'use strict';
+
+        /* ══════════════════════════════════════════════════════════
+         *  CANVAS SETUP
+         *
+         *  Drawing coordinate space is always 480 × 320 (BASE_W × BASE_H).
+         *  The canvas is sized to the actual viewport (which matches the
+         *  device's physical display — e.g. 320 × 240 for ILI9341), and
+         *  a ctx.scale() transform maps the drawing coords to real pixels.
+         *  This keeps all layout constants resolution-independent.
+         * ══════════════════════════════════════════════════════════ */
+
+        const W      = 480;   /* drawing coordinate width  */
+        const H      = 320;   /* drawing coordinate height */
+
+        /* Actual display resolution — read from viewport set by Chrome.cs */
+        const canvas  = document.getElementById('screen');
+        const actualW = window.innerWidth  || W;
+        const actualH = window.innerHeight || H;
+        canvas.width  = actualW;
+        canvas.height = actualH;
+
+        const ctx = canvas.getContext('2d', { alpha: false });
+        ctx.imageSmoothingEnabled = false;
+
+        /* Scale all draw calls from 480 × 320 to actualW × actualH */
+        ctx.scale(actualW / W, actualH / H);
+
+        /* ══════════════════════════════════════════════════════════
+         *  BGR565 QUANTISATION
+         * ══════════════════════════════════════════════════════════ */
+
+        function quantChannel(v, bits) {
+            const shift = 8 - bits;
+            const q     = Math.min((1 << bits) - 1, v >> shift);
+            return (q << shift) | (q >> (bits - shift));
+        }
+
+        function snap565(r, g, b) {
+            return {
+                r: quantChannel(r, 5),
+                g: quantChannel(g, 6),
+                b: quantChannel(b, 5)
+            };
+        }
+
+        function css(r, g, b) {
+            const q = snap565(r, g, b);
+            return `rgb(${q.r},${q.g},${q.b})`;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+         *  PALETTE
+         *
+         *  Chrome.cs injects filter:saturate(0.1) globally — all hues
+         *  are nearly desaturated. Design is luminance-first; colour
+         *  provides subtle tinting only.
+         *
+         *  Luminance reference (post-desaturation, approximate):
+         *    bg        →  ~10    panelBg  → ~18
+         *    border    →  ~62    accent   → ~143
+         *    textSec   →  ~100   textPri  → ~215
+         *    green     →  ~150   yellow   → ~183
+         * ══════════════════════════════════════════════════════════ */
+
+        const C = {
+            bg:        css(  6,   8,  16),
+            panelBg:   css( 16,  20,  34),
+            border:    css( 60,  82,  92),
+            accent:    css(  0, 220, 240),
+            accentDim: css(  0,  88, 108),
+            textPri:   css(235, 248, 248),
+            textSec:   css(140, 158, 165),
+            green:     css( 30, 220,  50),
+            yellow:    css(235, 200,  30),
+            red:       css(230,  40,  30),
+            white:     css(252, 255, 255),
+            black:     css(  0,   0,   0),
+        };
+
+        /* ══════════════════════════════════════════════════════════
+         *  FLOYD-STEINBERG DITHERING
+         * ══════════════════════════════════════════════════════════ */
+
+        function dither() {
+            /* Dither operates on actual canvas pixels, not drawing coords */
+            const img = ctx.getImageData(0, 0, actualW, actualH);
+            const d   = img.data;
+
+            function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+
+            for (let y = 0; y < actualH; y++) {
+                for (let x = 0; x < actualW; x++) {
+                    const i    = (y * actualW + x) * 4;
+                    const oR   = d[i], oG = d[i + 1], oB = d[i + 2];
+                    const q    = snap565(oR, oG, oB);
+                    d[i]       = q.r;
+                    d[i + 1]   = q.g;
+                    d[i + 2]   = q.b;
+                    const eR   = oR - q.r;
+                    const eG   = oG - q.g;
+                    const eB   = oB - q.b;
+
+                    if (x + 1 < actualW) {
+                        const j  = i + 4;
+                        d[j]     = clamp(d[j]     + ((eR * 7) >> 4));
+                        d[j + 1] = clamp(d[j + 1] + ((eG * 7) >> 4));
+                        d[j + 2] = clamp(d[j + 2] + ((eB * 7) >> 4));
+                    }
+                    if (y + 1 < actualH) {
+                        if (x > 0) {
+                            const j  = ((y + 1) * actualW + (x - 1)) * 4;
+                            d[j]     = clamp(d[j]     + ((eR * 3) >> 4));
+                            d[j + 1] = clamp(d[j + 1] + ((eG * 3) >> 4));
+                            d[j + 2] = clamp(d[j + 2] + ((eB * 3) >> 4));
+                        }
+                        {
+                            const j  = ((y + 1) * actualW + x) * 4;
+                            d[j]     = clamp(d[j]     + ((eR * 5) >> 4));
+                            d[j + 1] = clamp(d[j + 1] + ((eG * 5) >> 4));
+                            d[j + 2] = clamp(d[j + 2] + ((eB * 5) >> 4));
+                        }
+                        if (x + 1 < actualW) {
+                            const j  = ((y + 1) * actualW + (x + 1)) * 4;
+                            d[j]     = clamp(d[j]     + (eR >> 4));
+                            d[j + 1] = clamp(d[j + 1] + (eG >> 4));
+                            d[j + 2] = clamp(d[j + 2] + (eB >> 4));
+                        }
+                    }
+                }
+            }
+
+            ctx.putImageData(img, 0, 0);
+        }
+
+        /* ══════════════════════════════════════════════════════════
+         *  DRAWING PRIMITIVES
+         * ══════════════════════════════════════════════════════════ */
+
+        function fillRect(x, y, w, h, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, w, h);
+        }
+
+        function line(x1, y1, x2, y2, color, thick) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth   = thick || 1;
+            /* Offset along non-moving axis to snap to pixel grid */
+            const ox = (y1 === y2) ? 0 : 0.5;
+            const oy = (x1 === x2) ? 0 : 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x1 + ox, y1 + oy);
+            ctx.lineTo(x2 + ox, y2 + oy);
+            ctx.stroke();
+        }
+
+        function drawText(str, x, y, size, color, align, bold) {
+            ctx.fillStyle    = color;
+            ctx.font         = `${bold === false ? '' : 'bold '}${size}px 'Liberation Mono','DejaVu Sans Mono','Courier New',monospace`;
+            ctx.textAlign    = align || 'left';
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText(String(str), x, y);
+        }
+
+        /* ══════════════════════════════════════════════════════════
+         *  SCI-FI WIDGET PRIMITIVES
+         * ══════════════════════════════════════════════════════════ */
+
+        /**
+         * Draws L-shaped corner brackets at the four corners of a rectangle.
+         * Sci-fi panels use corners instead of full borders for a HUD look.
+         *
+         * @param {number} x @param {number} y @param {number} w @param {number} h
+         * @param {number} len  - Length of each bracket arm in px.
+         * @param {string} color
+         * @param {number} [thick=1]
+         */
+        function corners(x, y, w, h, len, color, thick) {
+            const t = thick || 1;
+            /* Top-left */
+            line(x,         y,         x + len,     y,     color, t);
+            line(x,         y,         x,           y + len, color, t);
+            /* Top-right */
+            line(x + w - len, y,       x + w,       y,     color, t);
+            line(x + w,     y,         x + w,       y + len, color, t);
+            /* Bottom-left */
+            line(x,         y + h - len, x,         y + h, color, t);
+            line(x,         y + h,     x + len,     y + h, color, t);
+            /* Bottom-right */
+            line(x + w - len, y + h,   x + w,       y + h, color, t);
+            line(x + w,     y + h - len, x + w,     y + h, color, t);
+        }
+
+        /**
+         * Draws a section label: 3px accent nub + label text.
+         *
+         * @param {number} x @param {number} y  - Top-left of the label row.
+         * @param {string} label
+         */
+        function sectionLabel(x, y, label) {
+            fillRect(x, y, 3, 10, C.accent);
+            drawText(label, x + 7, y + 9, 9, C.textSec, 'left', false);
+        }
+
+        /**
+         * Draws a key-value row: dim key + bright value.
+         *
+         * @param {number} x @param {number} y  - Baseline y.
+         * @param {string} key
+         * @param {number} keyW     - Width reserved for key column in px.
+         * @param {string} value
+         * @param {string} [valColor]
+         */
+        function kvRow(x, y, key, keyW, value, valColor) {
+            drawText(key, x, y, 9, C.textSec, 'left', false);
+            drawText(value, x + keyW, y, 9, valColor || C.textPri, 'left', false);
+        }
+
+        /**
+         * Draws 5 signal-strength bars.
+         *
+         * @param {number} x @param {number} y  - Top-left of bar group.
+         * @param {number} rssi  - RSSI in dBm (range −100 … −30).
+         */
+        function signalBars(x, y, rssi) {
+            /* Map rssi to 0-5 filled bars: −100=0, −30=5 */
+            const strength = Math.max(0, Math.min(5, Math.round((rssi + 100) / 14)));
+            const barW = 7, gap = 2, maxH = 18;
+            for (let i = 0; i < 5; i++) {
+                const bh    = Math.round(maxH * (i + 1) / 5);
+                const bx    = x + i * (barW + gap);
+                const by    = y + maxH - bh;
+                const color = i < strength ? C.accent : C.accentDim;
+                fillRect(bx, by, barW, bh, color);
+            }
+        }
+
+        /**
+         * Draws a segmented progress bar (20 segments).
+         *
+         * @param {number} x @param {number} y @param {number} w @param {number} h
+         * @param {number} fraction  - Fill fraction 0..1.
+         */
+        function progressBar(x, y, w, h, fraction) {
+            const SEG   = 20;
+            const segW  = Math.floor((w - (SEG - 1)) / SEG);
+            const filled = Math.round(fraction * SEG);
+            for (let i = 0; i < SEG; i++) {
+                const sx    = x + i * (segW + 1);
+                const color = i < filled ? C.accent : C.accentDim;
+                fillRect(sx, y, segW, h, color);
+            }
+        }
+
+        /* ══════════════════════════════════════════════════════════
+         *  DEVICE IDENTITY
+         *
+         *  __DEVICE_TOKEN__ is replaced at template creation time
+         *  (DevicesController.CreateDeviceStatusTemplateAsync) with the
+         *  actual 32-char "N"-format device GUID. The template then fetches
+         *  live data from GET /api/device/{token}/status on every render cycle.
+         * ══════════════════════════════════════════════════════════ */
+
+        const DEVICE_TOKEN = '__DEVICE_TOKEN__';
+
+        /* Default values shown while the first fetch is in flight. */
+        let DEV = {
+            mac: '--', tokenA: '----·----', tokenB: '----·----',
+            display: '---×---', driver: '---', firmware: 'v?.?.?',
+            ip: '---.---.---', rssi: -100, pingMs: 0,
+            server: '---', online: false,
+            lastGrabS: 0, refreshS: 300, template: '----',
+            grabsToday: 0, successRate: 0, sessionsToday: 0,
+            uptimeS: 0, cpuPct: 0, ramFreeKB: 0, ramTotalKB: 0, flashMB: 0,
+            crc: '0x????·????', crcMatch: true, frameSizeLabel: '--- --- B',
+            frameSent: 0, frameAgoS: 0, packets: 0, retransmits: 0, quality: 1.0,
+        };
+
+        function mapStatus(d) {
+            return {
+                mac:          d.mac          || '--',
+                tokenA:       d.tokenA       || '----·----',
+                tokenB:       d.tokenB       || '----·----',
+                display:      d.display      || '---×---',
+                driver:       d.driver       || '---',
+                firmware:     d.firmware     || 'v?.?.?',
+                ip:           d.ip           || '---.---.---',
+                rssi:         d.rssi         ?? -100,
+                pingMs:       d.pingMs       ?? 0,
+                server:       d.server       || '---',
+                online:       d.online       ?? false,
+                lastGrabS:    d.lastGrabS    ?? 0,
+                refreshS:     d.refreshS     ?? 300,
+                template:     d.template     || '----',
+                grabsToday:   d.grabsToday   ?? 0,
+                successRate:  d.successRate  ?? 0,
+                sessionsToday: d.sessionsToday ?? 0,
+                uptimeS:      d.uptimeS      ?? 0,
+                cpuPct:       d.cpuPct       ?? 0,
+                ramFreeKB:    d.ramFreeKB    ?? 0,
+                ramTotalKB:   d.ramTotalKB   ?? 0,
+                flashMB:      d.flashMB      ?? 0,
+                crc:          d.crc          || '0x????·????',
+                crcMatch:     d.crcMatch     ?? true,
+                frameSizeLabel: d.frameSizeLabel || '--- --- B',
+                frameSent:    d.frameSent    ?? 0,
+                frameAgoS:    d.frameAgoS    ?? 0,
+                packets:      d.packets      ?? 0,
+                retransmits:  d.retransmits  ?? 0,
+                quality:      d.quality      ?? 1.0,
+            };
+        }
+
+        async function fetchStatus() {
+            try {
+                const resp = await fetch(`/api/device/${DEVICE_TOKEN}/status`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                DEV     = mapStatus(data);
+                elapsed = 0;   /* reset timer so uptime/grab-ago counts from fresh data */
+            } catch (_) { /* keep last known values on failure */ }
+        }
+
+        fetchStatus();
+        setInterval(fetchStatus, 30000);   /* refresh every 30 s */
+
+        /* ══════════════════════════════════════════════════════════
+         *  STATE (advances every second)
+         * ══════════════════════════════════════════════════════════ */
+
+        let elapsed   = 0;   /* seconds since page load */
+        let clockStr  = '00:00:00';
+
+        function pad(n) { return String(n).padStart(2, '0'); }
+
+        function fmtSec(s) {
+            const m = Math.floor(Math.abs(s) / 60);
+            const r = Math.floor(Math.abs(s) % 60);
+            return `${pad(m)}:${pad(r)}`;
+        }
+
+        function rssiLabel(rssi) {
+            if (rssi >= -60) { return 'STRONG'; }
+            if (rssi >= -70) { return 'GOOD'; }
+            if (rssi >= -80) { return 'FAIR'; }
+            return 'WEAK';
+        }
+
+        function tickClock() {
+            const now = new Date();
+            clockStr  = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+         *  RENDER
+         * ══════════════════════════════════════════════════════════ */
+
+        /* Layout constants */
+        const HDR_H  = 30;
+        const FTR_H  = 22;
+        const FTR_Y  = H - FTR_H;
+        /* Vertical divider at golden ratio of W: W / φ ≈ 297
+         * Left panel (major) = 287 px, right panel (minor) = 173 px */
+        const DIV_X  = 297;
+        const LX     = 4;      /* left panel content x */
+        const LW     = DIV_X - LX - 6;   /* left panel content width */
+        const RX     = DIV_X + 6;        /* right panel content x */
+        const RW     = W - RX - 4;       /* right panel content width */
+
+        function render() {
+
+            /* ── Full background ───────────────────────────────── */
+            fillRect(0, 0, W, H, C.bg);
+
+            /* ── Header (y=0..29) ──────────────────────────────── */
+            fillRect(0, 0, W, HDR_H, C.panelBg);
+            line(0, HDR_H, W, HDR_H, C.accent, 1);
+
+            /* Header accent corners */
+            line(0,   0, 18,  0, C.accent, 1);
+            line(0,   0,  0, 10, C.accent, 1);
+            line(W - 18, 0, W, 0, C.accent, 1);
+            line(W,   0,  W, 10, C.accent, 1);
+
+            /* "VIEWOWL" wordmark */
+            drawText('VIEWOWL', LX + 2, 20, 14, C.accent);
+
+            /* Status indicator: blink when online, solid red when offline */
+            const blink    = elapsed % 2 === 0;
+            const dotColor = DEV.online
+                ? (blink ? C.green : C.accentDim)
+                : C.red;
+            fillRect(W - 87, 9, 10, 10, dotColor);
+            drawText(DEV.online ? 'SYNC' : 'LOST', W - 73, 19, 9, DEV.online ? C.green : C.red, 'left', false);
+            drawText(clockStr, W - 4, 19, 9, C.textPri, 'right', false);
+
+            /* ── Vertical divider ──────────────────────────────── */
+            line(DIV_X, HDR_H + 2, DIV_X, FTR_Y - 2, C.border, 1);
+
+            /* ── Footer (y=298..319) ───────────────────────────── */
+            fillRect(0, FTR_Y, W, FTR_H, C.panelBg);
+            line(0, FTR_Y, W, FTR_Y, C.border, 1);
+
+            /* Rotating marquee — switches to offline message when device is unreachable */
+            const phrasesOn  = ['···  SIGNAL NOMINAL  ···', '···  SYSTEM ACTIVE   ···', '···  UPLINK STABLE   ···'];
+            const phrasesOff = ['···  DEVICE OFFLINE  ···', '···  NO UPLINK       ···', '···  WAITING         ···'];
+            const phraseSet  = DEV.online ? phrasesOn : phrasesOff;
+            const marquee    = phraseSet[Math.floor(elapsed / 3) % phraseSet.length];
+            drawText(marquee, W / 2, FTR_Y + 14, 9, C.accentDim, 'center', false);
+
+            /* ════════════════════════════════════════════════════
+             *  LEFT PANEL
+             * ════════════════════════════════════════════════════ */
+
+            /* ── DEVICE ID block (y=34..152) ───────────────────── */
+            const DB_Y  = 34;    /* block top */
+            const DB_H  = 118;   /* block height */
+
+            sectionLabel(LX, DB_Y + 2, 'DEVICE ID');
+
+            /* MAC — primary hardware identity, largest element in block */
+            drawText(DEV.mac, LX, DB_Y + 26, 14, C.white);
+
+            /* Token — secondary software identity, one line, smaller */
+            drawText('TOKEN', LX, DB_Y + 40, 9, C.textSec, 'left', false);
+            drawText(`${DEV.tokenA}·${DEV.tokenB}`, LX + 44, DB_Y + 40, 9, C.textPri, 'left', false);
+
+            /* Separator */
+            line(LX, DB_Y + 48, LX + LW, DB_Y + 48, C.border, 1);
+
+            /* Hardware metrics */
+            kvRow(LX, DB_Y + 62, 'DISPLAY', 50, `${DEV.display}  ${DEV.driver}`, C.textPri);
+
+            /* CPU: label + inline mini-bar + % — bar/% start at same column as other values */
+            drawText('CPU', LX, DB_Y + 76, 9, C.textSec, 'left', false);
+            progressBar(LX + 50, DB_Y + 69, 80, 7, DEV.cpuPct / 100);
+            drawText(`${DEV.cpuPct}%`, LX + 50 + 80 + 6, DB_Y + 76, 9, C.accent, 'left', false);
+
+            kvRow(LX, DB_Y + 90, 'RAM  ', 50,
+                `${DEV.ramFreeKB} / ${DEV.ramTotalKB} KB`, C.textPri);
+
+            /* FLASH and firmware version on same row */
+            kvRow(LX,       DB_Y + 104, 'FLASH', 50, `${DEV.flashMB.toFixed(1)} MB`);
+            kvRow(LX + 130, DB_Y + 104, 'FW',    18, DEV.firmware, C.accent);
+
+            /* ── SERVER LINK block (y=160..290) ────────────────── */
+            const SB_Y = 160;
+            const SB_H = 130;
+
+            sectionLabel(LX, SB_Y + 2, 'SERVER LINK');
+
+            const grabAgo  = Math.round(DEV.lastGrabS + elapsed);
+            const cyclePos = grabAgo % DEV.refreshS;
+            const nextSec  = DEV.refreshS - cyclePos;
+            const frac     = cyclePos / DEV.refreshS;
+
+            kvRow(LX, SB_Y + 24, 'LAST GRAB', 58, `${grabAgo}s ago`);
+
+            /* Progress bar + countdown — bar/text start at same column as other values */
+            drawText('NEXT', LX, SB_Y + 38, 9, C.textSec, 'left', false);
+            progressBar(LX + 58, SB_Y + 30, 160, 7, frac);
+            drawText(fmtSec(nextSec), LX + 58 + 160 + 8, SB_Y + 38, 9, C.textPri, 'left', false);
+
+            kvRow(LX, SB_Y + 54, 'TEMPLATE', 58, DEV.template, C.yellow);
+
+            /* Separator */
+            line(LX, SB_Y + 63, LX + LW, SB_Y + 63, C.border, 1);
+
+            /* Status dot + online label — dot blinks green when online, solid red when offline */
+            const statusDot = DEV.online
+                ? (blink ? C.green : C.accentDim)
+                : C.red;
+            fillRect(LX, SB_Y + 72, 8, 8, statusDot);
+            drawText(DEV.online ? 'ONLINE' : 'OFFLINE', LX + 12, SB_Y + 79,
+                9, DEV.online ? C.green : C.red, 'left', false);
+
+            /* Uptime — live-counted when online, zeroed when offline */
+            const uptimeTot = DEV.online ? Math.round(DEV.uptimeS + elapsed) : 0;
+            const uh = Math.floor(uptimeTot / 3600);
+            const um = Math.floor((uptimeTot % 3600) / 60);
+            const us = uptimeTot % 60;
+            const uptimeClr = DEV.online ? C.textPri : C.textSec;
+            kvRow(LX, SB_Y + 94, 'UPTIME  ', 58, `${pad(uh)}:${pad(um)}:${pad(us)}`, uptimeClr);
+
+            /* Grabs today + sessions */
+            kvRow(LX, SB_Y + 109, 'GRABS   ', 58, `${DEV.grabsToday}  ·  ${DEV.sessionsToday} sess`);
+
+            /* Success rate bar — text baseline = bar_top + 8 */
+            drawText('OK RATE', LX, SB_Y + 123, 9, C.textSec, 'left', false);
+            progressBar(LX + 58, SB_Y + 115, 160, 7, DEV.successRate);
+            drawText(`${Math.round(DEV.successRate * 100)}%`, LX + 58 + 160 + 8, SB_Y + 123, 9, C.textPri, 'left', false);
+
+            /* ════════════════════════════════════════════════════
+             *  RIGHT PANEL
+             * ════════════════════════════════════════════════════ */
+
+            /* ── SIGNAL MATRIX block (y=34..144) ───────────────── */
+            const NB_Y = 34;
+            const NB_H = 110;
+
+            /* Derive live values: when offline, volatile telemetry is zeroed / dashed. */
+            const dispRssi    = DEV.online ? DEV.rssi     : -100;
+            const dispIp      = DEV.online ? DEV.ip       : '---.---.---';
+            const dispPingMs  = DEV.online ? DEV.pingMs   : 0;
+
+            sectionLabel(RX, NB_Y + 2, 'SIGNAL MATRIX');
+
+            /* Signal bars */
+            signalBars(RX, NB_Y + 18, dispRssi);
+
+            /* dBm + label */
+            const rssiStr  = DEV.online ? `${DEV.rssi} dBm` : '--- dBm';
+            const rssiLbl  = DEV.online ? rssiLabel(DEV.rssi) : '---';
+            const rssiClr  = DEV.online ? C.green : C.red;
+            drawText(rssiStr, RX + 48, NB_Y + 34, 9, C.textPri, 'left', false);
+            drawText(rssiLbl, RX + 48 + 56, NB_Y + 34, 9, rssiClr, 'left', false);
+
+            /* WiFi arc icon — top-right corner, centre raised so arcs clear the bars
+             * Arcs curve upward (π+0.55 → 2π-0.55 clockwise passes through 12 o'clock) */
+            const WF_CX = RX + RW - 22;
+            const WF_CY = NB_Y + 38;   /* aligned with bar area; arcs peak above bars */
+            const wfStrength = DEV.online
+                ? Math.max(0, Math.min(3, Math.round((DEV.rssi + 100) / 23)))
+                : 0;
+            /* 3 arcs: r=6, 12, 18 — drawn outer→inner so outer is behind */
+            [18, 12, 6].forEach(function(r, idx) {
+                const filled = wfStrength >= (3 - idx);
+                ctx.strokeStyle = filled ? C.accent : C.accentDim;
+                ctx.lineWidth   = 2;
+                ctx.beginPath();
+                ctx.arc(WF_CX, WF_CY, r, Math.PI + 0.55, 2 * Math.PI - 0.55);
+                ctx.stroke();
+            });
+            /* Centre dot — red when offline */
+            fillRect(WF_CX - 3, WF_CY - 3, 6, 6, DEV.online ? C.accent : C.red);
+
+            /* Network rows — IP and PING are live device telemetry, dim when offline */
+            const ipColor   = DEV.online ? C.textPri : C.textSec;
+            const pingColor = DEV.online ? C.accent  : C.textSec;
+            kvRow(RX, NB_Y + 52, 'IP  ', 30, dispIp, ipColor);
+            kvRow(RX, NB_Y + 67, 'SRV ', 30, DEV.server);
+            kvRow(RX, NB_Y + 82, 'PING', 30, DEV.online ? `${dispPingMs} ms` : '---', pingColor);
+
+            /* Thin separator between panels */
+            line(RX, NB_Y + NB_H + 6, RX + RW, NB_Y + NB_H + 6, C.border, 1);
+
+            /* ── LAST FRAME block (y=154..290) ─────────────────── */
+            const FB_Y = NB_Y + NB_H + 10;
+            const FB_H = FTR_Y - FB_Y - 8;
+
+            sectionLabel(RX, FB_Y + 2, 'LAST FRAME');
+
+            /* CRC row with match indicator */
+            kvRow(RX, FB_Y + 24, 'CRC ', 30, DEV.crc);
+            const matchColor = DEV.crcMatch ? C.green : C.red;
+            drawText(DEV.crcMatch ? '\u2713' : '\u2717', RX + RW - 1, FB_Y + 24, 10, matchColor, 'right');
+
+            kvRow(RX, FB_Y + 39, 'SIZE', 30, DEV.frameSizeLabel);
+
+            /* Sent count with animated pulse dot */
+            const sentPulse = elapsed % 3 === 0;
+            kvRow(RX, FB_Y + 54, 'SENT', 30, `\u00D7${DEV.frameSent}`);
+            fillRect(RX + 56, FB_Y + 46, 5, 5, sentPulse ? C.accent : C.accentDim);
+
+            const frameAgo = Math.round(DEV.frameAgoS + elapsed);
+            kvRow(RX, FB_Y + 69, 'AGO ', 30, fmtSec(frameAgo));
+
+            /* Separator */
+            line(RX, FB_Y + 78, RX + RW, FB_Y + 78, C.border, 1);
+
+            /* UDP transfer stats */
+            kvRow(RX, FB_Y + 93,  'PACKETS', 52, String(DEV.packets));
+            kvRow(RX, FB_Y + 108, 'RETRANS', 52, String(DEV.retransmits),
+                DEV.retransmits === 0 ? C.green : C.yellow);
+
+            /* Transfer quality bar — text baseline = bar_top + 8, width trimmed to clear % */
+            drawText('QUALITY', RX, FB_Y + 122, 9, C.textSec, 'left', false);
+            progressBar(RX + 52, FB_Y + 114, RW - 82, 7, DEV.quality);
+            drawText(`${Math.round(DEV.quality * 100)}%`, RX + 52 + (RW - 82) + 6, FB_Y + 122, 9,
+                DEV.quality >= 0.95 ? C.green : C.yellow, 'left', false);
+
+            /* Packet stream — 5 blocks at fixed position.
+             * Online: animated flow (bright head → dim tail, one tick per second).
+             * Offline: all blocks shown at border level (static, no animation).    */
+            const PS_X    = RX + RW - 18;
+            const PS_TOP  = FB_Y + 26;
+            const BLK_H   = 7, BLK_GAP = 3, BLK_W = 14, BLK_CNT = 5;
+            const phase   = elapsed % BLK_CNT;
+            for (let b = 0; b < BLK_CNT; b++) {
+                const by = PS_TOP + b * (BLK_H + BLK_GAP);
+                let color;
+                if (DEV.online) {
+                    const dist = (b + phase) % BLK_CNT;
+                    color = dist === 0 ? C.white :
+                            dist <  2  ? C.accent :
+                            dist <  4  ? C.accentDim : C.border;
+                } else {
+                    color = C.border;
+                }
+                fillRect(PS_X, by, BLK_W, BLK_H, color);
+            }
+
+        }
+
+        /* ══════════════════════════════════════════════════════════
+         *  REDRAW LOOP
+         * ══════════════════════════════════════════════════════════ */
+
+        function redraw() {
+            ctx.textAlign    = 'left';
+            ctx.textBaseline = 'alphabetic';
+            ctx.lineWidth    = 1;
+            render();
+            dither();
+        }
+
+        function tick() {
+            tickClock();
+            redraw();
+            elapsed++;
+        }
+
+        tick();
+        setInterval(tick, 1000);
+
+        /* ════ Future: replace emulated data with live API call ════
+         *
+         * const TOKEN = new URLSearchParams(location.search).get('token') || '';
+         *
+         * async function fetchStatus() {
+         *     try {
+         *         const r = await fetch(`http://localhost:5000/api/device/${TOKEN}/status`);
+         *         const d = await r.json();
+         *         Object.assign(DEV, d);
+         *         redraw();
+         *     } catch (e) {
+         *         DEV.online = false;
+         *         redraw();
+         *     }
+         * }
+         *
+         * fetchStatus();
+         * setInterval(fetchStatus, 30_000);  // refresh status every 30 s
+         *
+         * ══════════════════════════════════════════════════════════ */
+    </script>
+
+</body>
+</html>

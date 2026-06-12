@@ -1,0 +1,141 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ALIEN-79</title>
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 480px; height: 320px; overflow: hidden; background: #000; }
+
+.t {
+    position: relative;
+    width: 480px; height: 320px;
+    padding: 12px 16px 8px;
+    font-family: 'VT323', monospace;
+    color: #5fe070;
+    text-shadow: 0 0 4px rgba(40,170,60,0.55);
+}
+
+.t::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent 0, transparent 2px,
+        rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px
+    );
+    z-index: 20;
+    pointer-events: none;
+}
+
+.hdr {
+    font-size: 16px;
+    letter-spacing: 0.14em;
+    margin-bottom: 8px;
+    color: #6ef080;
+    text-shadow: 0 0 5px rgba(40,180,70,0.6);
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 219px 219px;
+    column-gap: 10px;
+}
+
+.row {
+    display: flex;
+    justify-content: space-between;
+    height: 18px;
+    line-height: 18px;
+    font-size: 15px;
+    letter-spacing: 0.05em;
+    padding: 0 3px;
+}
+
+#cur {
+    position: absolute;
+    height: 2px;
+    background: #fff;
+    box-shadow: 0 0 5px #fff, 0 0 10px rgba(255,255,255,0.5);
+    z-index: 5;
+}
+</style>
+</head>
+<body
+  data-vow-class="C"
+  data-vow-name="ALIEN 1979 — OVERMONITORING ADDRESS MATRIX"
+  data-vow-description="Nostromo MU/TH/UR 6000 terminal — phosphor green CRT menu with scanning cursor"
+  data-vow-category="scifi"
+  data-vow-tags="alien,nostromo,terminal,crt,1979"
+  data-vow-frames="7"
+  data-vow-fps="3"
+  data-vow-refresh="0"
+>
+<div class="t">
+    <div class="hdr">OVERMONITORING ADDRESS MATRIX</div>
+    <div class="grid">
+        <div>
+            <div class="row"><span>CRFX</span><span>OM2077AM</span></div>
+            <div class="row"><span>ATTITUDE</span><span>SM2078</span></div>
+            <div class="row"><span>WASTE HEAT</span><span>2080</span></div>
+            <div class="row"><span>RAD</span><span>2081</span></div>
+            <div class="row"><span>VENT</span><span>2082AM</span></div>
+            <div class="row"><span>NAVIGATION</span><span>M2083</span></div>
+            <div class="row"><span>TIME</span><span>M2084</span></div>
+            <div class="row"><span>GAL POS</span><span></span></div>
+            <div class="row"><span>COMMAND</span><span>2086SC</span></div>
+            <div class="row"><span>INTERFACE</span><span>2037</span></div>
+            <div class="row"><span>ATTN</span><span>2087SC</span></div>
+            <div class="row"><span>ALERT</span><span>2088SC</span></div>
+            <div class="row"><span>MARTIAL</span><span>2090</span></div>
+            <div class="row"><span>OVERLOCK</span><span>M2091</span></div>
+        </div>
+        <div>
+            <div class="row"><span>L ALLIGNMENT</span><span>SM2093</span></div>
+            <div class="row"><span>PHOTO F</span><span>SM2094</span></div>
+            <div class="row"><span>MAINS</span><span></span></div>
+            <div class="row"><span>IUA</span><span>SM2096</span></div>
+            <div class="row"><span>2LA</span><span>SM2097</span></div>
+            <div class="row"><span>3RA</span><span>SM2098</span></div>
+            <div class="row"><span>4LHA</span><span>SM2099</span></div>
+            <div class="row"><span>GRAY GRIDS</span><span></span></div>
+            <div class="row"><span>INERTIAL DAMP</span><span>3002AM</span></div>
+            <div class="row"><span>DECK A</span><span>A3003</span></div>
+            <div class="row"><span>DECK B</span><span>A3004</span></div>
+            <div class="row"><span>DECK C</span><span>A3005</span></div>
+            <div class="row"><span>LIFE SUPPORT</span><span></span></div>
+            <div class="row"><span>0%</span><span>M3003AM</span></div>
+        </div>
+    </div>
+    <div id="cur"></div>
+</div>
+
+<script>
+/* Class C contract: vow_frame=N in URL → render frame N, no animation */
+
+/* 7 frames: 4 left column, 3 right column
+   row = index in that column (0-based)
+   col = 'L' (left, x=16) or 'R' (right, x=245)           */
+const FRAMES = [
+    { row: 0, col: 'L' },   /* CRFX          */
+    { row: 1, col: 'L' },   /* ATTITUDE      */
+    { row: 2, col: 'L' },   /* WASTE HEAT    */
+    { row: 3, col: 'L' },   /* RAD           */
+    { row: 0, col: 'R' },   /* L ALLIGNMENT  */
+    { row: 3, col: 'R' },   /* IUA           */
+    { row: 8, col: 'R' },   /* INERTIAL DAMP */
+];
+
+/* Grid top=42px, row height=18px, cursor sits 13px below row top (-3px user adj = 52+N*18) */
+const n = parseInt(new URLSearchParams(location.search).get('vow_frame') ?? '0', 10);
+const f = FRAMES[((n % FRAMES.length) + FRAMES.length) % FRAMES.length];
+
+const cur = document.getElementById('cur');
+cur.style.top   = (52 + f.row * 18) + 'px';
+cur.style.left  = (f.col === 'L' ? 16 : 245) + 'px';
+cur.style.width = '219px';
+</script>
+</body>
+</html>

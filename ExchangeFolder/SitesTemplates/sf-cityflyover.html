@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body"
+  data-vow-name="Wire City Flyover"
+  data-vow-category="scifi"
+  data-vow-description="80s vector-graphics night flight over a wireframe megacity — hidden-line removal, lit windows, HUD speed and coordinates, indigo and cornflower phosphor look"
+  data-vow-class="C"
+  data-vow-frames="16"
+  data-vow-fps="4"
+  data-vow-refresh="0">
+<canvas id="screen"></canvas>
+<script>
+'use strict'
+/* Logical design space is 480x320; the canvas matches the real viewport and
+ * is scaled, so backend grabs at 320x240 render natively (no cropping). */
+const W=480,H=320
+const cv=document.getElementById('screen')
+const VW=window.innerWidth||W, VH=window.innerHeight||H
+cv.width=VW; cv.height=VH
+const cx=cv.getContext('2d')
+
+const FRAME_COUNT=16
+
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+
+/* Floyd-Steinberg dithering to the BGR565 grid — runs over real pixels. */
+function dither(){
+  const id=cx.getImageData(0,0,VW,VH),d=id.data
+  for(let y=0;y<VH;y++)for(let x=0;x<VW;x++){
+    const i=(y*VW+x)*4
+    for(let c=0;c<3;c++){
+      const bits=c===1?6:5,max=(1<<bits)-1,old=d[i+c]
+      const nv=Math.round(old/255*max)/max*255,err=old-nv
+      d[i+c]=nv
+      if(x+1<VW)d[i+4+c]+=err*7/16
+      if(y+1<VH){if(x>0)d[i+(VW-1)*4+c]+=err*3/16;d[i+VW*4+c]+=err*5/16;if(x+1<VW)d[i+(VW+1)*4+c]+=err/16}
+    }
+  }
+  cx.putImageData(id,0,0)
+}
+
+/* Indigo / cornflower phosphor palette — high-luminance strokes on a deep
+ * indigo night so contrast survives TN panels viewed off-axis. */
+const P={
+  sky:  css(4,6,22),   gnd: css(2,4,16),  body:css(5,9,28),
+  far:  css(56,76,176),mid: css(100,132,236),near:css(176,204,255),
+  vio:  css(156,118,252),vioD:css(70,52,140),
+  horz: css(132,160,255),
+  bdr:  css(64,96,224),bdr2:css(28,40,110),
+  win:  css(186,208,255),winA:css(255,190,96),
+  tx:   css(238,244,255),tx2: css(154,176,238),tx3:css(94,110,180),
+  wh:   css(250,252,255),
+}
+
+function fill(x,y,w,h,c){cx.fillStyle=c;cx.fillRect(x,y,w,h)}
+function ln(x1,y1,x2,y2,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()}
+function box(x,y,w,h,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.strokeRect(x,y,w,h)}
+function dot(x,y,r,c){cx.beginPath();cx.arc(x,y,r,0,Math.PI*2);cx.fillStyle=c;cx.fill()}
+function poly(ps,fc,sc,lw=1){
+  cx.beginPath();cx.moveTo(ps[0][0],ps[0][1])
+  for(let i=1;i<ps.length;i++)cx.lineTo(ps[i][0],ps[i][1])
+  cx.closePath()
+  if(fc){cx.fillStyle=fc;cx.fill()}
+  if(sc){cx.strokeStyle=sc;cx.lineWidth=lw;cx.stroke()}
+}
+function txt(s,x,y,c,sz=9,al='left',bold=false){
+  cx.font=`${bold?'bold ':''}${sz}px monospace`;cx.fillStyle=c;cx.textAlign=al;cx.fillText(s,x,y);cx.textAlign='left'
+}
+
+/* ── World constants ─────────────────────────────────────────────────── */
+const CELL=60                 /* city block pitch (world units)            */
+const PERIOD=8                /* height pattern repeats every 8 rows       */
+const STEP=30                 /* camera advance per frame: half a block —
+                               * gentle pace, easy on the eyes             */
+/* One loop = 16 frames x 30 units = 480 = exactly one pattern period
+ * (8 rows x 60), so frame 16 is pixel-identical to frame 0.              */
+const FOCAL=260, CAMY=92
+const HOR=H*0.42              /* screen horizon (level camera)             */
+const NEARZ=24, FARZ=1400
+
+/* Deterministic building height from cell coordinates (no randomness). */
+function bh(ix,iz){
+  const izw=((iz%PERIOD)+PERIOD)%PERIOD
+  let s=(ix*374761393+izw*668265263)>>>0
+  s=((s^(s>>>13))*1274126177)>>>0
+  return 28+(s%1000)/1000*122
+}
+/* Deterministic per-window hash — static lit pattern, no flicker. */
+function wlit(ix,izw,r,c){
+  let s=(ix*65521+izw*40503+r*97561+c*7919)>>>0
+  s=((s^(s>>>11))*2654435761)>>>0
+  return s
+}
+
+/* Fixed star field above the horizon (index-derived). */
+const STARS=[]
+for(let i=0;i<26;i++)STARS.push([8+(i*89)%464,12+(i*37)%((~~HOR)-22),i%3])
+
+function render(frame){
+  frame=((frame%FRAME_COUNT)+FRAME_COUNT)%FRAME_COUNT
+  cx.setTransform(VW/W,0,0,VH/H,0,0)
+  const bl=(frame%4)<2              /* slow 1 Hz indicator blink           */
+  const ph=frame/FRAME_COUNT
+  const th=ph*Math.PI*2
+
+  const camZ=frame*STEP
+  const camX=Math.sin(th)*4         /* gentle sway, loops seamlessly       */
+  const camY=CAMY+Math.sin(th)*1.5  /* subtle altitude bob                 */
+
+  /* Perspective helpers — one-point, vanishing point at screen centre.   */
+  const px=(wx,dz)=>W/2+(wx-camX)*FOCAL/dz
+  const py=(wy,dz)=>HOR+(camY-wy)*FOCAL/dz
+
+  /* ── Sky / ground / horizon ── */
+  fill(0,0,W,HOR,P.sky)
+  fill(0,HOR,W,H-HOR,P.gnd)
+  for(const[sx,sy,m]of STARS){
+    cx.fillStyle=m===0?P.tx2:m===1?P.tx3:P.bdr2
+    cx.fillRect(sx,sy,m===0?2:1,m===0?2:1)
+  }
+  ln(0,HOR,W,HOR,P.horz,1.2)
+  cx.globalAlpha=0.30;ln(0,HOR+2,W,HOR+2,P.bdr);cx.globalAlpha=1
+
+  /* ── Ground grid — longitudinal lines converge on the vanishing point */
+  for(let ix=-8;ix<=8;ix++){
+    const wx=ix*CELL
+    ln(px(wx,NEARZ+40),py(0,NEARZ+40),px(wx,FARZ),py(0,FARZ),
+       ix===0?P.mid:P.far,ix===0?1.2:0.7)
+  }
+  /* ── Ground grid — cross rulings flow toward the camera               */
+  const r0=Math.ceil((camZ+NEARZ+30)/CELL)
+  for(let k=r0;k*CELL-camZ<FARZ;k++){
+    const dz=k*CELL-camZ
+    const y=py(0,dz)
+    if(y>H)continue
+    const n=1-dz/FARZ
+    ln(0,y,W,y,n>0.7?P.mid:P.far,n>0.7?0.9:0.6)
+  }
+
+  /* ── Towers — painter's order far→near; faces are filled opaque so
+   *    everything behind them is properly hidden (80s hidden-line trick) */
+  for(let iz=r0+21;iz>=r0-1;iz--){
+    const cz=(iz+0.5)*CELL
+    const izw=((iz%PERIOD)+PERIOD)%PERIOD
+    for(let ix=-8;ix<=7;ix++){
+      if(ix===-1||ix===0)continue        /* central flight corridor       */
+      const cxw=(ix+0.5)*CELL
+      const hgt=bh(ix,iz)
+      const x0=cxw-22,x1=cxw+22,z0=cz-22,z1=cz+22
+      const dzA=z0-camZ,dzB=z1-camZ
+      if(dzA<NEARZ||dzA>FARZ)continue
+      const tier=dzA>800?0:dzA>340?1:2
+      const col=tier===0?P.far:tier===1?P.mid:P.near
+      const lw=tier===2?1.2:tier===1?0.9:0.7
+      /* projected corners: front face (A, toward camera), back face (B) */
+      const fx0=px(x0,dzA),fx1=px(x1,dzA),fg=py(0,dzA),ft=py(hgt,dzA)
+      const bx0=px(x0,dzB),bx1=px(x1,dzB),bg=py(0,dzB),bt=py(hgt,dzB)
+      if(fx1<-30||fx0>W+30)continue
+
+      /* top face — visible only when the camera is above the roof       */
+      if(camY>hgt)
+        poly([[fx0,ft],[fx1,ft],[bx1,bt],[bx0,bt]],P.body,
+             hgt>118?P.vio:col,hgt>118?1.2:lw)
+      /* side face — visible only from its outer side                    */
+      if(camX<x0)      poly([[fx0,fg],[fx0,ft],[bx0,bt],[bx0,bg]],P.body,col,lw)
+      else if(camX>x1) poly([[fx1,fg],[fx1,ft],[bx1,bt],[bx1,bg]],P.body,col,lw)
+      /* front face — always visible, drawn last                         */
+      poly([[fx0,fg],[fx1,fg],[fx1,ft],[fx0,ft]],P.body,col,lw)
+
+      /* lit windows — static deterministic pattern, mid/near tiers only */
+      if(tier>0){
+        const rows=Math.min(7,~~(hgt/18)),cols=3
+        const fw=fx1-fx0,fh=fg-ft
+        for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+          const s=wlit(ix,izw,r,c)
+          if(s%10>=3)continue                       /* ~30% of cells lit  */
+          const wx0=fx0+fw*(0.16+c*0.26),wy0=ft+fh*(0.10+r*(0.82/rows))
+          const ww=Math.max(1.2,fw*0.14),wwh=Math.max(1,fh*0.5/rows)
+          fill(wx0,wy0,ww,wwh,s%17===0?P.winA:P.win)
+        }
+      }
+      /* blinking rooftop beacon on the tall ones — slow blink           */
+      if(hgt>118){
+        const mx=(fx0+fx1)/2,beacon=py(hgt+14,dzA)
+        ln(mx,ft,mx,beacon,P.vioD,0.8)
+        if(((frame>>2)+ix+iz)%2===0)dot(mx,beacon,tier===2?2:1.4,P.wh)
+      }
+    }
+  }
+
+  /* ── Flight-path marker (centre of corridor) ── */
+  const fpx=W/2,fpy=HOR+30
+  cx.strokeStyle=P.near;cx.lineWidth=1.2
+  cx.beginPath();cx.arc(fpx,fpy,5,0,Math.PI*2);cx.stroke()
+  ln(fpx-13,fpy,fpx-5,fpy,P.near,1.2);ln(fpx+5,fpy,fpx+13,fpy,P.near,1.2)
+  ln(fpx,fpy-9,fpx,fpy-5,P.near,1.2)
+
+  /* ── Screen bezel — double border + corner cross ticks ── */
+  box(2,2,W-4,H-4,P.bdr,1.5)
+  box(6,6,W-12,H-12,P.bdr2,0.8)
+  for(const[mx,my]of[[64,54],[W-64,54],[64,H-54],[W-64,H-54]]){
+    ln(mx-7,my,mx+7,my,P.bdr,0.9);ln(mx,my-7,mx,my+7,P.bdr,0.9)
+  }
+
+  /* ── Header strip ── */
+  fill(7,7,W-14,15,css(8,12,40))
+  ln(7,22,W-7,22,P.bdr2)
+  txt('APPROACH — MEGABLOCK 7G',13,18,P.tx,10,'left',true)
+  txt('AUTONAV ENGAGED',W/2+10,18,P.tx3,8)
+  txt(`SYS ${(44.2+ph).toFixed(2)} NOMINAL`,W-13,18,P.tx2,8,'right')
+
+  /* ── HUD: corner data blocks ── */
+  const vel=120+Math.round(3*Math.sin(th))
+  const alt=Math.round(camY)
+  const wpt=PERIOD*CELL-frame*STEP
+  const hh=10*3600+47*60+frame*2
+  const hts=`${String(~~(hh/3600)).padStart(2,'0')}:${String(~~(hh/60)%60).padStart(2,'0')}:${String(hh%60).padStart(2,'0')}`
+
+  /* top-left: velocity */
+  txt('VEL',13,38,P.tx3,8)
+  txt(`${String(vel).padStart(4,'0')} m/s`,13,50,P.near,11,'left',true)
+  fill(13,54,70,4,css(10,16,48))
+  fill(13,54,~~(70*(vel-90)/60),4,P.mid)
+
+  /* top-right: altitude */
+  txt('ALT',W-13,38,P.tx3,8,'right')
+  txt(`${String(alt).padStart(4,'0')} m`,W-13,50,P.near,11,'right',true)
+  for(let t=0;t<5;t++)ln(W-16,56+t*5,W-13,56+t*5,t===2?P.near:P.tx3,t===2?1.4:0.8)
+
+  /* bottom-left: grid coordinates + waypoint countdown */
+  txt(`GRID  X ${(camX>=0?'+':'-')}${Math.abs(camX).toFixed(1).padStart(4,'0')}`,13,H-34,P.tx2,9)
+  txt(`WPT-Δ ${String(wpt).padStart(4,'0')} m`,13,H-22,wpt<=120?P.wh:P.near,10,'left',true)
+  txt(`MET ${hts}`,13,H-11,P.tx3,8)
+
+  /* bottom-right: loop sync + autopilot lamp */
+  txt(`SYNC ${String(frame+1).padStart(2,'0')}/${FRAME_COUNT}`,W-13,H-34,P.tx2,9,'right')
+  txt(`HDG 000.0°`,W-13,H-22,P.near,10,'right',true)
+  dot(W-66,H-14,3,bl?P.vio:P.vioD)
+  txt('A-NAV',W-13,H-11,bl?P.tx2:P.tx3,8,'right',true)
+
+  dither()
+}
+
+/* ── Driver ───────────────────────────────────────────────────────────
+ * Grab path: server appends ?vow_frame=N → render exactly that frame.
+ * Preview path: self-animate so the dashboard thumbnail shows motion. */
+const vf=new URLSearchParams(location.search).get('vow_frame')
+if(vf!==null){
+  render(parseInt(vf,10)||0)
+}else{
+  let pf=0
+  render(pf)
+  setInterval(()=>{pf=(pf+1)%FRAME_COUNT;render(pf)},250)
+}
+</script></body></html>

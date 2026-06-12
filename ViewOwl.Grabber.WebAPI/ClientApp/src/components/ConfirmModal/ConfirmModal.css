@@ -1,0 +1,113 @@
+/* ── Overlay ──────────────────────────────────────────────────────────────── */
+.cdlg-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.60);
+    backdrop-filter: blur(2px);
+    animation: cdlg-fadein 0.10s ease;
+}
+
+@keyframes cdlg-fadein {
+    from { opacity: 0 }
+    to   { opacity: 1 }
+}
+
+/* ── Dialog box ───────────────────────────────────────────────────────────── */
+.cdlg-box {
+    background: rgba(4, 10, 22, 0.97);
+    border: 1px solid rgba(0, 200, 255, 0.30);
+    border-radius: 6px;
+    box-shadow:
+        0 0 40px rgba(0, 200, 255, 0.10),
+        0 8px 32px rgba(0, 0, 0, 0.75);
+    padding: 22px 26px 18px;
+    width: 360px;
+    max-width: 90vw;
+    animation: cdlg-slidein 0.13s ease;
+}
+
+@keyframes cdlg-slidein {
+    from { transform: translateY(-10px); opacity: 0 }
+    to   { transform: translateY(0);     opacity: 1 }
+}
+
+/* ── Title ────────────────────────────────────────────────────────────────── */
+.cdlg-title {
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    color: rgba(0, 200, 255, 0.60);
+    text-transform: uppercase;
+    margin-bottom: 11px;
+}
+
+/* ── Message ──────────────────────────────────────────────────────────────── */
+.cdlg-message {
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #ccd6e0;
+    margin-bottom: 20px;
+    white-space: pre-wrap; /* preserve \n from multi-line messages */
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.cdlg-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.cdlg-btn {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    padding: 7px 22px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    outline: none;
+    border-style: solid;
+    border-width: 1px;
+}
+
+/* NO — ghost/secondary */
+.cdlg-btn-no {
+    background: transparent;
+    border-color: rgba(140, 150, 180, 0.35);
+    color: rgba(160, 168, 200, 0.65);
+}
+.cdlg-btn-no:hover {
+    border-color: rgba(160, 168, 200, 0.60);
+    color: #b0b8cc;
+}
+
+/* YES — cyan (neutral confirm) */
+.cdlg-btn-yes {
+    background: rgba(0, 200, 255, 0.12);
+    border-color: rgba(0, 200, 255, 0.50);
+    color: #00c8ff;
+}
+.cdlg-btn-yes:hover {
+    background: rgba(0, 200, 255, 0.26);
+    border-color: #00c8ff;
+    color: #fff;
+}
+
+/* YES — red (destructive action: delete, etc.) */
+.cdlg-btn-danger {
+    background: rgba(255, 60, 60, 0.10);
+    border-color: rgba(255, 80, 80, 0.45);
+    color: #ff7070;
+}
+.cdlg-btn-danger:hover {
+    background: rgba(255, 60, 60, 0.24);
+    border-color: #ff6060;
+    color: #fff;
+}

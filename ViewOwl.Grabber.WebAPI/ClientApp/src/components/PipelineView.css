@@ -1,0 +1,510 @@
+/* ── Pipeline View ───────────────────────────────────────────────────────── */
+
+.pl-view {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  background: var(--bg);
+  font-family: var(--font);
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
+.pl-toolbar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.pl-title {
+  font-size: 0.62rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--neutral-text);
+  flex: 1;
+}
+
+.pl-refresh-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 0.6rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  padding: 5px 14px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.pl-refresh-btn:hover {
+  border-color: var(--border-bright);
+  color: var(--text);
+}
+
+/* ── Column headers ──────────────────────────────────────────────────────── */
+
+.pl-header {
+  display: grid;
+  grid-template-columns: 200px 200px 1fr 1fr;
+  gap: 2px;
+  margin-bottom: 4px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pl-hcell {
+  padding: 6px 12px;
+  background: var(--bg-header);
+  font-size: 0.54rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ── Row container ───────────────────────────────────────────────────────── */
+
+.pl-row {
+  margin-bottom: 3px;
+  border: 1px solid rgba(255,255,255,0.07);
+  transition: border-color 0.15s;
+}
+
+.pl-row:hover {
+  border-color: rgba(255,255,255,0.14);
+}
+
+.pl-row-open {
+  border-color: rgba(255,255,255,0.18);
+}
+
+/* ── 4-column grid ───────────────────────────────────────────────────────── */
+
+.pl-grid {
+  display: grid;
+  grid-template-columns: 200px 200px 1fr 1fr;
+  gap: 2px;
+  background: rgba(255,255,255,0.05);   /* gap colour */
+}
+
+/* ── Cell base ───────────────────────────────────────────────────────────── */
+
+.pl-cell {
+  padding: 10px 14px;
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 5px;
+  min-height: 100px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.pl-clickable {
+  cursor: pointer;
+}
+
+/* Hover: very subtle background shift only — no border highlight */
+.pl-clickable:hover {
+  background: rgba(255, 255, 255, 0.018);
+}
+
+/* ── ISA-101 status left accent ──────────────────────────────────────────── */
+
+.pl-s-ok   { border-left: 3px solid var(--status-ok); }
+.pl-s-err  { border-left: 3px solid var(--status-error); }
+.pl-s-warn { border-left: 3px solid var(--status-warn); }
+.pl-s-act  { border-left: 3px solid var(--primary); }
+.pl-s-dim  { border-left: 3px solid rgba(255,255,255,0.1); }
+
+/* ── Template column — vertical layout ───────────────────────────────────── */
+
+.pl-col-template {
+  background: rgba(255,255,255,0.02);
+  cursor: pointer;
+  justify-content: flex-start;
+  padding: 12px 14px 10px;
+  gap: 4px;
+}
+
+.pl-col-template:hover {
+  background: rgba(255, 255, 255, 0.032);
+}
+
+/* Name — most prominent element, top of cell */
+.pl-tpl-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+}
+
+.pl-tpl-meta {
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+.pl-caret {
+  font-size: 0.5rem;
+  opacity: 0.6;
+}
+
+/* Thumbnail — bottom of template cell, fills width.
+ * Use contain so the full image is visible letterboxed — cover was cropping
+ * 480×320 frames unpredictably ("torn" appearance reported by users). */
+.pl-thumb {
+  width: 100%;
+  height: 58px;
+  object-fit: contain;
+  object-position: center;
+  background: rgba(0, 0, 0, 0.3);
+  display: block;
+  border: 1px solid rgba(255,255,255,0.08);
+  margin-top: auto;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.pl-thumb-blank {
+  width: 100%;
+  height: 44px;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid rgba(255,255,255,0.06);
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+/* ── Grabber column — status on top, preview at bottom ───────────────────── */
+
+.pl-col-grabber {
+  justify-content: flex-start;
+  cursor: pointer;
+  padding: 10px 14px 8px;
+  gap: 4px;
+}
+
+/* Preview fills remaining space at the bottom of the grabber cell.
+ * Same contain fix as .pl-thumb — no cropping artifacts. */
+.pl-grab-preview {
+  width: 100%;
+  height: 58px;
+  object-fit: contain;
+  object-position: center;
+  background: rgba(0, 0, 0, 0.3);
+  display: block;
+  border: 1px solid rgba(255,255,255,0.08);
+  margin-top: auto;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+/* ── UDP + Device columns ────────────────────────────────────────────────── */
+
+.pl-col-udp,
+.pl-col-device {
+  justify-content: flex-start;
+}
+
+/* ── Badges and text ─────────────────────────────────────────────────────── */
+
+.pl-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  line-height: 1;
+}
+
+.pl-b-ok   { color: var(--status-ok); }
+.pl-b-err  { color: var(--status-error); }
+.pl-b-warn { color: var(--status-warn); }
+.pl-b-act  { color: var(--primary); }
+.pl-b-dim  { color: var(--text-dim); }
+
+.pl-time {
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  letter-spacing: 0.03em;
+}
+
+.pl-dur {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+}
+
+.pl-errmsg {
+  font-size: 0.6rem;
+  color: var(--status-error);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pl-none {
+  font-size: 0.62rem;
+  color: rgba(255,255,255,0.2);
+  font-style: italic;
+}
+
+.pl-dev-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pl-dev-status {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.pl-ds-ok  { color: var(--status-ok); }
+.pl-ds-err { color: var(--status-error); }
+.pl-ds-dim { color: var(--text-dim); }
+
+/* ── Action bar ──────────────────────────────────────────────────────────── */
+
+.pl-actions {
+  padding: 7px 14px;
+  background: rgba(255,255,255,0.02);
+  border-top: 1px solid rgba(255,255,255,0.07);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.pl-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 0.58rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+
+.pl-btn:hover             { border-color: rgba(255,255,255,0.28); color: var(--text); }
+.pl-btn-edit:hover        { border-color: var(--secondary);   color: var(--secondary); }
+.pl-btn-grab:hover        { border-color: var(--primary);     color: var(--primary); }
+.pl-btn-config:hover      { border-color: var(--status-warn); color: var(--status-warn); }
+
+/* ── Empty / error states ────────────────────────────────────────────────── */
+
+.pl-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.pl-empty-err { color: var(--status-error); }
+
+/* ── Event log drawer ────────────────────────────────────────────────────── */
+
+.eld-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.eld-drawer {
+  width: 520px;
+  height: 100%;
+  background: var(--bg-panel);
+  border-left: 2px solid rgba(255,255,255,0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.eld-header {
+  padding: 14px 18px;
+  background: var(--bg-header);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.eld-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-bright);
+  flex: 1;
+}
+
+.eld-close {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: bold;
+  padding: 3px 10px;
+  cursor: pointer;
+  line-height: 1;
+  transition: border-color 0.12s, color 0.12s;
+}
+
+.eld-close:hover {
+  border-color: rgba(255,255,255,0.3);
+  color: var(--text);
+}
+
+/* Filter bar */
+.eld-filterbar {
+  padding: 7px 18px;
+  background: var(--bg-header);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.eld-filter-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.eld-filter-btn:hover {
+  border-color: rgba(255,255,255,0.25);
+  color: var(--text);
+}
+
+.eld-filter-active {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.eld-noise-count {
+  opacity: 0.6;
+}
+
+/* Log entries */
+.eld-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.eld-item {
+  display: grid;
+  grid-template-columns: 78px 1fr auto;
+  gap: 4px 12px;
+  padding: 8px 18px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  align-items: baseline;
+}
+
+.eld-item:last-child { border-bottom: none; }
+
+.eld-time {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.eld-type {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.eld-repeat {
+  font-size: 0.58rem;
+  font-weight: normal;
+  opacity: 0.55;
+  letter-spacing: 0.04em;
+}
+
+.eld-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eld-dur {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* Status dot in the right column */
+.eld-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.eld-dot-ok   { background: var(--status-ok); }
+.eld-dot-err  { background: var(--status-error); }
+.eld-dot-warn { background: var(--status-warn); }
+.eld-dot-act  { background: var(--primary); }
+.eld-dot-dim  { background: rgba(255,255,255,0.18); }
+
+.eld-err {
+  grid-column: 2 / -1;
+  font-size: 0.6rem;
+  color: var(--status-error);
+  padding-bottom: 2px;
+}
+
+/* Type colours */
+.elt-grab_completed     { color: var(--status-ok); }
+.elt-grab_failed        { color: var(--status-error); }
+.elt-grab_started       { color: var(--primary); }
+.elt-udp_done           { color: var(--status-ok); }
+.elt-udp_not_modified   { color: var(--text-dim); }
+.elt-udp_failed         { color: var(--status-error); }
+.elt-udp_session_opened { color: var(--primary); }
+.elt-udp_no_frame       { color: var(--status-warn); }
+.elt-device_online      { color: var(--status-ok); }
+.elt-device_offline     { color: var(--status-error); }

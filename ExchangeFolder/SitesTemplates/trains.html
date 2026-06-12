@@ -1,0 +1,227 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Train Departures</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #08080e; width: 480px; height: 320px; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body id="body"
+      data-vow-name="Trains"
+      data-vow-category="transport"
+      data-vow-description="European train departures — DB HAFAS transport.rest API">
+  <canvas id="screen" width="480" height="320"></canvas>
+  <script>
+    'use strict';
+    const canvas = document.getElementById('screen');
+    const ctx    = canvas.getContext('2d', { alpha: false });
+    const W = 480, H = 320;
+
+    /* ── Palette ─────────────────────────────────────────────────────── */
+    const BG   = '#08080e';
+    const BG2  = '#0e0e1a';
+    const HDR  = '#cc0011';           // DB Red
+    const HTXT = '#ffffff';
+    const CHDR = '#440008';
+    const WHT  = '#e8eef8';
+    const DIM  = '#303040';
+    const CYN  = '#00bbee';
+    const GREEN= '#00ee66';
+    const RED  = '#ff2233';
+    const YELL = '#ffcc00';
+    const ORA  = '#ff8800';
+    const GREY = '#445566';
+
+    /* ── Train type badge colors ──────────────────────────────────────── */
+    const TYPE_COL = {
+      ICE: ['#ffffff', '#c00020'],   // white text, red bg
+      IC:  ['#ffffff', '#003080'],   // white, dark blue
+      EC:  ['#ffffff', '#004499'],
+      RJ:  ['#ffffff', '#cc0000'],   // RegioJet red
+      IR:  ['#ffffff', '#335500'],
+      RE:  ['#ffffff', '#114488'],
+      RB:  ['#cccccc', '#222244'],
+      S:   ['#ffffff', '#008800'],
+    };
+
+    /* ── Static Frankfurt Hbf schedule (offsets from now in minutes) ─── */
+    const RAW = [
+      { cat: 'ICE', num: '  25', dest: 'MÜNCHEN HBF       ', plat: ' 7', delay:  0 },
+      { cat: 'IC',  num: '2200', dest: 'AMSTERDAM CS      ', plat: '11', delay:  0 },
+      { cat: 'EC',  num: '  8',  dest: 'WIEN HBF          ', plat: '14', delay:  0 },
+      { cat: 'ICE', num: ' 101', dest: 'BERLIN HBF        ', plat: ' 5', delay: 12 },
+      { cat: 'RE',  num: '  50', dest: 'MAINZ HBF         ', plat: ' 2', delay:  0 },
+      { cat: 'ICE', num: ' 521', dest: 'HAMBURG HBF       ', plat: ' 9', delay:  0 },
+      { cat: 'RB',  num: '  75', dest: 'DARMSTADT HBF     ', plat: ' 1', delay:  5 },
+      { cat: 'IC',  num: '1189', dest: 'KÖLN HBF          ', plat: ' 6', delay:  0 },
+    ];
+    const OFFS = [-48, -22, -5, 10, 28, 47, 68, 92];
+
+    let sched = [];
+
+    function buildSched() {
+      const now = Date.now();
+      sched = RAW.map((t, i) => {
+        const dep  = now + (OFFS[i] + t.delay) * 60_000;
+        const mins = (dep - now) / 60_000;
+        let status, sc;
+        if      (mins < -2)  { status = 'ABGEF.'; sc = GREY; }
+        else if (mins <  3)  { status = 'JETZT' ; sc = RED;  }
+        else if (mins < 15)  { status = `${Math.round(mins)} MIN`; sc = YELL; }
+        else if (t.delay > 0){ status = `+${t.delay} MIN`; sc = ORA; }
+        else                 { status = 'PÜNKTL.'; sc = GREEN;}
+        const d  = new Date(dep);
+        const hh = String(d.getHours()).padStart(2,'0');
+        const mm = String(d.getMinutes()).padStart(2,'0');
+        return { ...t, time: `${hh}:${mm}`, status, sc, dep };
+      }).sort((a, b) => a.dep - b.dep);
+    }
+
+    /* ── Helpers ─────────────────────────────────────────────────────── */
+    function mono(size, bold) {
+      ctx.font = `${bold ? 'bold ' : ''}${size}px "Courier New",monospace`;
+    }
+
+    function typeBadge(cat, x, y) {
+      const [tc, bc] = TYPE_COL[cat] ?? ['#fff', '#444'];
+      const text = cat.length <= 2 ? ` ${cat} ` : cat;
+      mono(9, true);
+      const tw = ctx.measureText(text).width + 6;
+      ctx.fillStyle = bc;
+      ctx.fillRect(x, y, tw, 15);
+      ctx.fillStyle = tc;
+      ctx.fillText(text, x + 3, y + 11);
+      return tw + 4;
+    }
+
+    function statusBadge(text, color, x, y) {
+      mono(8, true);
+      const tw = ctx.measureText(text).width + 10;
+      ctx.fillStyle = color + '22';
+      ctx.fillRect(x, y, tw, 14);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, tw - 1, 13);
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.fillText(text, x + tw / 2, y + 10);
+      ctx.textAlign = 'left';
+      return tw;
+    }
+
+    /* ── API fetch (transport.rest — Frankfurt Hbf = 8000105) ──────── */
+    async function fetchTrains() {
+      try {
+        const r = await fetch(
+          'https://v6.db.transport.rest/stops/8000105/departures?duration=120&results=8&remarks=false'
+        );
+        if (!r.ok) return;
+        const d = await r.json();
+        const deps = (d.departures ?? d).slice(0, 8);
+        deps.forEach((dep, i) => {
+          if (!RAW[i]) return;
+          const planned = new Date(dep.plannedWhen ?? dep.when);
+          const actual  = new Date(dep.when ?? dep.plannedWhen);
+          const delayMs = actual - planned;
+          const delayM  = Math.round(delayMs / 60_000);
+          const line = dep.line ?? {};
+          RAW[i].cat   = line.productName ?? RAW[i].cat;
+          RAW[i].num   = (line.name ?? RAW[i].num).replace(/^[A-Za-z]+\s*/, '');
+          RAW[i].dest  = (dep.destination?.name ?? RAW[i].dest).toUpperCase().padEnd(18).slice(0, 18);
+          RAW[i].plat  = (dep.platform ?? dep.plannedPlatform ?? RAW[i].plat).toString().padStart(2);
+          RAW[i].delay = Math.max(0, delayM);
+          OFFS[i]      = Math.round((planned - Date.now()) / 60_000);
+        });
+        buildSched();
+      } catch (_) {}
+    }
+
+    /* ── Render ──────────────────────────────────────────────────────── */
+    function render() {
+      ctx.fillStyle = BG;
+      ctx.fillRect(0, 0, W, H);
+
+      /* Header */
+      ctx.fillStyle = HDR;
+      ctx.fillRect(0, 0, W, 22);
+      ctx.fillStyle = HTXT;
+      mono(12, true);
+      ctx.fillText('◈ FRANKFURT HBF  ABFAHRT', 8, 15);
+      const now = new Date();
+      const ts  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+      mono(10, false);
+      ctx.fillText(ts, 362, 15);
+
+      /* Column labels */
+      ctx.fillStyle = CHDR;
+      ctx.fillRect(0, 22, W, 13);
+      ctx.fillStyle = '#aa4444';
+      mono(8, false);
+      ctx.fillText('ZEIT  TYP    ZIEL                         STATUS    GLEIS', 6, 32);
+
+      /* Rows */
+      sched.slice(0, 8).forEach((row, i) => {
+        const y = 35 + i * 36;
+        ctx.fillStyle = (i & 1) ? BG2 : BG;
+        ctx.fillRect(0, y, W, 35);
+        ctx.fillStyle = DIM;
+        ctx.fillRect(0, y + 34, W, 1);
+
+        /* Time */
+        ctx.fillStyle = YELL;
+        mono(12, true);
+        ctx.fillText(row.time, 6, y + 14);
+
+        /* Type badge */
+        const bw = typeBadge(row.cat, 60, y + 4);
+
+        /* Train number */
+        ctx.fillStyle = '#8899aa';
+        mono(9, false);
+        ctx.fillText(row.num.trim(), 60 + bw, y + 14);
+
+        /* Destination */
+        ctx.fillStyle = WHT;
+        mono(10, false);
+        ctx.fillText(row.dest.trimEnd(), 128, y + 14);
+
+        /* Status badge */
+        statusBadge(row.status, row.sc, 290, y + 6);
+
+        /* Delay sub-line */
+        if (row.delay > 0 && row.sc !== GREY && row.sc !== GREEN) {
+          ctx.fillStyle = ORA;
+          mono(8, false);
+          ctx.fillText(`VERSPÄTUNG +${row.delay} MIN`, 128, y + 28);
+        }
+
+        /* Platform */
+        ctx.fillStyle = CYN;
+        mono(12, true);
+        ctx.textAlign = 'right';
+        ctx.fillText(row.plat, W - 8, y + 14);
+        ctx.textAlign = 'left';
+      });
+
+      /* Bottom rule */
+      ctx.fillStyle = HDR + '50';
+      ctx.fillRect(0, H - 1, W, 1);
+    }
+
+    let buildTs = 0;
+    function loop(ts) {
+      if (ts - buildTs > 30_000) { buildSched(); buildTs = ts; }
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    buildSched();
+    fetchTrains();
+    setInterval(fetchTrains, 600_000);
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

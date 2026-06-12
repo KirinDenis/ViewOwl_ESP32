@@ -1,0 +1,3271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ViewOwl — Your Desk. Your Data. Your Screen.</title>
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type"        content="website" />
+  <meta property="og:url"         content="https://static.175.107.181.135.clients.your-server.de/" />
+  <meta property="og:title"       content="ViewOwl — Your Desk. Your Data. Your Screen. ESP32" />
+  <meta property="og:description" content="Pick a template, connect your ESP32 LCD device and flash from your browser. No IDE. No drivers. No reflashing when content changes. Just USB and Wi-Fi." />
+  <meta property="og:image"       content="https://static.175.107.181.135.clients.your-server.de/og-image.png" />
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card"        content="summary_large_image" />
+  <meta name="twitter:url"         content="https://static.175.107.181.135.clients.your-server.de/" />
+  <meta name="twitter:title"       content="ViewOwl — Your Desk. Your Data. Your Screen. ESP32" />
+  <meta name="twitter:description" content="Pick a template, connect your ESP32 LCD device and flash from your browser. No IDE. No drivers. No reflashing when content changes. Just USB and Wi-Fi." />
+  <meta name="twitter:image"       content="https://static.175.107.181.135.clients.your-server.de/og-image.png" />
+
+  <!-- esp-web-tools: browser-based ESP32 flashing (Chrome/Edge Web Serial) -->
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    /* ── Reset ──────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:     #0d1830;
+      --green:  #4dd0e1;
+      --cyan:   #00d4ff;
+      --purple: #7b2dfa;
+      --text:   #e8f2f8;     /* body text */
+      --dim:    #c8d8e4;     /* secondary text */
+      --dimmer: #9fb0c0;     /* tertiary labels */
+      --border: rgba(77,208,225,0.45); /* unified panel border — cyan tint */
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 0.95rem;    /* slightly larger base */
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Animated dark grid */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(77,208,225,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(77,208,225,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      animation: gridScroll 30s linear infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    @keyframes gridScroll {
+      0%   { transform: translate(0,0); }
+      100% { transform: translate(40px,40px); }
+    }
+
+    /* Scanline sweep */
+    body::after {
+      content: '';
+      position: fixed; left: 0; right: 0;
+      height: 2px;
+      background: rgba(77,208,225,0.06);
+      animation: scanline 8s linear infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    @keyframes scanline {
+      0%   { top: -2px; }
+      100% { top: 100vh; }
+    }
+
+    /* ── STICKY NAV ─────────────────────────────────────────────────────── */
+    #site-nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(8,12,24,0.9);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(77,208,225,0.1);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.65rem 2rem;
+    }
+
+    .nav-logo {
+      font-family: 'Courier New', monospace;
+      font-size: 0.88rem; font-weight: 700;
+      color: var(--green); letter-spacing: 0.1em;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .nav-links {
+      display: flex; gap: 1.8rem;
+      list-style: none;
+      margin: 0; padding: 0;
+    }
+
+    .nav-links a {
+      font-family: 'Courier New', monospace;
+      font-size: 0.7rem; letter-spacing: 0.1em;
+      color: var(--dim); text-decoration: none;
+      text-transform: uppercase;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--cyan); }
+
+    @media (max-width: 699px) {
+      .nav-links { display: none; }
+    }
+
+    /* ── 3D COVERFLOW CAROUSEL ──────────────────────────────────────────── */
+    #coverflow {
+      padding: 2.8rem 0 3.2rem;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid rgba(77,208,225,0.07);
+      /* isolate: prevents 3D-transformed cf-items from bleeding into sections below */
+      isolation: isolate;
+      overflow: clip;
+    }
+
+    .cf-stage {
+      position: relative;
+      perspective: 1200px;
+      transform-style: preserve-3d;
+      margin: 2rem 0 1rem;
+      /* height set by JS once board image loads */
+      height: 280px;
+    }
+
+    .cf-item {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      width: 400px;
+      transform-origin: center top;
+      transition: transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94),
+                  opacity  0.55s ease;
+      cursor: pointer;
+    }
+
+    .cf-item img.cf-board {
+      width: 100%;
+      display: block;
+      border-radius: 6px;
+      box-shadow: 0 0 0 1px rgba(77,208,225,0.06);
+    }
+
+    /* Drop-shadow brightens for the active board */
+    .cf-item.cf-active img.cf-board {
+      filter: drop-shadow(0 12px 40px rgba(0,212,255,0.18)) drop-shadow(0 4px 12px rgba(0,0,0,0.7));
+    }
+
+    .cf-screen {
+      position: absolute;
+      overflow: hidden;
+      background: #000;
+      top:  10%;
+      left: 16.0%;
+      width: 71.5%;
+      pointer-events: none;
+    }
+
+    .cf-screen iframe {
+      width: 480px;
+      height: 320px;
+      border: none;
+      display: block;
+      transform-origin: top left;
+      pointer-events: none;
+      /* transform: scale() injected by JS */
+    }
+
+    .cf-name {
+      position: absolute;
+      bottom: -22px;
+      left: 0; right: 0;
+      text-align: center;
+      font-family: 'Courier New', monospace;
+      font-size: 0.62rem;
+      color: var(--dimmer);
+      letter-spacing: 0.08em;
+      opacity: 0;
+      transition: opacity 0.3s;
+      white-space: nowrap;
+    }
+
+    .cf-item.cf-active .cf-name { opacity: 1; }
+
+    .cf-controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.2rem;
+      margin-top: 2rem;
+    }
+
+    .cf-btn {
+      font-family: 'Courier New', monospace;
+      font-size: 1rem;
+      color: var(--dim);
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      width: 34px; height: 34px;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s, box-shadow 0.2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .cf-btn:hover {
+      color: var(--cyan);
+      border-color: var(--cyan);
+      box-shadow: 0 0 10px rgba(0,212,255,0.2);
+    }
+
+    .cf-dots { display: flex; gap: 7px; align-items: center; }
+
+    .cf-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: rgba(77,208,225,0.2);
+      cursor: pointer;
+      transition: background 0.25s, box-shadow 0.25s;
+      border: 1px solid var(--border);
+    }
+
+    .cf-dot:hover { background: rgba(77,208,225,0.45); }
+
+    .cf-dot.active {
+      background: var(--cyan);
+      box-shadow: 0 0 7px var(--cyan);
+      border-color: var(--cyan);
+    }
+
+    /* ── CENTER CONTENT ──────────────────────────────────────────────────── */
+    #center { position: relative; z-index: 1; }
+
+    section { padding: 3.5rem 3rem; max-width: 1280px; margin-left: auto; margin-right: auto; }
+
+    /* ── HERO ────────────────────────────────────────────────────────────── */
+    #hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2.5rem 2rem 1.5rem;
+      position: relative;
+    }
+
+    #hero::before {
+      content: '';
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 500px; height: 400px;
+      background: radial-gradient(ellipse, rgba(77,208,225,0.05) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-owl {
+      font-size: 3rem;
+      animation: owlBounce 3s ease-in-out infinite;
+      display: inline-block;
+    }
+
+    @keyframes owlBounce {
+      0%, 100% { transform: translateY(0) rotate(-2deg); }
+      50%       { transform: translateY(-8px) rotate(2deg); }
+    }
+
+    .hero-brand {
+      font-family: 'Courier New', monospace;
+      font-size: 0.8rem;
+      color: var(--dimmer);
+      letter-spacing: 0.22em;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+    }
+
+    .hero-title {
+      font-family: 'Courier New', monospace;
+      font-size: clamp(1.5rem, 4vw, 3rem);
+      font-weight: 700;
+      color: var(--green);
+      letter-spacing: 0.07em;
+      animation: titleGlow 4s ease-in-out infinite;
+      line-height: 1.15;
+    }
+
+    @keyframes titleGlow {
+      0%, 100% { text-shadow: 0 0 20px rgba(77,208,225,0.4); }
+      50%       { text-shadow: 0 0 40px rgba(77,208,225,0.75); }
+    }
+
+    .hero-sub {
+      font-size: 1rem;
+      color: var(--cyan);
+      letter-spacing: 0.06em;
+      margin-top: 0.7rem;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 1rem;
+      margin-top: 1.8rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn-neon {
+      font-family: 'Courier New', monospace;
+      font-size: 0.88rem;
+      letter-spacing: 0.08em;
+      padding: 0.65rem 1.5rem;
+      border: 1px solid var(--green);
+      background: transparent;
+      color: var(--green);
+      cursor: pointer;
+      text-decoration: none;
+      border-radius: 2px;
+      transition: background 0.2s, box-shadow 0.2s;
+      display: inline-block;
+    }
+
+    .btn-neon:hover {
+      background: rgba(77,208,225,0.09);
+      box-shadow: 0 0 18px rgba(77,208,225,0.28);
+    }
+
+    .btn-neon.secondary {
+      border-color: var(--dim);
+      color: var(--dim);
+    }
+
+    .btn-neon.secondary:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: rgba(0,212,255,0.07);
+      box-shadow: 0 0 14px rgba(0,212,255,0.2);
+    }
+
+    /* ── SHARED SECTION STYLES ───────────────────────────────────────────── */
+    .section-tag {
+      font-family: 'Courier New', monospace;
+      font-size: 0.75rem;
+      letter-spacing: 0.25em;
+      color: var(--green);
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+    }
+
+    .section-headline {
+      font-size: clamp(1.4rem, 2.5vw, 2rem);
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 0.5rem;
+    }
+
+    .section-rule {
+      width: 52px; height: 1px;
+      background: rgba(77,208,225,0.35);
+      margin-bottom: 2.2rem;
+    }
+
+    /* ── HOW IT WORKS ────────────────────────────────────────────────────── */
+    .flow-row {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+    }
+
+    .step-card {
+      flex: 1;
+      background: #0a101e;
+      border: 1px solid var(--border);
+      padding: 1.4rem;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.3s;
+    }
+
+    .step-card:hover { border-color: rgba(77,208,225,0.3); }
+    .step-card + .step-card { border-left: none; }
+
+    /* Animated sweep on top edge */
+    .step-card::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      width: 100%; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--green), transparent);
+      animation: stepSweep 6s linear infinite;
+    }
+
+    .step-card:nth-child(3)::after { animation-delay: 1.5s; }
+    .step-card:nth-child(5)::after { animation-delay: 3s;   }
+    .step-card:nth-child(7)::after { animation-delay: 4.5s; }
+
+    @keyframes stepSweep {
+      0%        { left: -100%; opacity: 0; }
+      5%        { opacity: 1; }
+      50%, 100% { left: 100%; opacity: 0; }
+    }
+
+    .step-num {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.68rem;
+      color: var(--green);
+      letter-spacing: 0.15em;
+      margin-bottom: 0.55rem;
+    }
+
+    .step-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 0.45rem;
+    }
+
+    .step-desc {
+      font-size: 0.84rem;
+      color: var(--dim);
+      line-height: 1.55;
+    }
+
+    /* Arrow connectors with traveling dot */
+    .step-connector {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .step-connector::before {
+      content: '';
+      display: block;
+      width: 20px; height: 1px;
+      background: rgba(77,208,225,0.25);
+    }
+
+    .step-connector::after {
+      content: '▶';
+      font-size: 0.6rem;
+      color: rgba(77,208,225,0.38);
+      position: absolute;
+      right: 2px;
+    }
+
+    .step-connector-dot {
+      width: 6px; height: 6px;
+      background: var(--green);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--green);
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      animation: packetTravel 6s linear infinite;
+    }
+
+    .step-connector:nth-of-type(2) .step-connector-dot { animation-delay: 1.5s; }
+    .step-connector:nth-of-type(3) .step-connector-dot { animation-delay: 3s;   }
+
+    @keyframes packetTravel {
+      0%        { left: 0;    opacity: 0; }
+      5%        { opacity: 1; }
+      45%       { left: 100%; opacity: 1; }
+      50%, 100% { left: 100%; opacity: 0; }
+    }
+
+    /* ── USE CASES ───────────────────────────────────────────────────────── */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+
+    .use-card {
+      background: #0a101e;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1.2rem;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .use-card:hover {
+      border-color: rgba(77,208,225,0.28);
+      background: #0d1525;
+    }
+
+    .use-emoji { margin-bottom: 0.6rem; color: var(--green); display: block; line-height: 0; }
+
+    .use-title {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 0.3rem;
+    }
+
+    .use-desc {
+      font-size: 0.82rem;
+      color: var(--dim);
+      line-height: 1.55;
+      margin-bottom: 0.5rem;
+    }
+
+    .use-tag {
+      font-family: 'Courier New', monospace;
+      font-size: 0.65rem;
+      color: var(--cyan);
+      border: 1px solid rgba(0,212,255,0.25);
+      padding: 1px 6px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+
+    /* ── LIVE EDITOR ─────────────────────────────────────────────────────── */
+    #editor-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      align-items: start;
+      justify-items: center;
+    }
+
+    .editor-panel { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; }
+
+    /* Board preview panel — height matches search(~30px)+gap(10px)+gallery-inner(430px)=470px.
+       space-between: header top, board centered, flash section bottom — no awkward empty gap. */
+    .editor-panel-preview {
+      display: flex; flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      height: 470px; overflow: hidden;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      padding: 0.7rem 0.85rem 0.5rem;
+      background: rgba(0,0,0,0.15);
+    }
+
+    .editor-label {
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      color: var(--dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #tpl-editor {
+      width: 100%;
+      height: 300px;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: #00ff88;
+      font-family: 'Courier New', monospace;
+      font-size: 0.74rem;
+      line-height: 1.6;
+      padding: 0.8rem;
+      resize: vertical;
+      outline: none;
+      tab-size: 2;
+    }
+
+    #tpl-editor:focus { border-color: rgba(77,208,225,0.42); }
+
+    .editor-actions { display: flex; gap: 0.6rem; }
+
+    .btn-run {
+      font-family: 'Courier New', monospace;
+      font-size: 0.77rem;
+      padding: 0.42rem 1rem;
+      border: 1px solid var(--green);
+      background: rgba(77,208,225,0.08);
+      color: var(--green);
+      cursor: pointer;
+      border-radius: 2px;
+      letter-spacing: 0.05em;
+      transition: background 0.2s;
+    }
+
+    .btn-run:hover { background: rgba(77,208,225,0.16); }
+
+    .btn-reset {
+      font-family: 'Courier New', monospace;
+      font-size: 0.77rem;
+      padding: 0.42rem 1rem;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--dim);
+      cursor: pointer;
+      border-radius: 2px;
+      letter-spacing: 0.05em;
+      transition: border-color 0.2s;
+    }
+
+    .btn-reset:hover { border-color: var(--dim); }
+
+    /* BURN / Flash button */
+    .btn-burn {
+      font-family: 'Courier New', monospace;
+      font-size: 0.77rem;
+      padding: 0.42rem 1.2rem;
+      border: none;
+      border-radius: 2px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: opacity 0.2s, background 0.35s;
+      background: linear-gradient(135deg, #00ff41 0%, #00d4aa 100%);
+      color: #000;
+    }
+    .btn-burn:disabled { opacity: 0.25; cursor: not-allowed; }
+    .btn-burn[data-dirty="true"] {
+      background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+      color: #fff;
+    }
+
+    /* Sandbox — board photo wrap */
+    .sandbox-bezel {
+      position: relative;
+      width: 370px;       /* reduced from 500 — board ~245px tall, leaves room for flash section */
+      max-width: 100%;
+      flex-shrink: 0;
+    }
+
+    .sb-board-img {
+      width: 100%;
+      display: block;
+      border-radius: 6px;
+      filter: drop-shadow(0 8px 24px rgba(0,0,0,0.7));
+    }
+
+    .sandbox-screen {
+      position: absolute;
+      top: 10%;
+      left: 15%;
+      width: 73.5%;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #tpl-sandbox { width: 480px; height: 320px; border: none; display: block; transform-origin: top left; }
+
+    .sandbox-label {
+      /* Normal flow — sits below the board image, no longer absolute/overlapping */
+      display: block;
+      text-align: center;
+      margin-top: 0.45rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.62rem;
+      color: #a0b8cc;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .sandbox-hint {
+      font-family: 'Courier New', monospace;
+      font-size: 0.7rem;
+      color: var(--dimmer);
+      margin-top: 0.4rem;
+    }
+
+    /* ── TEMPLATE GALLERY ───────────────────────────────────────────────── */
+    .gallery-inner {
+      display: flex;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      height: 430px;
+    }
+
+    /* Left: vertical category sidebar */
+    .gallery-sidebar {
+      display: flex; flex-direction: column;
+      width: 144px; flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      background: rgba(0,0,0,0.25);
+      padding: 0.75rem 0;
+    }
+    .gallery-sidebar-label {
+      font-family: 'Courier New', monospace;
+      font-size: 9px; letter-spacing: 2.5px;
+      color: var(--cyan); opacity: 0.8;
+      text-transform: uppercase;
+      padding: 0 0.75rem 0.5rem;
+    }
+    .gallery-divider {
+      height: 1px; background: var(--border);
+      margin: 0.6rem 0;
+    }
+    /* Class filter (A / B / C) */
+    .gcls-row {
+      display: flex; gap: 0.35rem;
+      padding: 0 0.75rem 0.15rem;
+    }
+    .gcls {
+      flex: 1; padding: 0.3rem 0;
+      font-family: 'Courier New', monospace; font-size: 0.72rem; font-weight: 700;
+      color: var(--dim); background: transparent;
+      border: 1px solid var(--border); border-radius: 3px;
+      cursor: pointer; transition: all 0.12s; text-align: center;
+    }
+    .gcls:hover { color: var(--cyan); border-color: var(--cyan); }
+    .gcls.active { background: var(--cyan); color: #000; border-color: var(--cyan); }
+    /* Category filter */
+    .gcat {
+      display: block; text-align: left; width: 100%;
+      padding: 0.52rem 0.75rem;
+      font-family: 'Courier New', monospace; font-size: 0.75rem;
+      letter-spacing: 0.03em; line-height: 1.3;
+      color: var(--text); background: transparent; border: none;
+      border-left: 2px solid transparent;
+      cursor: pointer; transition: all 0.12s;
+    }
+    .gcat:hover { color: var(--text); background: rgba(77,208,225,0.05); }
+    .gcat.active {
+      color: var(--cyan); border-left-color: var(--cyan);
+      background: rgba(77,208,225,0.08);
+    }
+
+    /* Right: 3-column tile grid */
+    .gallery-list {
+      flex: 1; display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      align-content: start; gap: 0.35rem;
+      padding: 0.4rem 0.4rem 1rem;
+      overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+    }
+    .gtpl-item {
+      display: flex; flex-direction: column;
+      padding: 0.25rem; border-radius: 4px;
+      border: 2px solid var(--border);
+      cursor: pointer; transition: border-color 0.1s, background 0.1s;
+    }
+    .gtpl-item:hover  { background: rgba(77,208,225,0.07); border-color: #5a80aa; }
+    .gtpl-item.selected {
+      background: rgba(77,208,225,0.13);
+      border-color: var(--cyan);
+    }
+    .gtpl-thumb {
+      width: 100%; aspect-ratio: 3/2;
+      object-fit: cover;
+      background: #0e1624; border-radius: 3px;
+    }
+    .gtpl-thumb-placeholder {
+      width: 100%; aspect-ratio: 3/2;
+      background: #0e1624; border-radius: 3px;
+    }
+    .gtpl-name {
+      font-family: 'Courier New', monospace;
+      font-size: 0.65rem; color: var(--text);
+      text-align: center; margin-top: 0.2rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* Gallery name search */
+    .gallery-search {
+      width: 100%; box-sizing: border-box;
+      background: rgba(0,0,0,0.3); border: 2px solid var(--border);
+      border-radius: 3px; color: var(--text);
+      font-family: 'Courier New', monospace; font-size: 0.75rem;
+      padding: 0.4rem 0.7rem; outline: none;
+      transition: border-color 0.15s;
+    }
+    .gallery-search:focus { border-color: var(--cyan); }
+    .gallery-search::placeholder { color: var(--dimmer); }
+
+    /* Class description (updates dynamically on class filter click) */
+    .cls-desc {
+      /* system-ui inherits from body — descriptive text, not a label/button/tag */
+      font-size: 0.78rem; color: #a0b8cc;
+      padding: 0.35rem 0.75rem 0.1rem;
+      line-height: 1.5; min-height: 2.6em;
+    }
+
+    /* ── CLASS / FLASH INFO TEXT BLOCKS ────────────────────────────────── */
+    .editor-col { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; }
+
+    .cls-info,
+    .flash-info {
+      /* system-ui inherits from body — readable sans-serif, not Courier New */
+      font-size: 0.875rem; line-height: 1.7;
+      color: var(--dim);
+      padding: 0.75rem 1rem;
+      border-left: 2px solid var(--border);
+      background: rgba(0,0,0,0.22);
+      border-radius: 0 4px 4px 0;
+    }
+    .cls-info p, .flash-info p {
+      margin: 0 0 0.6em;
+    }
+    .cls-info p:last-child, .flash-info p:last-child {
+      margin-bottom: 0;
+    }
+    .cls-info strong, .flash-info strong {
+      color: var(--text); font-weight: 600;
+    }
+
+    /* ── PUSH button (send frame to registered guest device) ──────────── */
+    .btn-push {
+      width: 100%; padding: 0.55rem;
+      font-family: 'Courier New', monospace; font-size: 0.82rem; font-weight: 700;
+      letter-spacing: 0.06em; cursor: pointer;
+      border: none; border-radius: 4px;
+      background: linear-gradient(135deg, #6366f1 0%, #4dd0e1 100%);
+      color: #fff; transition: opacity 0.2s, transform 0.1s;
+      margin-bottom: 0.35rem;
+    }
+    .btn-push:hover:not(:disabled) { opacity: 0.85; transform: translateY(-1px); }
+    .btn-push:active:not(:disabled) { transform: translateY(0); opacity: 1; }
+    .btn-push:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-push-iv {
+      flex-shrink: 0; padding: 0.55rem 0.7rem;
+      font-family: 'Courier New', monospace; font-size: 0.78rem; font-weight: 700;
+      letter-spacing: 0.04em; cursor: pointer;
+      border: 1px solid rgba(77,208,225,0.5); border-radius: 4px;
+      background: rgba(77,208,225,0.1); color: var(--cyan);
+      transition: background 0.2s, color 0.2s; white-space: nowrap; margin-bottom: 0.35rem;
+    }
+    .btn-push-iv:hover { background: rgba(77,208,225,0.22); }
+    .btn-push-iv.active { background: rgba(77,208,225,0.25); color: #fff; border-color: var(--cyan); }
+
+    /* ── FLASH SECTION (right panel bottom) ─────────────────────────────── */
+    .flash-section {
+      width: 100%;
+      display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+      padding-top: 0.6rem; padding-bottom: 0.1rem;
+      border-top: 1px solid var(--border);
+    }
+    .flash-reqs {
+      font-family: 'Courier New', monospace;
+      font-size: 0.63rem; color: #a8c0d0;
+      text-align: center; letter-spacing: 0.02em;
+    }
+    .flash-req-sep { margin: 0 0.25em; opacity: 0.5; }
+    .btn-flash {
+      width: 100%; padding: 0.55rem;
+      font-family: 'Courier New', monospace; font-size: 0.82rem; font-weight: 700;
+      letter-spacing: 0.06em; cursor: pointer;
+      border: none; border-radius: 4px;
+      background: linear-gradient(135deg, #00c49a 0%, #4dd0e1 100%);
+      color: #000; transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn-flash:hover:not(:disabled) { opacity: 0.85; transform: translateY(-1px); }
+    .btn-flash:active:not(:disabled) { transform: translateY(0); opacity: 1; }
+    .btn-flash:disabled {
+      background: #0d1a28; color: #7a9ab8;
+      border: 1px solid rgba(77,208,225,0.12); cursor: not-allowed;
+      font-weight: 400;
+    }
+    .flash-hint {
+      font-family: 'Courier New', monospace;
+      font-size: 0.64rem; color: #a8c0d0; text-align: center;
+    }
+
+    /* ── SIGN-IN MODAL ───────────────────────────────────────────────────── */
+    .vo-modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(4px);
+      z-index: 9000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .vo-modal-overlay.open { display: flex; }
+
+    .vo-modal {
+      background: #0a0f1e;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2rem 2.2rem;
+      width: 380px;
+      max-width: 92vw;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.7), 0 0 40px rgba(77,208,225,0.06);
+      position: relative;
+      animation: modalIn 0.22s ease;
+    }
+
+    @keyframes modalIn {
+      from { transform: translateY(-12px); opacity: 0; }
+      to   { transform: translateY(0);     opacity: 1; }
+    }
+
+    .vo-modal-close {
+      position: absolute;
+      top: 0.7rem; right: 0.9rem;
+      background: none; border: none;
+      font-size: 1.2rem;
+      color: var(--dimmer);
+      cursor: pointer;
+      line-height: 1;
+      padding: 0.2rem;
+    }
+
+    .vo-modal-close:hover { color: var(--text); }
+
+    .vo-modal-brand {
+      font-family: 'Courier New', monospace;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--green);
+      text-shadow: 0 0 12px rgba(77,208,225,0.3);
+      margin-bottom: 0.2rem;
+    }
+
+    .vo-modal-sub {
+      font-size: 0.82rem;
+      color: var(--dim);
+      margin-bottom: 1.5rem;
+    }
+
+    .vo-form-group {
+      margin-bottom: 1rem;
+    }
+
+    .vo-form-label {
+      font-family: 'Courier New', monospace;
+      font-size: 0.76rem;
+      color: var(--dimmer);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 0.35rem;
+    }
+
+    .vo-form-input {
+      width: 100%;
+      background: rgba(0,0,0,0.5);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--text);
+      font-family: system-ui, sans-serif;
+      font-size: 0.95rem;
+      padding: 0.6rem 0.75rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .vo-form-input:focus { border-color: rgba(77,208,225,0.5); }
+
+    .vo-form-error {
+      font-family: 'Courier New', monospace;
+      font-size: 0.75rem;
+      color: #ff5566;
+      margin-bottom: 0.8rem;
+      display: none;
+    }
+
+    .vo-form-error.visible { display: block; }
+
+    .vo-submit {
+      width: 100%;
+      padding: 0.65rem;
+      border: 1px solid var(--green);
+      background: rgba(77,208,225,0.08);
+      color: var(--green);
+      font-family: 'Courier New', monospace;
+      font-size: 0.88rem;
+      letter-spacing: 0.08em;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background 0.2s, box-shadow 0.2s;
+      margin-top: 0.5rem;
+    }
+
+    .vo-submit:hover:not(:disabled) {
+      background: rgba(77,208,225,0.14);
+      box-shadow: 0 0 14px rgba(77,208,225,0.2);
+    }
+
+    .vo-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    @keyframes vo-shake {
+      0%, 100% { transform: translateX(0); }
+      20%       { transform: translateX(-8px); }
+      40%       { transform: translateX(8px); }
+      60%       { transform: translateX(-5px); }
+      80%       { transform: translateX(5px); }
+    }
+
+    .shake { animation: vo-shake 0.38s ease; }
+
+    /* ── WIRE CANVAS — ambient background tracks ─────────────────────────── */
+    #wire-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── PAGE LOADER ─────────────────────────────────────────────────────── */
+    #vo-loader {
+      position: fixed; inset: 0;
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 99998;
+      transition: opacity 0.7s cubic-bezier(0.4,0,0.2,1);
+    }
+    #vo-loader.out { opacity: 0; pointer-events: none; }
+    #vo-loader-pct {
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      color: var(--dimmer);
+      letter-spacing: 0.25em;
+      margin-top: 1.2rem;
+    }
+
+    /* ── SCROLL REVEAL — spring entrance ────────────────────────────────── */
+    .rev {
+      opacity: 0;
+      transform: translateY(48px);
+      transition: opacity 0.6s cubic-bezier(0.34,1.56,0.64,1),
+                  transform 0.6s cubic-bezier(0.34,1.56,0.64,1),
+                  border-color 0.3s;
+    }
+    .rev.in { opacity: 1; transform: translateY(0); }
+
+    /* ── SPOTLIGHT — mouse-tracking glow on cards ────────────────────────── */
+    .step-card, .use-card {
+      position: relative;
+      --mx: -999px; --my: -999px;
+    }
+    .step-card::before, .use-card::before {
+      content: '';
+      position: absolute; inset: 0;
+      border-radius: inherit;
+      background: radial-gradient(280px circle at var(--mx) var(--my),
+        rgba(77,208,225,0.07) 0%, transparent 65%);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.35s;
+    }
+    .step-card:hover::before, .use-card:hover::before { opacity: 1; }
+
+    /* ── FOOTER ──────────────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid rgba(77,208,225,0.08);
+      padding: 1.5rem 3rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .footer-brand {
+      font-family: 'Courier New', monospace;
+      font-size: 0.82rem;
+      color: var(--dim);
+    }
+
+    .footer-copy {
+      width: 100%;
+      text-align: center;
+      font-family: 'Courier New', monospace;
+      font-size: 0.67rem;
+      color: var(--dimmer);
+      border-top: 1px solid rgba(77,208,225,0.04);
+      padding-top: 1rem;
+      margin-top: 0.5rem;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       RESPONSIVE
+       ═══════════════════════════════════════════════════════════════════════ */
+
+    /* ── Wide tablet / small laptop (≤ 1199px) ───────────────────────────── */
+    @media (max-width: 1199px) {
+      .cf-item { width: 320px; }
+    }
+
+    /* ── Tablet (≤ 899px) — single-card coverflow ───────────────────────── */
+    @media (max-width: 899px) {
+      section        { padding: 3rem 1.5rem; }
+      footer         { padding: 1.5rem 1.5rem; }
+      .cards-grid    { grid-template-columns: repeat(2, 1fr); }
+      #editor-layout { grid-template-columns: 1fr; }
+      .sandbox-bezel { overflow-x: auto; }
+      .flow-row {
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 0.6rem;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(77,208,225,0.2) transparent;
+      }
+      .step-card      { flex: 0 0 180px; min-width: 180px; }
+      .step-connector { flex-shrink: 0; }
+
+      /* Single-card mode: hide side boards, show only active */
+      .cf-stage   { perspective: none; }
+      .cf-item    { width: 340px; }
+    }
+
+    /* ── Phone (≤ 575px) ──────────────────────────────────────────────────── */
+    @media (max-width: 575px) {
+      section    { padding: 2.5rem 1rem; }
+      footer     { padding: 1.5rem 1rem; }
+      .step-card { flex: 0 0 155px; min-width: 155px; }
+      .cards-grid { grid-template-columns: 1fr !important; }
+      .cf-item    { width: 280px; }
+    }
+
+    /* ── FLASH MODAL ─────────────────────────────────────────────────────── */
+    .flash-modal-inner { width: 480px; max-width: 94vw; }
+
+    .fm-steps {
+      display: flex; align-items: center; gap: 0.4rem;
+      margin-bottom: 1.4rem; flex-wrap: wrap;
+    }
+    .fm-step {
+      font-family: 'Courier New', monospace;
+      font-size: 0.67rem; letter-spacing: 0.1em;
+      color: var(--dimmer);
+      padding: 0.18rem 0.5rem;
+      border: 1px solid transparent;
+      border-radius: 2px;
+      transition: all 0.2s;
+    }
+    .fm-step.active { color: var(--cyan); border-color: var(--cyan); }
+    .fm-step.done   { color: var(--green); border-color: rgba(77,208,225,0.3); }
+    .fm-step-arrow  { font-size: 0.65rem; color: rgba(77,208,225,0.28); }
+
+    .fm-heading {
+      font-family: 'Courier New', monospace;
+      font-size: 1rem; font-weight: 700;
+      color: var(--green); margin-bottom: 1rem;
+    }
+    .fm-desc {
+      font-family: system-ui, sans-serif;
+      font-size: 0.92rem; color: var(--dim);
+      line-height: 1.65; margin-bottom: 1rem;
+    }
+
+    .fm-display-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem; margin-bottom: 1.2rem;
+    }
+    .fm-display-card {
+      border: 2px solid var(--border); border-radius: 6px;
+      padding: 1rem; cursor: pointer; text-align: center;
+      transition: border-color 0.18s, background 0.18s;
+      background: rgba(0,0,0,0.25);
+      user-select: none;
+    }
+    .fm-display-card:hover {
+      border-color: rgba(77,208,225,0.5);
+      background: rgba(77,208,225,0.05);
+    }
+    .fm-display-card.selected {
+      border-color: var(--cyan);
+      background: rgba(77,208,225,0.1);
+    }
+    .fm-display-size {
+      font-family: 'Courier New', monospace; font-size: 1.05rem; font-weight: 700;
+      color: var(--cyan); margin-bottom: 0.25rem;
+    }
+    .fm-display-model {
+      font-family: 'Courier New', monospace; font-size: 0.67rem; color: var(--dimmer);
+    }
+
+    /* ── Pin profile / pin grid (Step 3) ────────────────────────────── */
+    .fm-pin-section { margin-bottom: 1rem; }
+    .fm-pin-profiles { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .fm-pin-profile-btn {
+      font-family: 'Courier New', monospace; font-size: 0.62rem;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--dimmer); background: rgba(77,208,225,0.04);
+      border: 1px solid rgba(77,208,225,0.2); padding: 4px 10px;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+      border-radius: 2px;
+    }
+    .fm-pin-profile-btn:hover {
+      background: rgba(77,208,225,0.08); border-color: rgba(77,208,225,0.4); color: var(--dim);
+    }
+    .fm-pin-profile-btn.selected {
+      background: rgba(77,208,225,0.12); border-color: var(--cyan); color: var(--cyan);
+    }
+    .fm-pin-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-bottom: 4px; }
+    .fm-pin-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .fm-pin-label {
+      font-family: 'Courier New', monospace; font-size: 0.55rem;
+      font-weight: bold; letter-spacing: 0.1em; color: var(--dimmer); text-transform: uppercase;
+    }
+    .fm-pin-input {
+      width: 100%; font-family: 'Courier New', monospace; font-size: 0.73rem; text-align: center;
+      color: var(--text); background: rgba(77,208,225,0.05);
+      border: 1px solid rgba(77,208,225,0.2); padding: 4px 2px;
+      outline: none; -moz-appearance: textfield; border-radius: 2px;
+    }
+    .fm-pin-input::-webkit-outer-spin-button,
+    .fm-pin-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .fm-pin-input:focus { border-color: rgba(77,208,225,0.5); background: rgba(77,208,225,0.09); }
+    .fm-pin-hint { font-family: 'Courier New', monospace; font-size: 0.6rem; color: rgba(77,208,225,0.3); text-align: right; }
+
+    .fm-btn {
+      width: 100%; padding: 0.6rem;
+      font-family: 'Courier New', monospace; font-size: 0.83rem; font-weight: 700;
+      letter-spacing: 0.06em; cursor: pointer;
+      border: none; border-radius: 4px;
+      background: linear-gradient(135deg, #00c49a 0%, #4dd0e1 100%);
+      color: #000; transition: opacity 0.2s;
+      margin-top: 0.5rem;
+    }
+    .fm-btn:hover:not(:disabled) { opacity: 0.86; }
+    .fm-btn:disabled {
+      background: #0d1a28; color: #7a9ab8;
+      border: 1px solid rgba(77,208,225,0.12);
+      cursor: not-allowed; font-weight: 400;
+    }
+
+    .fm-hint {
+      font-family: system-ui, sans-serif; font-size: 0.8rem;
+      color: var(--dimmer); text-align: center; margin-top: 0.5rem;
+    }
+    .fm-status {
+      font-family: system-ui, sans-serif; font-size: 0.86rem;
+      color: var(--cyan); text-align: center; min-height: 1.2em;
+      margin-top: 0.5rem;
+    }
+    .fm-wifi-group { margin-bottom: 0.85rem; }
+
+    .fm-done-icon { font-size: 2.2rem; margin-bottom: 0.5rem; }
+
+    /* ── DEVICE BANNER (returning user) ───────────────────────────────────── */
+    #vo-device-banner {
+      background: rgba(77,208,225,0.06);
+      border: 1px solid rgba(77,208,225,0.22);
+      border-radius: 4px;
+      padding: 0.55rem 0.9rem;
+      margin-bottom: 0.9rem;
+      align-items: center; gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+    .vodb-icon  { font-size: 1.1rem; flex-shrink: 0; }
+    .vodb-label {
+      font-family: 'Courier New', monospace; font-size: 0.65rem;
+      color: var(--dimmer); letter-spacing: 0.12em; text-transform: uppercase;
+    }
+    .vodb-tpl {
+      font-family: 'Courier New', monospace; font-size: 0.83rem;
+      color: var(--cyan); font-weight: 700;
+    }
+    .vodb-size {
+      font-family: 'Courier New', monospace; font-size: 0.67rem;
+      color: var(--dimmer); padding: 1px 6px;
+      border: 1px solid rgba(77,208,225,0.2); border-radius: 2px;
+    }
+    .vodb-reflash {
+      font-family: 'Courier New', monospace; font-size: 0.7rem;
+      color: var(--green); cursor: pointer; background: none;
+      border: 1px solid rgba(77,208,225,0.25); border-radius: 2px;
+      padding: 2px 8px; transition: border-color 0.15s;
+    }
+    .vodb-reflash:hover { border-color: var(--green); }
+    .vodb-forget {
+      margin-left: auto; font-family: 'Courier New', monospace; font-size: 0.63rem;
+      color: var(--dimmer); cursor: pointer; background: none; border: none;
+      text-decoration: underline; padding: 0; opacity: 0.55;
+    }
+    .vodb-forget:hover { opacity: 1; color: var(--text); }
+  </style>
+</head>
+<body>
+
+  <!-- ── PAGE LOADER ─────────────────────────────────────────────────────── -->
+  <div id="vo-loader">
+    <canvas id="vo-loader-canvas" width="260" height="260"></canvas>
+    <div id="vo-loader-pct">0%</div>
+  </div>
+
+  <canvas id="wire-canvas"
+    data-words="ESP32,WiFi,UDP,HTML,CSS,fetch,480×320,BGR565,TFT,LCD,FLASH,OTA,API,render,template,display,pixel,frame,scan,signal,data,live,mesh,node,JSON,WebSerial,canvas,stream,grab,BGR,RGB">
+  </canvas>
+
+  <!-- ── SIGN IN MODAL ────────────────────────────────────────────────────── -->
+  <div class="vo-modal-overlay" id="signin-modal" role="dialog" aria-modal="true" aria-labelledby="modal-brand">
+    <div class="vo-modal">
+      <button class="vo-modal-close" id="modal-close" aria-label="Close">✕</button>
+      <div class="vo-modal-brand" id="modal-brand">ViewOwl</div>
+      <p class="vo-modal-sub">Sign in to manage your devices</p>
+      <div class="vo-form-error" id="modal-error"></div>
+      <form id="modal-form" autocomplete="on" novalidate>
+        <div class="vo-form-group">
+          <label class="vo-form-label" for="modal-login">Login</label>
+          <input type="text" id="modal-login" name="username" class="vo-form-input"
+                 placeholder="Enter login" autocomplete="username" required />
+        </div>
+        <div class="vo-form-group">
+          <label class="vo-form-label" for="modal-password">Password</label>
+          <input type="password" id="modal-password" name="password" class="vo-form-input"
+                 placeholder="Enter password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="vo-submit" id="modal-submit">▸ SIGN IN</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── FLASH MODAL ─────────────────────────────────────────────────────── -->
+  <div class="vo-modal-overlay" id="flash-modal" role="dialog" aria-modal="true" aria-labelledby="flash-modal-title">
+    <div class="vo-modal flash-modal-inner">
+      <button class="vo-modal-close" id="flash-modal-close" aria-label="Close">✕</button>
+      <div class="vo-modal-brand" id="flash-modal-title">⚡ FLASH DEVICE</div>
+
+      <!-- Step indicator -->
+      <div class="fm-steps">
+        <span class="fm-step" data-step="1">1 DISPLAY</span>
+        <span class="fm-step-arrow">→</span>
+        <span class="fm-step" data-step="2">2 FLASH</span>
+        <span class="fm-step-arrow">→</span>
+        <span class="fm-step" data-step="3">3 WIFI</span>
+        <span class="fm-step-arrow">→</span>
+        <span class="fm-step" data-step="4">4 DONE</span>
+      </div>
+
+      <!-- Step 1: Choose display -->
+      <div class="fm-panel" id="fm-panel-1">
+        <div class="fm-heading">Choose your display</div>
+        <p class="fm-desc">Select the LCD module that came with your board.</p>
+        <div class="fm-display-grid">
+          <div class="fm-display-card" data-size="480x320" onclick="fmSelectDisplay('480x320')">
+            <div class="fm-display-size">480 × 320</div>
+            <div class="fm-display-model">ST7796</div>
+          </div>
+          <div class="fm-display-card" data-size="320x240" onclick="fmSelectDisplay('320x240')">
+            <div class="fm-display-size">320 × 240</div>
+            <div class="fm-display-model">ILI9341</div>
+          </div>
+          <div class="fm-display-card" data-size="ili9486" onclick="fmSelectDisplay('ili9486')">
+            <div class="fm-display-size">480 × 320</div>
+            <div class="fm-display-model">ILI9486 · RPi</div>
+          </div>
+        </div>
+        <button id="fm-next-step1" class="fm-btn" disabled onclick="fmGoStep(2)">▸ Continue</button>
+      </div>
+
+      <!-- Step 2: Flash firmware -->
+      <div class="fm-panel" id="fm-panel-2" style="display:none">
+        <div class="fm-heading">Flash firmware</div>
+        <p class="fm-desc">
+          Plug in your ESP32 via a data-capable USB cable, then click the button below.
+          Chrome or Edge required — no drivers needed.
+        </p>
+        <esp-web-install-button id="esp-btn" manifest="">
+          <button slot="activate" class="fm-btn">▶ Flash to Device</button>
+          <span slot="unsupported" style="display:block;text-align:center;font-family:'Courier New',monospace;font-size:0.75rem;color:#ff8866;padding:0.8rem 0;">
+            Web Serial is not supported. Please open this page in Chrome or Edge on desktop.
+          </span>
+        </esp-web-install-button>
+        <div class="fm-hint" id="fm-flash-hint">Plug in USB cable, then click ▶ Flash to Device</div>
+        <div style="margin-top:1rem;border-top:1px solid rgba(77,208,225,0.12);padding-top:1rem;">
+          <p class="fm-hint" style="margin-bottom:0.6rem;">When the firmware is flashed — click below to set up WiFi:</p>
+          <button id="fm-after-flash-btn" class="fm-btn"
+                  style="background:rgba(77,208,225,0.12);color:var(--cyan);border:1px solid rgba(77,208,225,0.35);"
+                  onclick="fmGoStep(3)">▸ Flashed — Continue to WiFi setup</button>
+        </div>
+      </div>
+
+      <!-- Step 3: WiFi provisioning -->
+      <div class="fm-panel" id="fm-panel-3" style="display:none">
+        <div class="fm-heading">Connect to WiFi</div>
+        <p class="fm-desc">
+          Keep the USB cable plugged in. Enter your WiFi credentials — they're sent directly to the device over the serial connection and never leave your computer.
+        </p>
+        <!-- Pin profiles — populated by fmBuildPinUI() when entering step 3 -->
+        <div class="fm-pin-section">
+          <label class="vo-form-label" style="display:block;margin-bottom:6px;">Board pinout</label>
+          <div class="fm-pin-profiles" id="fm-pin-profiles"></div>
+          <div class="fm-pin-grid" id="fm-pin-grid"></div>
+          <div class="fm-pin-hint">−1 = not connected / hardwired to power</div>
+        </div>
+
+        <div class="fm-wifi-group">
+          <label class="vo-form-label" for="fm-ssid">WiFi Network</label>
+          <input type="text" id="fm-ssid" class="vo-form-input"
+                 placeholder="Network name (SSID)" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="fm-wifi-group">
+          <label class="vo-form-label" for="fm-pass">Password</label>
+          <input type="password" id="fm-pass" class="vo-form-input"
+                 placeholder="WiFi password" autocomplete="off" />
+        </div>
+        <button id="fm-provision-btn" class="fm-btn" onclick="fmProvision()">▸ Send to Device</button>
+        <div class="fm-status" id="fm-status"></div>
+      </div>
+
+      <!-- Step 4: Done -->
+      <div class="fm-panel" id="fm-panel-4" style="display:none">
+        <div class="fm-done-icon">✅</div>
+        <div class="fm-heading" style="color:#00c49a">Device ready!</div>
+        <p class="fm-desc">
+          Your display is connecting to WiFi and will start showing
+          <strong id="fm-done-template" style="color:var(--text)"></strong>
+          in a moment.
+        </p>
+        <p class="fm-desc" style="font-size:0.78rem;color:var(--dimmer)">
+          Data refreshes every 5 minutes automatically. You can unplug the USB cable — the device runs on power alone.
+        </p>
+        <button class="fm-btn" style="background:rgba(77,208,225,0.12);color:var(--cyan);border:1px solid rgba(77,208,225,0.35);"
+                onclick="closeFlashModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <main id="center">
+
+    <!-- ── STICKY NAV ──────────────────────────────────────────────────────── -->
+    <nav id="site-nav">
+      <a href="#" class="nav-logo">🦉 VIEWOWL</a>
+      <ul class="nav-links">
+        <li><a href="#coverflow">Live Demo</a></li>
+        <li><a href="#quick-start">Gallery</a></li>
+        <li><a href="#how-it-works">How It Works</a></li>
+        <li><a href="#use-cases">Use Cases</a></li>
+        <li><a href="https://www.facebook.com/groups/OWLOS" target="_blank" rel="noopener">Community</a></li>
+      </ul>
+      <a href="https://github.com/KirinDenis/ViewOwl_ESP32" class="btn-neon secondary" target="_blank" rel="noopener"
+         style="font-size:0.72rem;padding:0.42rem 1rem;white-space:nowrap;">⌥ GitHub</a>
+    </nav>
+
+    <!-- ── HERO ──────────────────────────────────────────────────────────── -->
+    <section id="hero">
+      <span class="hero-owl">🦉</span>
+      <div class="hero-brand">[VO] ViewOwl</div>
+      <h1 class="hero-title">YOUR DESK. YOUR DATA. YOUR SCREEN.</h1>
+      <p class="hero-sub">Flash from your browser. No IDE. No drivers. Just USB.</p>
+    </section>
+
+    <!-- ── 3D COVERFLOW — 5 ESP32 boards ─────────────────────────────────── -->
+    <section id="coverflow">
+      <div class="cf-stage" id="cf-stage">
+        <!-- .cf-item × 5 injected by JS -->
+      </div>
+      <div class="cf-controls">
+        <button class="cf-btn" id="cf-prev" aria-label="Previous">◂</button>
+        <div class="cf-dots" id="cf-dots"></div>
+        <button class="cf-btn" id="cf-next" aria-label="Next">▸</button>
+      </div>
+      <div style="text-align:center;margin-top:2rem;">
+        <div class="section-tag">◈ Real Hardware</div>
+        <h2 class="section-headline" style="margin-top:0.4rem;">THIS IS WHAT IT LOOKS LIKE ON YOUR DESK</h2>
+        <div class="section-rule" style="margin:0.8rem auto 0;"></div>
+        <p style="color:var(--dim);font-size:0.86rem;max-width:460px;margin:0.8rem auto 0;line-height:1.6;">
+          Low-cost hardware. Pick a template. Flash. Done.
+        </p>
+      </div>
+    </section>
+
+    <!-- ── CTA ──────────────────────────────────────────────────────────── -->
+    <section id="cta" style="text-align:center;padding:1.5rem 2rem 3rem;">
+      <div class="btn-group">
+        <a href="#quick-start" class="btn-neon">▸ PICK A TEMPLATE</a>
+        <a href="https://github.com/KirinDenis/ViewOwl_ESP32" class="btn-neon secondary" target="_blank" rel="noopener">⌥ BUILD YOUR OWN</a>
+      </div>
+    </section>
+
+    <!-- ── TEMPLATE GALLERY ─────────────────────────────────────────────── -->
+    <section id="quick-start">
+      <div class="section-tag">◈ Pick a Template</div>
+      <h2 class="section-headline">SEE IT ON REAL HARDWARE</h2>
+      <div class="section-rule"></div>
+      <p style="font-size:0.84rem;color:var(--dim);margin-bottom:1.2rem;">
+        Choose a template, preview it on your device, then flash directly from the browser.
+      </p>
+
+      <!-- Device banner — visible only when a guest device is stored in localStorage -->
+      <div id="vo-device-banner" style="display:none">
+        <span class="vodb-icon">📟</span>
+        <span class="vodb-label">Your device</span>
+        <span class="vodb-tpl"></span>
+        <span class="vodb-size"></span>
+        <button class="vodb-reflash" onclick="voReflash()">⚡ Reflash</button>
+        <button class="vodb-forget" onclick="voForgetDevice()">forget</button>
+      </div>
+
+      <div id="editor-layout">
+
+        <!-- LEFT: category sidebar + template list -->
+        <div class="editor-panel">
+          <input type="text" id="gallery-search" class="gallery-search"
+                 placeholder="⌕ Search templates…" autocomplete="off">
+          <div class="gallery-inner">
+            <div class="gallery-sidebar" id="gallery-sidebar">
+              <div class="gallery-sidebar-label">Class</div>
+              <div class="gcls-row">
+                <button class="gcls active" data-cls="">All</button>
+                <button class="gcls" data-cls="a">A</button>
+                <button class="gcls" data-cls="b">B</button>
+                <button class="gcls" data-cls="c">C</button>
+              </div>
+              <div class="gallery-divider"></div>
+              <div class="gallery-sidebar-label">Category</div>
+              <button class="gcat active" data-cat="">All</button>
+              <button class="gcat" data-cat="scifi">Sci-Fi</button>
+              <button class="gcat" data-cat="weather">Weather</button>
+              <button class="gcat" data-cat="clock">Clock</button>
+              <button class="gcat" data-cat="ambient">Ambient</button>
+              <button class="gcat" data-cat="rates">Rates</button>
+              <button class="gcat" data-cat="other">Other</button>
+            </div>
+            <div class="gallery-list" id="gallery-list"></div>
+          </div>
+          <!-- Class description — appears below the gallery frame, updated on filter click -->
+          <div id="cls-info" class="cls-info"></div>
+        </div>
+
+        <!-- RIGHT: live preview + flash info -->
+        <div class="editor-col">
+          <div class="editor-panel-preview">
+            <div class="editor-label" style="width:100%;text-align:left;">◈ Preview — 480×320 px
+              <span id="editor-tpl-name" style="color:var(--cyan);font-style:normal;margin-left:0.4rem"></span>
+            </div>
+            <div class="sandbox-bezel">
+              <img class="sb-board-img" src="/img/esp32-board.png" alt="ESP32 board" />
+              <div class="sandbox-screen">
+                <iframe id="tpl-sandbox" sandbox="allow-scripts allow-same-origin" title="Live template preview"></iframe>
+              </div>
+              <div class="sandbox-label">DISPLAY OUTPUT · 480 × 320 px</div>
+            </div>
+            <!-- Flash section: enabled once a template is selected -->
+            <div class="flash-section">
+              <!-- Push section: visible only when a guest device is registered -->
+              <div id="push-section" style="display:none; width:100%;">
+                <div style="display:flex;gap:0.4rem;align-items:center;width:100%;">
+                  <button id="btn-push" class="btn-push" onclick="pushToDevice()" style="flex:1">
+                    ⬆ PUSH TO DEVICE
+                  </button>
+                  <button id="btn-push-iv" class="btn-push-iv" onclick="cyclePushInterval()" title="Cycle push interval">2s</button>
+                </div>
+                <div id="push-hint" class="flash-hint" style="margin-bottom:0.5rem;"></div>
+              </div>
+              <div class="flash-reqs">
+                🔌 USB cable
+                <span class="flash-req-sep">·</span>
+                Chrome or Edge
+                <span class="flash-req-sep">·</span>
+                no drivers needed
+              </div>
+              <button id="btn-flash" class="btn-flash" disabled onclick="startFlash()">
+                ▶ FLASH TO DEVICE
+              </button>
+              <div id="flash-hint" class="flash-hint">Select a template from the list above</div>
+            </div>
+          </div>
+
+          <!-- Flash info: browser requirements and flashing instructions -->
+          <div class="flash-info">
+            <p><strong>Flashing requires Chrome or Edge</strong> — these are the only browsers that support Web Serial (USB access). Firefox and Safari cannot flash devices from the browser.</p>
+            <p>Connect your ESP32 via a <strong>data-capable USB cable</strong>. No additional drivers are needed on Windows 10/11, macOS 11+, or most Linux systems. Click <strong>▶ Flash to Device</strong>, pick your display model, and both the firmware and your chosen template transfer automatically in about 30 seconds.</p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── HOW IT WORKS ───────────────────────────────────────────────────── -->
+    <section id="how-it-works">
+      <div class="section-tag">◈ How It Works</div>
+      <h2 class="section-headline">THREE STEPS. NO TOOLS.</h2>
+      <div class="section-rule"></div>
+
+      <div class="flow-row">
+        <div class="step-card">
+          <div class="step-num">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+            </svg>
+            01
+          </div>
+          <div class="step-title">Pick a Template</div>
+          <div class="step-desc">Browse the gallery. Find what fits your desk. Or write your own — it's just HTML.</div>
+        </div>
+        <div class="step-connector"><div class="step-connector-dot"></div></div>
+        <div class="step-card">
+          <div class="step-num">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="13 2 13 9 19 9"/><path d="M20 14.5V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7.5"/>
+              <line x1="12" y1="12" x2="12" y2="18"/><polyline points="9 15 12 18 15 15"/>
+            </svg>
+            02
+          </div>
+          <div class="step-title">Flash from Browser</div>
+          <div class="step-desc">Plug in USB. Click Flash. Done — no IDE, no drivers, no command line.</div>
+        </div>
+        <div class="step-connector"><div class="step-connector-dot"></div></div>
+        <div class="step-card">
+          <div class="step-num">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+            03
+          </div>
+          <div class="step-title">It Updates Itself</div>
+          <div class="step-desc">Fresh data hits the display every few minutes over WiFi. Automatically. No touch needed.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── USE CASES ─────────────────────────────────────────────────────── -->
+    <section id="use-cases">
+      <div class="section-tag">◈ Use Cases</div>
+      <h2 class="section-headline">WHAT WILL YOU PUT ON YOUR DESK?</h2>
+      <div class="section-rule"></div>
+      <div class="cards-grid">
+
+        <div class="use-card">
+          <div class="use-emoji">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>
+            </svg>
+          </div>
+          <div class="use-title">Your Server Room</div>
+          <div class="use-desc">Finally has a screen worth looking at. Hook it up to any monitoring tool.</div>
+          <span class="use-tag">Any API</span>
+        </div>
+
+        <div class="use-card">
+          <div class="use-emoji">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+            </svg>
+          </div>
+          <div class="use-title">Markets &amp; Crypto</div>
+          <div class="use-desc">On your desk before you reach for your phone. Live prices, always visible.</div>
+          <span class="use-tag">No key needed</span>
+        </div>
+
+        <div class="use-card">
+          <div class="use-emoji">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+          </div>
+          <div class="use-title">Home at a Glance</div>
+          <div class="use-desc">Every sensor. One display. Always on. Weather, temp, humidity — no app needed.</div>
+          <span class="use-tag">Open-Meteo</span>
+        </div>
+
+        <div class="use-card">
+          <div class="use-emoji">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>
+            </svg>
+          </div>
+          <div class="use-title">Café or Office</div>
+          <div class="use-desc">A schedule board that updates itself when you edit a spreadsheet. Zero maintenance.</div>
+          <span class="use-tag">Google Sheets</span>
+        </div>
+
+        <div class="use-card">
+          <div class="use-emoji">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <div class="use-title">Sci-Fi Desk Setup</div>
+          <div class="use-desc">Looks like a prop from a film. Costs less than a lunch. Ships tomorrow.</div>
+          <span class="use-tag">Just plug it in</span>
+        </div>
+
+        <div class="use-card">
+          <div class="use-emoji">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/>
+            </svg>
+          </div>
+          <div class="use-title">Fully Yours</div>
+          <div class="use-desc">Open source. Self-hosted. No cloud, no subscription, no vendor lock-in — ever.</div>
+          <span class="use-tag">MIT License</span>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── FOOTER ─────────────────────────────────────────────────────────── -->
+    <footer>
+      <div class="footer-brand">ViewOwl — Your desk. Your data. Your screen.</div>
+      <div>
+        <a href="https://github.com/KirinDenis/ViewOwl_ESP32" class="btn-neon secondary" target="_blank" rel="noopener"
+           style="font-size:0.76rem;padding:0.42rem 1rem;">⌥ GitHub</a>
+        <a href="https://www.facebook.com/groups/OWLOS" class="btn-neon secondary" target="_blank" rel="noopener"
+           style="font-size:0.76rem;padding:0.42rem 1rem;">⊕ Community</a>
+      </div>
+      <a href="/login" style="font-size:0.7rem;color:var(--dim);opacity:0.45;text-decoration:none;"
+         onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='0.45'">admin</a>
+      <div class="footer-copy">
+        MIT License &middot; Made with ❤️ by humans and AI
+        &nbsp;&nbsp;·&nbsp;&nbsp;
+        <a href="/legal/privacy.html" style="color:inherit;opacity:0.7">Privacy</a>
+        &nbsp;·&nbsp;
+        <a href="/legal/terms.html" style="color:inherit;opacity:0.7">Terms</a>
+      </div>
+    </footer>
+
+  </main><!-- /center -->
+
+  <!-- ── Wire canvas — ambient iridescent tracks ───────────────────────── -->
+  <script>
+  (function(){
+    var canvas=document.getElementById('wire-canvas');
+    if(!canvas)return;
+    var ctx=canvas.getContext('2d');
+
+    var rawWords=canvas.getAttribute('data-words')||'';
+    var WORDS=rawWords.split(',').map(function(w){return w.trim();}).filter(Boolean);
+    if(!WORDS.length)return;
+
+    /* ViewOwl palette — cyan / purple iridescent */
+    var PALETTE=[
+      {dot:'#4dd0e1',glow:'rgba(77,208,225,0.35)'},
+      {dot:'#00d4ff',glow:'rgba(0,212,255,0.35)'},
+      {dot:'#7b2dfa',glow:'rgba(123,45,250,0.35)'},
+      {dot:'#38bcd8',glow:'rgba(56,188,216,0.35)'},
+      {dot:'#9b4dff',glow:'rgba(155,77,255,0.35)'},
+      {dot:'#00bbdd',glow:'rgba(0,187,221,0.30)'},
+      {dot:'#6622ee',glow:'rgba(102,34,238,0.35)'},
+      {dot:'#4dd0e1',glow:'rgba(77,208,225,0.30)'}
+    ];
+
+    var CONTAINER_W=1140;
+    var MIN_SIDE=100;
+    var MAX_SIG=8;
+    var SPAWN_MS=1200;
+
+    var W,H,sw;
+    var curves=[],signals=[];
+    var wIdx=0,prevTime=0,lastSpawn=0;
+
+    function resize(){
+      W=canvas.width=window.innerWidth;
+      H=canvas.height=window.innerHeight;
+      sw=Math.max(0,Math.floor((W-CONTAINER_W)/2));
+      signals=[];
+      if(sw>=MIN_SIDE){buildCurves();prePopulate();}
+      else curves=[];
+    }
+
+    function bzPt(c,t){
+      var p=c.p,u=1-t;
+      return{
+        x:u*u*u*p[0].x+3*u*u*t*p[1].x+3*u*t*t*p[2].x+t*t*t*p[3].x,
+        y:u*u*u*p[0].y+3*u*u*t*p[1].y+3*u*t*t*p[2].y+t*t*t*p[3].y
+      };
+    }
+
+    function buildCurves(){
+      curves=[];
+      var navH=48;
+      var ch=H-navH;
+
+      var DEFS=[
+        [[0.22,0.00],[0.82,0.26],[0.12,0.60],[0.68,1.00]],
+        [[0.64,0.00],[0.08,0.33],[0.88,0.65],[0.28,1.00]],
+        [[0.88,0.00],[0.38,0.44],[0.70,0.70],[0.86,1.00]]
+      ];
+
+      /* Left pillar — full height */
+      DEFS.forEach(function(def){
+        curves.push({p:def.map(function(f){
+          return{x:f[0]*sw, y:navH+f[1]*ch};
+        })});
+      });
+
+      /* Right pillar — full height (mirrored) */
+      DEFS.forEach(function(def){
+        curves.push({p:def.map(function(f){
+          return{x:W-f[0]*sw, y:navH+f[1]*ch};
+        })});
+      });
+    }
+
+    function makeSignal(c,startT){
+      var dir=Math.random()<0.5?1:-1;
+      var col=PALETTE[wIdx%PALETTE.length];
+      var t=startT!==undefined?startT:(dir>0?0:1);
+      return{c:c,word:WORDS[wIdx++%WORDS.length],dot:col.dot,glow:col.glow,
+             t:t,dir:dir,spd:(0.00014+Math.random()*0.00012)*dir};
+    }
+
+    function prePopulate(){
+      curves.forEach(function(c){
+        var s=makeSignal(c);
+        s.t=s.dir>0?(0.08+Math.random()*0.70):(0.92-Math.random()*0.70);
+        signals.push(s);
+      });
+    }
+
+    function drawWires(ts){
+      curves.forEach(function(c,i){
+        var p=c.p;
+        var pulse=0.05+0.03*Math.sin(ts*0.00065+i*1.3);
+        /* Hue cycles 185→285: cyan → teal → purple */
+        var hue=185+i*17;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(p[0].x,p[0].y);
+        ctx.bezierCurveTo(p[1].x,p[1].y,p[2].x,p[2].y,p[3].x,p[3].y);
+        ctx.strokeStyle='hsla('+hue+',75%,62%,'+pulse+')';
+        ctx.lineWidth=1.4;
+        ctx.shadowColor='hsla('+hue+',75%,62%,0.3)';
+        ctx.shadowBlur=6;
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
+
+    function drawSignals(dt){
+      ctx.save();
+      ctx.font='10px "Courier New",monospace';
+      ctx.textAlign='center';
+      signals=signals.filter(function(s){
+        s.t+=s.spd*dt;
+        var dead=s.dir>0?s.t>1.12:s.t<-0.12;
+        if(dead)return false;
+        var tc=Math.max(0,Math.min(1,s.t));
+        var pos=bzPt(s.c,tc);
+        var prog=s.dir>0?s.t:(1-s.t);
+        prog=Math.max(0,Math.min(1,prog));
+        var alpha=Math.min(prog/0.09,1)*Math.min((1-prog)/0.09,1);
+        alpha=Math.max(0,alpha)*0.78;
+        /* dot */
+        ctx.globalAlpha=alpha;
+        ctx.beginPath();ctx.arc(pos.x,pos.y,2.5,0,Math.PI*2);
+        ctx.fillStyle=s.dot;ctx.shadowColor=s.glow;ctx.shadowBlur=10;
+        ctx.fill();ctx.shadowBlur=0;
+        /* label */
+        ctx.globalAlpha=alpha*0.82;
+        ctx.fillStyle=s.dot;ctx.shadowColor=s.glow;ctx.shadowBlur=5;
+        ctx.fillText(s.word,pos.x,pos.y-10);
+        ctx.shadowBlur=0;ctx.globalAlpha=1;
+        return true;
+      });
+      ctx.restore();
+    }
+
+    function loop(ts){
+      if(!prevTime)prevTime=ts;
+      var dt=Math.min(ts-prevTime,80);
+      prevTime=ts;
+      ctx.clearRect(0,0,W,H);
+      if(sw>=MIN_SIDE&&curves.length){
+        drawWires(ts);
+        if(ts-lastSpawn>SPAWN_MS&&signals.length<MAX_SIG){
+          signals.push(makeSignal(curves[Math.floor(Math.random()*curves.length)]));
+          lastSpawn=ts;
+        }
+        drawSignals(dt);
+      }
+      requestAnimationFrame(loop);
+    }
+
+    window.addEventListener('resize',function(){
+      clearTimeout(window._wcResize);
+      window._wcResize=setTimeout(resize,120);
+    });
+
+    resize();
+    requestAnimationFrame(loop);
+  }());
+  </script>
+
+  <!-- ── Loader canvas animation ──────────────────────────────────────── -->
+  <script>
+  (function(){
+    var c=document.getElementById('vo-loader-canvas');
+    if(!c)return;
+    var ctx=c.getContext('2d');
+    var W=260,H=260,CX=W/2,CY=H/2;
+    var t=0,pct=0;
+    var pctEl=document.getElementById('vo-loader-pct');
+    var CYAN='rgba(77,208,225,',PURPLE='rgba(123,45,250,';
+
+    function frame(){
+      ctx.clearRect(0,0,W,H);
+      t++;
+
+      // Grid dots
+      ctx.fillStyle='rgba(77,208,225,.05)';
+      for(var gx=13;gx<W;gx+=26) for(var gy=13;gy<H;gy+=26){
+        ctx.beginPath();ctx.arc(gx,gy,1,0,Math.PI*2);ctx.fill();
+      }
+
+      // Outer ambient ring — 32 dots, cyan/purple alternating
+      for(var i=0;i<32;i++){
+        var a=(i/32)*Math.PI*2+t*.012;
+        var r=118+Math.sin(t*.025+i*.6)*3;
+        var x=CX+Math.cos(a)*r,y=CY+Math.sin(a)*r;
+        var al=.12+.22*Math.abs(Math.sin(t*.04+i*.2));
+        ctx.beginPath();ctx.arc(x,y,1.5,0,Math.PI*2);
+        ctx.fillStyle=(i%2===0?CYAN:PURPLE)+al+')';
+        ctx.fill();
+      }
+
+      // Two spiral arms — cyan + purple
+      for(var arm=0;arm<2;arm++){
+        ctx.beginPath();
+        for(var i=0;i<=80;i++){
+          var p=i/80;
+          var ang=p*Math.PI*3.4+arm*Math.PI+t*.018;
+          var rad=10+p*80;
+          var x=CX+Math.cos(ang)*rad,y=CY+Math.sin(ang)*rad;
+          i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+        }
+        var g=ctx.createLinearGradient(CX-80,CY,CX+80,CY);
+        var col=arm===0?CYAN:PURPLE;
+        g.addColorStop(0,col+'0)');
+        g.addColorStop(.5,col+'.7)');
+        g.addColorStop(1,col+'0)');
+        ctx.strokeStyle=g;ctx.lineWidth=1.5;ctx.stroke();
+      }
+
+      // 3 dashed orbital rings with nodes
+      var RINGS=[
+        {r:90,col:CYAN,   lw:1.2,spd: 0.003,nodes:6},
+        {r:64,col:PURPLE, lw:1.2,spd:-0.005,nodes:4},
+        {r:38,col:CYAN,   lw:1.5,spd: 0.008,nodes:2}
+      ];
+      RINGS.forEach(function(ring,ri){
+        var angle=t*ring.spd*100;
+        ctx.save();
+        ctx.strokeStyle=ring.col+'.3)';
+        ctx.lineWidth=ring.lw;
+        ctx.setLineDash([7,5]);
+        ctx.lineDashOffset=-angle*18;
+        ctx.beginPath();ctx.arc(CX,CY,ring.r,0,Math.PI*2);ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+        // nodes
+        for(var ni=0;ni<ring.nodes;ni++){
+          var na=(ni/ring.nodes)*Math.PI*2+angle;
+          var nx=CX+Math.cos(na)*ring.r;
+          var ny=CY+Math.sin(na)*ring.r;
+          var ng=ctx.createRadialGradient(nx,ny,0,nx,ny,10);
+          ng.addColorStop(0,ring.col+'.2)');
+          ng.addColorStop(1,ring.col+'0)');
+          ctx.fillStyle=ng;
+          ctx.beginPath();ctx.arc(nx,ny,10,0,Math.PI*2);ctx.fill();
+          ctx.fillStyle=ring.col+'.85)';
+          ctx.beginPath();ctx.arc(nx,ny,3.5,0,Math.PI*2);ctx.fill();
+        }
+      });
+
+      // Sweep scan line
+      var sweep=t*.012;
+      var sweepLen=Math.PI*.5;
+      ctx.save();ctx.globalAlpha=.2;
+      for(var a=0;a<sweepLen;a+=0.04){
+        var fa=sweep-a;
+        ctx.strokeStyle=CYAN+(1-a/sweepLen)*.45+')';
+        ctx.lineWidth=.7;
+        ctx.beginPath();ctx.moveTo(CX,CY);
+        ctx.lineTo(CX+Math.cos(fa)*95,CY+Math.sin(fa)*95);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Crosshair
+      ctx.strokeStyle='rgba(77,208,225,.08)';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(CX-100,CY);ctx.lineTo(CX+100,CY);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(CX,CY-100);ctx.lineTo(CX,CY+100);ctx.stroke();
+
+      // Progress ring
+      ctx.beginPath();ctx.arc(CX,CY,104,0,Math.PI*2);
+      ctx.strokeStyle='rgba(255,255,255,.05)';ctx.lineWidth=2;ctx.stroke();
+      if(pct>0){
+        var arc=(pct/100)*Math.PI*2;
+        ctx.beginPath();ctx.arc(CX,CY,104,-Math.PI/2,-Math.PI/2+arc);
+        var pg=ctx.createLinearGradient(CX-104,CY,CX+104,CY);
+        pg.addColorStop(0,'#4dd0e1');pg.addColorStop(1,'#7b2dfa');
+        ctx.strokeStyle=pg;ctx.lineWidth=2.5;ctx.lineCap='round';ctx.stroke();
+      }
+
+      // Hub glow + pulse
+      var hg=ctx.createRadialGradient(CX,CY,0,CX,CY,26);
+      hg.addColorStop(0,'rgba(77,208,225,.18)');
+      hg.addColorStop(1,'rgba(77,208,225,0)');
+      ctx.fillStyle=hg;ctx.beginPath();ctx.arc(CX,CY,26,0,Math.PI*2);ctx.fill();
+      var pulse=16+Math.sin(t*.07)*2.5;
+      ctx.beginPath();ctx.arc(CX,CY,pulse,0,Math.PI*2);
+      ctx.strokeStyle=CYAN+(0.25+.15*Math.sin(t*.07))+')';
+      ctx.lineWidth=1.5;ctx.stroke();
+
+      // Hub center + "VO"
+      ctx.fillStyle='#080c18';
+      ctx.beginPath();ctx.arc(CX,CY,13,0,Math.PI*2);ctx.fill();
+      ctx.font='bold 10px Courier New,monospace';
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillStyle='rgba(77,208,225,.95)';ctx.fillText('VO',CX,CY+1);
+    }
+
+    var iv=setInterval(function(){
+      pct=Math.min(pct+2.5,100);
+      if(pctEl)pctEl.textContent=Math.round(pct)+'%';
+      frame();
+      if(pct>=100){
+        clearInterval(iv);
+        setTimeout(function(){
+          var L=document.getElementById('vo-loader');
+          if(L){L.classList.add('out');setTimeout(function(){if(L.parentNode)L.remove();},750);}
+        },280);
+      }
+    },14);
+  }());
+  </script>
+
+  <!-- Load auth utilities (needed for the sign-in modal) -->
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+
+  <script>
+    /* ── 3D Coverflow carousel ──────────────────────────────────────────── */
+    (async function () {
+      /* All available templates — fetched from DB (IsPublic=true only) */
+      let ALL = [];
+      try {
+        const res = await fetch('/api/public-templates');
+        if (res.ok) ALL = await res.json();
+      } catch (_) { /* network error — start with empty list */ }
+      const N     = 5;                         // number of physical boards
+      const stage = document.getElementById('cf-stage');
+      const dotsEl= document.getElementById('cf-dots');
+
+      /* Each board i starts at template index i and steps by N each rotation.
+         Board 0 → 0,5,10,15 · Board 1 → 1,6,11,16 · etc.
+         All 20 templates cycle past in N×10 s = 50 s, CPU cost: 1 iframe/10 s */
+      const boardTplIdx = Array.from({ length: N }, (_, i) => i);
+
+      // Coverflow position table — index 0 = offset -2, index 4 = offset +2
+      // translateX includes -200px (half board width) to centre each board
+      const POS = [
+        { tx: -610, ry:  56, sc: 0.65, op: 0.30 },  // offset -2
+        { tx: -440, ry:  38, sc: 0.82, op: 0.65 },  // offset -1
+        { tx: -200, ry:   0, sc: 1.00, op: 1.00 },  // offset  0 (active)
+        { tx:   40, ry: -38, sc: 0.82, op: 0.65 },  // offset +1
+        { tx:  210, ry: -56, sc: 0.65, op: 0.30 },  // offset +2
+      ];
+
+      let active = 0;
+      const items = [];
+      let _selectedTpl   = null; // currently selected template object
+      let _galleryFilter = '';   // active category slug, '' = All
+      let _classFilter   = '';   // active class slug 'a'|'b'|'c', '' = All
+      let _searchTerm    = '';   // current name search (lowercase)
+
+      /* Build board elements — one per physical slot, initial template = ALL[i % ALL.length] */
+      Array.from({ length: N }).forEach((_, i) => {
+        const tpl = ALL.length > 0 ? ALL[i % ALL.length] : null;
+        const el = document.createElement('div');
+        el.className = 'cf-item';
+        el.innerHTML = tpl ? `
+          <img class="cf-board" src="/img/esp32-board.png" alt="ESP32 3.5-inch TFT display" />
+          <div class="cf-screen">
+            <iframe src="/SiteTemplate?name=t${tpl.id}.html" loading="lazy" title="${tpl.name}"></iframe>
+          </div>
+          <div class="cf-name">${tpl.name}</div>` : `
+          <img class="cf-board" src="/img/esp32-board.png" alt="ESP32 3.5-inch TFT display" />
+          <div class="cf-screen"></div>
+          <div class="cf-name" style="opacity:0.3">—</div>`;
+
+        /* Scale the iframe to fill the LCD area.
+           Apply immediately with the known CSS width (400px) so cf-screen
+           gets its height right away — before the image finishes loading.
+           The load handler refines with the actual rendered width. */
+        const img = el.querySelector('img');
+        const scr = el.querySelector('.cf-screen');
+        const frm = el.querySelector('iframe');
+        function applyScale() {
+          const w = img.offsetWidth || 400;   // fallback to CSS width before layout
+          const lcdW = w * 0.718;
+          const s = lcdW / 480;
+          frm.style.transform = `scale(${s})`;
+          scr.style.height    = `${Math.round(320 * s)}px`;
+        }
+        applyScale();                               // set immediately (uses 400px default)
+        img.addEventListener('load', applyScale);   // refine once image is rendered
+
+        /* Click a non-active board to navigate to it;
+           click the active (center) board to load its template into the editor. */
+        el.addEventListener('click', () => {
+          const off = getOffset(i);
+          if (off !== 0) {
+            setActive(active + off);
+          } else {
+            if (ALL.length > 0) selectTemplate(ALL[boardTplIdx[active]]);
+          }
+        });
+
+        stage.appendChild(el);
+        items.push(el);
+      });
+
+      /* Build navigation dots */
+      Array.from({ length: N }).forEach((_, i) => {
+        const d = document.createElement('span');
+        d.className = 'cf-dot';
+        d.addEventListener('click', () => setActive(i));
+        dotsEl.appendChild(d);
+      });
+
+      /* Compute shortest circular offset from active to item i */
+      function getOffset(i) {
+        let off = i - active;
+        while (off >  2) off -= N;
+        while (off < -2) off += N;
+        return off;
+      }
+
+      /* Apply coverflow transforms */
+      function setActive(idx) {
+        active = ((idx % N) + N) % N;
+        const mobile = window.innerWidth <= 899;
+        items.forEach((el, i) => {
+          const off = getOffset(i);
+          let tx, ry, sc, op;
+          if (mobile) {
+            /* Single-card mode: only show active, slide others off-screen */
+            const cardW = el.offsetWidth || 340;
+            if (off === 0) {
+              tx = -(cardW / 2); ry = 0; sc = 1.00; op = 1.00;
+            } else {
+              tx = off > 0 ? window.innerWidth : -window.innerWidth;
+              ry = 0; sc = 0.85; op = 0;
+            }
+          } else {
+            const p = POS[off + 2];
+            tx = p.tx; ry = p.ry; sc = p.sc; op = p.op;
+          }
+          el.style.transform = `translateX(${tx}px) rotateY(${ry}deg) scale(${sc})`;
+          el.style.opacity   = op;
+          el.style.zIndex    = 10 - Math.abs(off);
+          el.classList.toggle('cf-active', off === 0);
+        });
+        [...dotsEl.children].forEach((d, i) => d.classList.toggle('active', i === active));
+      }
+
+      /* ── Gallery — template selection ──────────────────────────────────── */
+
+      /* Select a template: update the preview iframe and highlight in list */
+      function selectTemplate(tpl) {
+        _selectedTpl = tpl;
+        const sandbox = document.getElementById('tpl-sandbox');
+        if (sandbox) sandbox.src = '/SiteTemplate?name=t' + tpl.id + '.html';
+        const nameEl = document.getElementById('editor-tpl-name');
+        if (nameEl) nameEl.textContent = tpl.name;
+        document.querySelectorAll('.gtpl-item').forEach(el =>
+          el.classList.toggle('selected', Number(el.dataset.id) === tpl.id));
+        updateFlashBtn();
+        updatePushBtn();
+        document.getElementById('quick-start')
+                .scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      /* Multi-paragraph class descriptions shown below the gallery frame */
+      const CLS_INFO = {
+        '': [
+          '<p><strong>Class A — Live Data.</strong> Connects to public APIs over your ESP32\'s WiFi. Displays current weather, exchange rates, clocks, departure boards, and more. Data refreshes every few minutes automatically.</p>',
+          '<p><strong>Class B — Canvas Rendering.</strong> Pixel-perfect graphics captured server-side and compressed to the native LCD format. What you see in the browser preview is exactly what your display shows.</p>',
+          '<p><strong>Class C — Flash Once, Run Forever.</strong> Multi-frame animations stored directly in device flash memory. After the initial transfer the device runs fully standalone — no WiFi, no server required.</p>',
+        ].join(''),
+        'a': [
+          '<p><strong>Class A templates pull live data over your ESP32\'s WiFi</strong> — current weather forecasts, currency exchange rates, airport and train departure boards, digital clocks, and more.</p>',
+          '<p>Data comes from open, GDPR-compliant public APIs and refreshes every few minutes without any manual intervention. If WiFi is temporarily unavailable, the last received frame stays on screen until the connection is restored.</p>',
+        ].join(''),
+        'b': [
+          '<p><strong>Class B uses the HTML Canvas API</strong> for smooth, hardware-accurate graphics. Frames are captured by a headless browser on the server and compressed to BGR565 — the native 16-bit pixel format of your LCD panel.</p>',
+          '<p>What you see in the live preview is exactly what your display renders, pixel for pixel. Ideal for polished interfaces and visualisations where visual precision matters.</p>',
+        ].join(''),
+        'c': [
+          '<p><strong>Class C animations are stored in device flash memory</strong> in a single transfer session and then run entirely standalone. Once flashed, the display loops the animation indefinitely — no WiFi, no server, no cloud.</p>',
+          '<p>Perfect for price tags, product showcases, lobby screens, or any display that needs to run 24/7 without a network connection. Your screen keeps working even if our server is offline.</p>',
+        ].join(''),
+      };
+
+      function updateClsDesc(cls) {
+        const info = document.getElementById('cls-info');
+        if (!info) return;
+        const html = CLS_INFO[cls !== undefined ? cls : ''];
+        info.innerHTML = html || CLS_INFO[''];
+      }
+
+      /* Enable/disable the FLASH button depending on template selection */
+      function updateFlashBtn() {
+        const btn  = document.getElementById('btn-flash');
+        const hint = document.getElementById('flash-hint');
+        if (!btn) return;
+        if (_selectedTpl) {
+          btn.disabled = false;
+          if (hint) hint.textContent = 'Ready · ' + _selectedTpl.name;
+        } else {
+          btn.disabled = true;
+          if (hint) hint.textContent = 'Select a template from the list above';
+        }
+      }
+
+      // ── Browser-side canvas push loop ────────────────────────────────────
+      // Mirrors GrabberNode.jsx: renders template in a hidden iframe, reads the
+      // canvas every N seconds, converts RGBA→BGR565, palette+RLE compresses,
+      // and POSTs the frame bytes to /api/guest/device/{guid}/frame.
+
+      const PUSH_INTERVALS = [1, 2, 5]; // seconds, matches dashboard INTERVAL_STEPS
+      let _pushActive   = false;
+      let _pushInterval = 2;
+      let _pushTimerId  = null;
+
+      // BGR565 little-endian: bits[4:0]=B, bits[10:5]=G, bits[15:11]=R
+      function rgbaToBgr565(rgba, width, height) {
+        const pixels = width * height;
+        const out = new Uint8Array(pixels * 2);
+        for (let i = 0; i < pixels; i++) {
+          const r = rgba[i * 4], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2];
+          const v = ((b >> 3) & 0x1F) | (((g >> 2) & 0x3F) << 5) | (((r >> 3) & 0x1F) << 11);
+          out[i * 2]     = v & 0xFF;
+          out[i * 2 + 1] = (v >> 8) & 0xFF;
+        }
+        return out;
+      }
+
+      // Reduces BGR565 colour precision until unique count ≤ 254 (guaranteed in ≤ 3 passes).
+      function _quantizeBgr565(bgr565) {
+        for (let shift = 1; shift <= 3; shift++) {
+          const out  = new Uint8Array(bgr565.length);
+          const seen = new Set();
+          for (let i = 0; i < bgr565.length; i += 2) {
+            const raw = bgr565[i] | (bgr565[i + 1] << 8);
+            const b   = ((raw        & 0x1F) >> shift) << shift;
+            const g   = (((raw >> 5) & 0x3F) >> shift) << shift;
+            const r   = (((raw >> 11) & 0x1F) >> shift) << shift;
+            const q   = b | (g << 5) | (r << 11);
+            out[i]     = q & 0xFF;
+            out[i + 1] = q >> 8;
+            seen.add(q);
+          }
+          if (seen.size <= 254) return out;
+        }
+        return bgr565;
+      }
+
+      // Palette+RLE matching server FrameCompressor (FRAME_FLAG_PALETTE = 0x01).
+      // Format: [0x01][palLen:u8][palette: palLen×2 bytes big-endian][RLE: run:u8, idx:u8 pairs]
+      function paletteRleCompress(bgr565, pixelCount) {
+        const paletteMap = new Map();
+        const palette    = new Uint16Array(255);
+        let   palLen     = 0;
+        for (let i = 0; i < pixelCount; i++) {
+          const color = bgr565[i * 2] | (bgr565[i * 2 + 1] << 8);
+          if (!paletteMap.has(color)) {
+            if (palLen >= 255) return paletteRleCompress(_quantizeBgr565(bgr565), pixelCount);
+            paletteMap.set(color, palLen);
+            palette[palLen++] = color;
+          }
+        }
+        const rleBuf = new Uint8Array(pixelCount * 2);
+        let rleLen = 0, i = 0;
+        while (i < pixelCount) {
+          const color = bgr565[i * 2] | (bgr565[i * 2 + 1] << 8);
+          const idx   = paletteMap.get(color);
+          let run = 1;
+          while (run < 255 && i + run < pixelCount) {
+            if ((bgr565[(i + run) * 2] | (bgr565[(i + run) * 2 + 1] << 8)) !== color) break;
+            run++;
+          }
+          rleBuf[rleLen++] = run;
+          rleBuf[rleLen++] = idx;
+          i += run;
+        }
+        // Assemble: flag(1) + palLen(1) + palette big-endian + RLE stream
+        const out = new Uint8Array(2 + palLen * 2 + rleLen);
+        let pos = 0;
+        out[pos++] = 0x01; // FRAME_FLAG_PALETTE
+        out[pos++] = palLen;
+        for (let p = 0; p < palLen; p++) {
+          const c = palette[p];
+          out[pos++] = (c >> 8) & 0xFF;
+          out[pos++] =  c       & 0xFF;
+        }
+        out.set(rleBuf.subarray(0, rleLen), pos);
+        return out;
+      }
+
+      // One push frame: read canvas from hidden iframe → convert → POST
+      async function _doPushFrame() {
+        if (!_pushActive) return;
+        const hint = document.getElementById('push-hint');
+        let dev;
+        try { dev = JSON.parse(localStorage.getItem('vo_device') || 'null'); } catch (_) { dev = null; }
+        if (!dev) return;
+
+        const tplName = _selectedTpl ? _selectedTpl.name : dev.templateName;
+        const tplId   = _selectedTpl ? _selectedTpl.id   : (dev.templateId || null);
+        const size    = dev.size || '480x320';
+        const [w, h]  = DISPLAY_SIZE[size] || [480, 320];
+
+        const iframe = document.getElementById('push-iframe');
+        if (!iframe) return;
+
+        let imageData;
+        try {
+          const doc = iframe.contentDocument;
+          if (!doc || doc.readyState === 'loading') {
+            if (hint) hint.textContent = '◌ Loading template…';
+            return;
+          }
+          const canvas = doc.getElementById('screen') || doc.querySelector('canvas');
+          if (!canvas) {
+            // No canvas — fall back to server-side grab once, then stop loop
+            if (hint) hint.textContent = '◌ No canvas — queuing server grab…';
+            _stopPushLoop();
+            await _serverSideGrab(dev, tplName, tplId, w, h);
+            if (hint) hint.textContent = '✓ Server grab queued — device updates in ~5 s';
+            return;
+          }
+          // Always read via an offscreen canvas with willReadFrequently:true.
+          // Calling getImageData directly on the template canvas triggers a Chrome
+          // perf warning because the template's own context was not created with that flag.
+          const off = document.createElement('canvas');
+          off.width = w; off.height = h;
+          const offCtx = off.getContext('2d', { willReadFrequently: true });
+          offCtx.drawImage(canvas, 0, 0, w, h);
+          imageData = offCtx.getImageData(0, 0, w, h);
+        } catch (e) {
+          if (e && e.name === 'SecurityError') {
+            // Canvas tainted by cross-origin images — fall back to server grab
+            if (hint) hint.textContent = '◌ Canvas tainted — using server grab…';
+            _stopPushLoop();
+            await _serverSideGrab(dev, tplName, tplId, w, h);
+            if (hint) hint.textContent = '✓ Server grab queued — device updates in ~5 s';
+          }
+          // iframe not ready or other transient error — skip this tick silently
+          return;
+        }
+
+        const bgr565     = rgbaToBgr565(imageData.data, w, h);
+        const frameBytes = paletteRleCompress(bgr565, w * h);
+
+        try {
+          const res = await fetch('/api/guest/device/' + dev.uuid + '/frame', {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body   : frameBytes.buffer.slice(
+              frameBytes.byteOffset, frameBytes.byteOffset + frameBytes.byteLength),
+          });
+          if (res.ok) {
+            if (hint) hint.textContent =
+              '⬆ Pushing · ' + (_selectedTpl ? _selectedTpl.name : dev.templateName) +
+              ' · ' + _pushInterval + 's';
+          } else {
+            if (hint) hint.textContent = '✕ Server error ' + res.status + ' — push stopped';
+            _stopPushLoop();
+          }
+        } catch (_) {
+          // Network error — keep retrying silently
+        }
+      }
+
+      function _stopPushLoop() {
+        _pushActive = false;
+        clearInterval(_pushTimerId);
+        _pushTimerId = null;
+        const btn = document.getElementById('btn-push');
+        const iv  = document.getElementById('btn-push-iv');
+        if (btn) btn.textContent = '⬆ PUSH TO DEVICE';
+        if (iv)  iv.classList.remove('active');
+      }
+
+      // Trigger one server-side grab (fallback for DOM-only templates without <canvas>)
+      async function _serverSideGrab(dev, tplName, tplId, w, h) {
+        try {
+          await fetch('/api/guest/device', {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body   : JSON.stringify({
+              guid: dev.uuid, templateName: tplName, templateId: tplId || null,
+              displayWidth: w, displayHeight: h,
+            }),
+          });
+        } catch (_) {}
+      }
+
+      /* Show/hide the push section and update the hint text */
+      function updatePushBtn() {
+        const section = document.getElementById('push-section');
+        const hint    = document.getElementById('push-hint');
+        if (!section) return;
+        let dev;
+        try { dev = JSON.parse(localStorage.getItem('vo_device') || 'null'); } catch (_) { dev = null; }
+        if (!dev) {
+          section.style.display = 'none';
+          if (_pushActive) _stopPushLoop();
+          return;
+        }
+        section.style.display = '';
+        if (hint && !_pushActive) {
+          const tplLabel = _selectedTpl ? _selectedTpl.name : dev.templateName;
+          hint.textContent = 'Push · ' + tplLabel + ' → ' + (dev.size || '480x320');
+        }
+      }
+
+      /* Toggle the push loop on/off */
+      function pushToDevice() {
+        let dev;
+        try { dev = JSON.parse(localStorage.getItem('vo_device') || 'null'); } catch (_) { dev = null; }
+        if (!dev) return;
+
+        if (_pushActive) {
+          // Stop
+          _stopPushLoop();
+          updatePushBtn();
+          return;
+        }
+
+        // Start — load the hidden iframe with the selected template
+        const iframe = document.getElementById('push-iframe');
+        if (iframe) {
+          if (_selectedTpl) {
+            iframe.src = '/SiteTemplate?name=t' + _selectedTpl.id + '.html';
+          } else if (dev.templateId) {
+            iframe.src = '/SiteTemplate?name=t' + dev.templateId + '.html';
+          }
+        }
+
+        // Keep localStorage in sync if template changed
+        if (_selectedTpl && _selectedTpl.name !== dev.templateName) {
+          dev.templateName = _selectedTpl.name;
+          dev.templateId   = _selectedTpl.id;
+          try { localStorage.setItem('vo_device', JSON.stringify(dev)); } catch (_) {}
+        }
+
+        _pushActive = true;
+        const btn = document.getElementById('btn-push');
+        const iv  = document.getElementById('btn-push-iv');
+        const hint = document.getElementById('push-hint');
+        if (btn)  btn.textContent = '⏸ STOP PUSH';
+        if (iv)   iv.classList.add('active');
+        if (hint) hint.textContent = '◌ Loading template…';
+
+        // Start loop; also fire after 1.5 s to allow iframe first load
+        _pushTimerId = setInterval(_doPushFrame, _pushInterval * 1000);
+        setTimeout(_doPushFrame, 1500);
+      }
+
+      /* Cycle push interval: 1s → 2s → 5s → 1s */
+      function cyclePushInterval() {
+        const idx = PUSH_INTERVALS.indexOf(_pushInterval);
+        _pushInterval = PUSH_INTERVALS[(idx + 1) % PUSH_INTERVALS.length];
+        const iv = document.getElementById('btn-push-iv');
+        if (iv) iv.textContent = _pushInterval + 's';
+        // Restart interval if loop is running
+        if (_pushActive && _pushTimerId) {
+          clearInterval(_pushTimerId);
+          _pushTimerId = setInterval(_doPushFrame, _pushInterval * 1000);
+        }
+      }
+
+      /* Start the flash flow for the currently selected template */
+      function startFlash() {
+        if (!_selectedTpl) return;
+        if (typeof window.openFlashModal === 'function') {
+          window.openFlashModal(_selectedTpl);
+        }
+      }
+      /* Expose for inline onclick attributes and cross-IIFE calls */
+      window.startFlash         = startFlash;
+      window.pushToDevice       = pushToDevice;
+      window.cyclePushInterval  = cyclePushInterval;
+      window.updatePushBtn      = updatePushBtn;
+
+      /* Expose gallery internals for the flash modal and device banner */
+      window._voGalleryAll     = ALL;
+      window._voSelectTemplate = selectTemplate;
+
+      /* Render the template list, filtered by category slug ('' = all) */
+      function renderGalleryList(cat, cls) {
+        if (cat !== undefined) _galleryFilter = cat;
+        if (cls !== undefined) _classFilter   = cls;
+        const list  = document.getElementById('gallery-list');
+        if (!list) return;
+        const items = ALL.filter(t =>
+          (!_galleryFilter || t.category === _galleryFilter) &&
+          (!_classFilter   || t.cls      === _classFilter)  &&
+          (!_searchTerm    || t.name.toLowerCase().includes(_searchTerm)));
+        list.innerHTML = items.map(t => `
+          <div class="gtpl-item" data-id="${t.id}">
+            <img class="gtpl-thumb" src="/api/public-templates/${t.id}/preview"
+                 loading="lazy" alt=""
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+            <div class="gtpl-thumb-placeholder" style="display:none"></div>
+            <span class="gtpl-name">${t.name}</span>
+          </div>`).join('');
+        list.querySelectorAll('.gtpl-item').forEach(el => {
+          const tpl = ALL.find(t => t.id === Number(el.dataset.id));
+          if (tpl) el.addEventListener('click', () => selectTemplate(tpl));
+        });
+        /* Re-apply selection highlight after re-render */
+        if (_selectedTpl) {
+          list.querySelectorAll('.gtpl-item').forEach(el =>
+            el.classList.toggle('selected', Number(el.dataset.id) === _selectedTpl.id));
+        }
+      }
+
+      /* Re-apply transforms on resize (desktop ↔ mobile switch) */
+      window.addEventListener('resize', () => setActive(active));
+
+      /* Controls */
+      document.getElementById('cf-prev').addEventListener('click', () => setActive(active - 1));
+      document.getElementById('cf-next').addEventListener('click', () => setActive(active + 1));
+
+      /* Keyboard arrows */
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft')  setActive(active - 1);
+        if (e.key === 'ArrowRight') setActive(active + 1);
+      });
+
+      /* Coverflow auto-advance: rotate active position every 9 s */
+      setInterval(() => setActive(active + 1), 9000);
+
+      /* Lazy template rotation: every 10 s replace the template on ONE board.
+         Boards cycle in round-robin; each board steps forward by N slots in ALL[].
+         Cost: 1 iframe reload per 10 s regardless of total template count.
+         All N_ALL templates are shown within N_ALL × 10 s ≈ 3.3 min. */
+      let rotateBoardPtr = 0;
+      setInterval(() => {
+        if (ALL.length === 0) return;
+        boardTplIdx[rotateBoardPtr] = (boardTplIdx[rotateBoardPtr] + N) % ALL.length;
+        const tpl   = ALL[boardTplIdx[rotateBoardPtr]];
+        const board = items[rotateBoardPtr];
+        const frm   = board.querySelector('iframe');
+        if (frm) frm.src = `/SiteTemplate?name=t${tpl.id}.html`;
+        const nm = board.querySelector('.cf-name');
+        if (nm)  nm.textContent = tpl.name;
+        rotateBoardPtr = (rotateBoardPtr + 1) % N;
+      }, 10000);
+
+      /* Set stage height from first board's rendered height */
+      const firstImg = items[0].querySelector('img');
+      function setStageH() {
+        if (firstImg.offsetHeight) stage.style.height = `${firstImg.offsetHeight + 30}px`;
+      }
+      if (firstImg.complete && firstImg.naturalWidth) { setStageH(); }
+      else { firstImg.addEventListener('load', setStageH); }
+      window.addEventListener('resize', setStageH);
+
+      setActive(0);
+
+      /* Initialise gallery list and class description block */
+      updateClsDesc('');
+      renderGalleryList('');
+      document.querySelectorAll('.gcat').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.gcat').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          renderGalleryList(btn.dataset.cat || '', undefined);
+        });
+      });
+      document.querySelectorAll('.gcls').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.gcls').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const cls = btn.dataset.cls || '';
+          updateClsDesc(cls);
+          renderGalleryList(undefined, cls);
+        });
+      });
+      const _searchEl = document.getElementById('gallery-search');
+      if (_searchEl) {
+        _searchEl.addEventListener('input', () => {
+          _searchTerm = _searchEl.value.trim().toLowerCase();
+          renderGalleryList();
+        });
+      }
+    }());
+
+    /* ── Sign-in modal logic ─────────────────────────────────────────────── */
+    function openSignin() {
+      document.getElementById('signin-modal').classList.add('open');
+      setTimeout(() => document.getElementById('modal-login').focus(), 200);
+    }
+
+    function closeSignin() {
+      document.getElementById('signin-modal').classList.remove('open');
+    }
+
+    document.querySelectorAll('#btn-signin, #btn-signin-footer').forEach(btn =>
+      btn.addEventListener('click', openSignin)
+    );
+    document.getElementById('modal-close').addEventListener('click', closeSignin);
+
+    // Close on backdrop click
+    document.getElementById('signin-modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeSignin();
+    });
+
+    // Close on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeSignin();
+    });
+
+    // Redirect if already logged in
+    if (typeof auth !== 'undefined' && auth.isLoggedIn()) {
+      // Already authenticated — replace Sign In button with Go to Dashboard
+      document.querySelectorAll('#btn-signin, #btn-signin-footer').forEach(btn => {
+        btn.textContent = '▸ DASHBOARD';
+        btn.addEventListener('click', (e) => {
+          e.stopImmediatePropagation();
+          window.location.href = '/dashboard';
+        }, true);
+      });
+    }
+
+    // Handle form submit
+    document.getElementById('modal-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl   = document.getElementById('modal-error');
+      const submitEl = document.getElementById('modal-submit');
+      const login   = document.getElementById('modal-login').value.trim();
+      const pass    = document.getElementById('modal-password').value;
+
+      errEl.classList.remove('visible');
+      submitEl.disabled = true;
+      submitEl.textContent = 'SIGNING IN…';
+
+      const error = await auth.login(login, pass);
+
+      submitEl.disabled = false;
+      submitEl.textContent = '▸ SIGN IN';
+
+      if (error) {
+        errEl.textContent = error;
+        errEl.classList.add('visible');
+        // Shake animation on error
+        const modal = document.querySelector('.vo-modal');
+        modal.classList.remove('shake');
+        void modal.offsetWidth; // force reflow
+        modal.classList.add('shake');
+      }
+      // On success, auth.login() redirects to /dashboard.html
+    });
+
+    /* ── Default template (kept for reference — editor removed in v1) ─────── */
+    const DEFAULT_TEMPLATE = `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      width: 480px; height: 320px;
+      overflow: hidden; margin: 0;
+      background: #0a0e1a;
+      color: #00ff88;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    #temp  { font-size: 80px; font-weight: 100; line-height: 1; }
+    #city  { font-size: 14px; letter-spacing: .2em; opacity: .7; }
+    #icon  { font-size: 32px; }
+    #clock { font-size: 11px; opacity: .45; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div id="city"></div>
+  <div id="icon">--</div>
+  <div id="temp">--°</div>
+  <div id="clock">--:--:-- UTC</div>
+
+  <script>
+    // ── Pick your city: uncomment ONE line, comment out the rest ────────────
+    // const CITY='Amsterdam, NL';  const LAT= 52.37, LON=   4.90;
+    // const CITY='Bangkok, TH';    const LAT= 13.75, LON= 100.50;
+    // const CITY='Barcelona, ES';  const LAT= 41.39, LON=   2.15;
+    // const CITY='Berlin, DE';     const LAT= 52.52, LON=  13.40;
+    // const CITY='Dubai, AE';      const LAT= 25.20, LON=  55.27;
+    // const CITY='Istanbul, TR';   const LAT= 41.01, LON=  28.95;
+       const CITY='Kyiv, UA';      const LAT= 50.45, LON=  30.52; // ← active
+    // const CITY='London, UK';     const LAT= 51.51, LON=  -0.13;
+    // const CITY='Los Angeles';    const LAT= 34.05, LON=-118.24;
+    // const CITY='Mexico City';    const LAT= 19.43, LON= -99.13;
+    // const CITY='Mumbai, IN';     const LAT= 19.08, LON=  72.88;
+    // const CITY='New York, US';   const LAT= 40.71, LON= -74.01;
+    // const CITY='Paris, FR';      const LAT= 48.85, LON=   2.35;
+    // const CITY='Prague, CZ';     const LAT= 50.08, LON=  14.44;
+    // const CITY='Reykjavik, IS';  const LAT= 64.13, LON= -21.90;
+    // const CITY='Seoul, KR';      const LAT= 37.57, LON= 126.98;
+    // const CITY='Singapore, SG';  const LAT=  1.35, LON= 103.82;
+    // const CITY='Sydney, AU';     const LAT=-33.87, LON= 151.21;
+    // const CITY='Tokyo, JP';      const LAT= 35.68, LON= 139.69;
+    // const CITY='Vienna, AT';     const LAT= 48.21, LON=  16.37;
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const WMO = {0:'sunny',1:'mostly clear',2:'partly cloudy',3:'overcast',
+                 45:'foggy',61:'light rain',63:'rain',65:'heavy rain',
+                 71:'light snow',73:'snow',80:'showers',95:'thunderstorm'};
+
+    document.getElementById('city').textContent = CITY.toUpperCase();
+
+    function clock() {
+      const n = new Date();
+      document.getElementById('clock').textContent =
+        [n.getUTCHours(),n.getUTCMinutes(),n.getUTCSeconds()]
+        .map(x=>String(x).padStart(2,'0')).join(':') + ' UTC';
+    }
+    setInterval(clock, 1000); clock();
+
+    async function load() {
+      const r = await fetch(
+        \`https://api.open-meteo.com/v1/forecast\` +
+        \`?latitude=\${LAT}&longitude=\${LON}\` +
+        \`&current=temperature_2m,weather_code\`);
+      const d = await r.json();
+      document.getElementById('temp').textContent =
+        Math.round(d.current.temperature_2m) + '°';
+      document.getElementById('icon').textContent =
+        WMO[d.current.weather_code] ?? '--';
+    }
+    load();
+    setInterval(load, 600000);
+  <\/script>
+</body>
+</html>`;
+
+    /* Scale sandbox iframe to fit the LCD area of the board photo */
+    const sandbox = document.getElementById('tpl-sandbox');
+    const sbBoard = document.querySelector('.sb-board-img');
+    const sbScr   = document.querySelector('.sandbox-screen');
+    function applySbScale() {
+      const w = sbBoard.offsetWidth || 500;
+      const s = (w * 0.718) / 480;
+      sandbox.style.transform = `scale(${s})`;
+      sbScr.style.height = `${Math.round(320 * s)}px`;
+    }
+    applySbScale();
+    sbBoard.addEventListener('load', applySbScale);
+    window.addEventListener('resize', applySbScale);
+
+    /* ── Page transition — fade-in on load, fade-out on navigation ─────── */
+    (function(){
+      if('startViewTransition' in document) return;  /* modern browsers handle it natively */
+      var html = document.documentElement;
+      html.style.cssText += 'opacity:0;transition:opacity .32s ease';
+      function fadeIn(){ requestAnimationFrame(function(){ html.style.opacity='1'; }); }
+      if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',fadeIn);
+      else fadeIn();
+      document.addEventListener('click',function(e){
+        var a=e.target.closest('a');
+        if(!a) return;
+        var href=a.getAttribute('href');
+        if(!href||href[0]==='#'||href.indexOf('mailto:')===0||a.target) return;
+        e.preventDefault();
+        html.style.opacity='0';
+        setTimeout(function(){ window.location.href=href; },320);
+      });
+    }());
+
+    /* ── Scroll reveal — spring physics entrance for cards ──────────────── */
+    (function(){
+      if(!('IntersectionObserver' in window)) return;
+      var els = document.querySelectorAll('.step-card,.use-card');
+      if(!els.length) return;
+      var io = new IntersectionObserver(function(entries){
+        var visible = entries.filter(function(e){ return e.isIntersecting; });
+        if(!visible.length) return;
+        visible.sort(function(a,b){
+          var ra=a.target.getBoundingClientRect(), rb=b.target.getBoundingClientRect();
+          return (ra.top-rb.top)||(ra.left-rb.left);
+        });
+        visible.forEach(function(entry,i){
+          entry.target.style.transitionDelay=(i*0.09)+'s';
+          entry.target.classList.add('in');
+          io.unobserve(entry.target);
+        });
+      },{threshold:0.1,rootMargin:'0px 0px -32px 0px'});
+      requestAnimationFrame(function(){
+        requestAnimationFrame(function(){
+          var vh=window.innerHeight;
+          els.forEach(function(el){
+            if(el.getBoundingClientRect().top > vh*0.1) el.classList.add('rev');
+            io.observe(el);
+          });
+        });
+      });
+    }());
+
+    /* ── Spotlight — radial glow follows cursor on cards ────────────────── */
+    (function(){
+      function init(){
+        document.querySelectorAll('.step-card,.use-card').forEach(function(c){
+          c.addEventListener('mousemove',function(e){
+            var r=c.getBoundingClientRect();
+            c.style.setProperty('--mx',(e.clientX-r.left)+'px');
+            c.style.setProperty('--my',(e.clientY-r.top)+'px');
+          });
+          c.addEventListener('mouseleave',function(){
+            c.style.setProperty('--mx','-999px');
+            c.style.setProperty('--my','-999px');
+          });
+        });
+      }
+      if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
+      else init();
+    }());
+
+    /* ── Flash modal — display picker, esp-web-tools, serial provisioning ── */
+    (function () {
+      'use strict';
+
+      let _fmTemplate    = null;  // template selected before opening modal
+      let _fmDisplay     = null;  // '480x320' | '320x240' | 'ili9486'
+      let _fmUUID        = null;  // UUID generated for this flash session
+      let _fmPinProfileId = null;
+      let _fmPinValues   = {};
+
+      const MANIFESTS = {
+        '480x320': '/firmware/v1/manifest-480x320.json',
+        '320x240': '/firmware/v1/manifest-320x240.json',
+        'ili9486': '/firmware/v1/manifest-ili9486-480x320.json',
+      };
+
+      // Display physical size map: used to report correct dimensions to the server.
+      const DISPLAY_SIZE = {
+        '480x320': [480, 320],
+        '320x240': [320, 240],
+        'ili9486': [480, 320],
+      };
+
+      // Pin profiles per display variant — same presets as the admin BurnModal.
+      // BL = -1 means backlight is hardwired to power; RST = -1 uses software reset.
+      const PIN_PROFILES = {
+        '480x320': [
+          { id: 'cyd-3248s035', name: 'CYD 3248S035', pins: { sclk:14,mosi:13,miso:12,dc:2, rst:-1,cs:15,bl:27 } },
+          { id: 'wt32-sc01',   name: 'WT32-SC01',     pins: { sclk:14,mosi:13,miso:-1,dc:21,rst:22,cs:15,bl:23 } },
+          { id: 'custom', name: 'Custom', pins: null },
+        ],
+        '320x240': [
+          { id: 'cyd-2432s028', name: 'CYD 2432S028', pins: { sclk:14,mosi:13,miso:12,dc:2,rst:-1,cs:15,bl:21 } },
+          { id: 'cyd-2432s024', name: 'CYD 2432S024', pins: { sclk:14,mosi:13,miso:12,dc:2,rst:-1,cs:15,bl:27 } },
+          { id: 'vspi-generic', name: 'Generic VSPI',  pins: { sclk:18,mosi:23,miso:19,dc:2,rst:4, cs:15,bl:-1 } },
+          { id: 'custom', name: 'Custom', pins: null },
+        ],
+        'ili9486': [
+          { id: 'owlos-aq', name: 'OWLOSAirQuality', pins: { sclk:18,mosi:23,miso:19,dc:2,rst:4,cs:15,bl:-1 } },
+          { id: 'custom', name: 'Custom', pins: null },
+        ],
+      };
+      const PIN_KEYS   = ['sclk','mosi','miso','dc','rst','cs','bl'];
+      const PIN_LABELS = ['SCLK','MOSI','MISO','DC','RST','CS','BL'];
+
+      // ── UUID helpers ───────────────────────────────────────────────────────
+
+      /** Generate an RFC-4122 v4 UUID. */
+      function generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+          const r = (Math.random() * 16) | 0;
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
+      }
+
+      /**
+       * Convert an RFC-4122 UUID string to the binary-layout GUID hex that
+       * C# Guid.ToByteArray() produces (Data1/2/3 little-endian, Data4 big-endian).
+       * The firmware receives these bytes as the VIEWOWL_TOKEN and sends them
+       * back verbatim in every UDP HELLO packet.
+       */
+      function uuidToGuidHex(uuid) {
+        const h  = uuid.replace(/-/g, '');
+        const d1 = h.slice(0, 8).match(/../g).reverse().join('');
+        const d2 = h.slice(8, 12).match(/../g).reverse().join('');
+        const d3 = h.slice(12, 16).match(/../g).reverse().join('');
+        const d4 = h.slice(16);
+        return d1 + d2 + d3 + d4;
+      }
+
+      // ── Modal lifecycle ────────────────────────────────────────────────────
+
+      function openFlashModal(tpl) {
+        _fmTemplate = tpl;
+        _fmDisplay  = null;
+        _fmUUID     = generateUUID();
+        // Reset display selection
+        document.querySelectorAll('.fm-display-card').forEach(c => c.classList.remove('selected'));
+        document.getElementById('fm-next-step1').disabled = true;
+        document.getElementById('fm-status').textContent  = '';
+
+        // Reset esp-web-install-button to idle state by clearing the manifest.
+        // Without this, a completed or failed flash session leaves the element
+        // in a "done/busy" state that hides the activate-slot button on re-open.
+        const espBtn = document.getElementById('esp-btn');
+        if (espBtn) espBtn.setAttribute('manifest', '');
+
+        // Reset the flash hint and the "Continue to WiFi" button appearance.
+        const flashHint = document.getElementById('fm-flash-hint');
+        if (flashHint) flashHint.textContent = 'Plug in USB cable, then click ▶ Flash to Device';
+        const afterFlashBtn = document.getElementById('fm-after-flash-btn');
+        if (afterFlashBtn) {
+          afterFlashBtn.style.background = 'rgba(77,208,225,0.12)';
+          afterFlashBtn.style.color      = 'var(--cyan)';
+          afterFlashBtn.style.border     = '1px solid rgba(77,208,225,0.35)';
+        }
+
+        document.getElementById('flash-modal').classList.add('open');
+        fmGoStep(1);
+      }
+
+      function closeFlashModal() {
+        document.getElementById('flash-modal').classList.remove('open');
+      }
+
+      function fmGoStep(n) {
+        document.querySelectorAll('.fm-panel').forEach(p => { p.style.display = 'none'; });
+        const panel = document.getElementById('fm-panel-' + n);
+        if (panel) panel.style.display = '';
+        document.querySelectorAll('.fm-step').forEach(s => {
+          const sn = parseInt(s.dataset.step, 10);
+          s.classList.toggle('active', sn === n);
+          s.classList.toggle('done',   sn < n);
+        });
+        // Always reset the provision button when entering step 3 so re-runs work.
+        if (n === 3) {
+          fmBuildPinUI();
+          const provBtn = document.getElementById('fm-provision-btn');
+          if (provBtn) provBtn.disabled = false;
+          const statusEl = document.getElementById('fm-status');
+          if (statusEl) statusEl.textContent = '';
+        }
+      }
+
+      // ── Step 1: Display selection ──────────────────────────────────────────
+
+      function fmSelectDisplay(size) {
+        _fmDisplay = size;
+        document.querySelectorAll('.fm-display-card').forEach(c =>
+          c.classList.toggle('selected', c.dataset.size === size));
+        // Update the esp-web-install-button manifest attribute
+        const espBtn = document.getElementById('esp-btn');
+        if (espBtn) espBtn.setAttribute('manifest', MANIFESTS[size] || '');
+        document.getElementById('fm-next-step1').disabled = false;
+        // Reset pin profile to the first preset for the chosen display
+        const first = (PIN_PROFILES[size] || [])[0];
+        if (first) {
+          _fmPinProfileId = first.id;
+          _fmPinValues = first.pins ? { ...first.pins } : {};
+        }
+      }
+
+      // ── Step 2: Flash — esp-web-tools event ────────────────────────────────
+
+      function onFlashFinished() {
+        document.getElementById('fm-flash-hint').textContent =
+          '✓ Firmware flashed successfully!';
+        // Upgrade the continue button to full green to signal completion
+        const btn = document.getElementById('fm-after-flash-btn');
+        if (btn) {
+          btn.style.background = 'linear-gradient(135deg,#00c49a 0%,#4dd0e1 100%)';
+          btn.style.color  = '#000';
+          btn.style.border = 'none';
+        }
+        // Auto-advance after 2 s
+        setTimeout(() => fmGoStep(3), 2000);
+      }
+
+      function onFlashError(errorMsg) {
+        document.getElementById('fm-flash-hint').textContent =
+          '✕ Flash failed: ' + (errorMsg || 'unknown error');
+      }
+
+      // ── Step 3: WiFi provisioning via Web Serial ────────────────────────────
+
+      async function fmProvision() {
+        const ssid   = (document.getElementById('fm-ssid').value || '').trim();
+        const pass   = document.getElementById('fm-pass').value || '';
+        const statusEl = document.getElementById('fm-status');
+        const btn    = document.getElementById('fm-provision-btn');
+
+        if (!ssid) {
+          statusEl.textContent = '✕ Enter your WiFi network name.';
+          return;
+        }
+        if (!('serial' in navigator)) {
+          statusEl.textContent = '✕ Web Serial not supported. Use Chrome or Edge.';
+          return;
+        }
+
+        btn.disabled = true;
+        statusEl.textContent = '◌ Opening serial port — select the COM port in the browser prompt…';
+
+        let port;
+        try {
+          port = await navigator.serial.requestPort();
+          await port.open({ baudRate: 115200 });
+        } catch (err) {
+          statusEl.textContent = '✕ Could not open serial port: ' + err.message;
+          btn.disabled = false;
+          return;
+        }
+
+        try {
+          const writer  = port.writable.getWriter();
+          const enc     = new TextEncoder();
+          const guidHex = uuidToGuidHex(_fmUUID);
+
+          // Brief pause — device is already booted and waiting for serial commands
+          await sleep(400);
+
+          // Send pin configuration first (best-effort: current firmware ignores unknown
+          // commands gracefully and continues; Phase 2 firmware will act on these).
+          for (const key of PIN_KEYS) {
+            await writer.write(enc.encode('VIEWOWL_PIN_' + key.toUpperCase() + ':' + (_fmPinValues[key] ?? -1) + '\n'));
+          }
+          await sleep(200);
+
+          // TOKEN must be sent BEFORE WiFi credentials — the firmware may reboot after
+          // receiving VIEWOWL_WIFI_PASS (to apply the new network config), and any command
+          // sent after that point is lost.  Sending TOKEN first guarantees it reaches NVS
+          // before the reboot window opens.
+          statusEl.textContent = '◌ Sending device token…';
+          await writer.write(enc.encode('VIEWOWL_TOKEN:' + guidHex + '\n'));
+          await sleep(300);
+
+          statusEl.textContent = '◌ Sending WiFi credentials…';
+          await writer.write(enc.encode('VIEWOWL_WIFI_SSID:' + ssid + '\n'));
+          await sleep(300);
+          await writer.write(enc.encode('VIEWOWL_WIFI_PASS:' + pass + '\n'));
+          await sleep(600);
+
+          writer.releaseLock();
+        } catch (err) {
+          try { await port.close(); } catch (_) { /* ignore */ }
+          statusEl.textContent = '✕ Serial write failed: ' + err.message;
+          btn.disabled = false;
+          return;
+        }
+
+        try { await port.close(); } catch (_) { /* ignore — device may have rebooted */ }
+
+        statusEl.textContent = '◌ Registering device on server…';
+
+        try {
+          const [w, h] = DISPLAY_SIZE[_fmDisplay] || [480, 320];
+          await fetch('/api/guest/device', {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body   : JSON.stringify({
+              guid         : _fmUUID,
+              templateName : _fmTemplate.name,
+              templateId   : _fmTemplate.id || null,
+              displayWidth : w,
+              displayHeight: h,
+            }),
+          });
+        } catch (_) {
+          // Non-fatal: GuestDeviceRefreshWorker will produce the .bin on next cycle
+        }
+
+        // Persist to localStorage so the device banner appears on next visit
+        try {
+          localStorage.setItem('vo_device', JSON.stringify({
+            uuid        : _fmUUID,
+            templateName: _fmTemplate.name,
+            label       : _fmTemplate.label,
+            cls         : _fmTemplate.cls,
+            size        : _fmDisplay,
+          }));
+        } catch (_) { /* private browsing or quota exceeded */ }
+
+        // Show done step and update banner
+        const doneEl = document.getElementById('fm-done-template');
+        if (doneEl) doneEl.textContent = _fmTemplate.label;
+        fmGoStep(4);
+        showDeviceBanner();
+        updatePushBtn();
+      }
+
+      // ── Device banner ──────────────────────────────────────────────────────
+
+      /**
+       * Show (or refresh) the "Your device" banner above the gallery.
+       * Reads from localStorage. Also pre-selects the last template in the gallery.
+       */
+      function showDeviceBanner() {
+        let saved;
+        try { saved = localStorage.getItem('vo_device'); } catch (_) { return; }
+        if (!saved) return;
+
+        let dev;
+        try { dev = JSON.parse(saved); } catch (_) { return; }
+
+        const banner = document.getElementById('vo-device-banner');
+        if (!banner) return;
+
+        banner.querySelector('.vodb-tpl').textContent  = dev.templateName || '';
+        banner.querySelector('.vodb-size').textContent = dev.size   || '';
+        banner.style.display = 'flex';
+
+        // Pre-select the template in the gallery
+        const all = window._voGalleryAll;
+        if (all) {
+          const tpl = all.find(t => t.name === dev.templateName);
+          if (tpl && typeof window._voSelectTemplate === 'function') {
+            window._voSelectTemplate(tpl);
+          }
+        }
+
+        updatePushBtn();
+      }
+
+      function voForgetDevice() {
+        try { localStorage.removeItem('vo_device'); } catch (_) { /* ignore */ }
+        const banner = document.getElementById('vo-device-banner');
+        if (banner) banner.style.display = 'none';
+        updatePushBtn();
+      }
+
+      function voReflash() {
+        let dev;
+        try { dev = JSON.parse(localStorage.getItem('vo_device') || 'null'); } catch (_) { dev = null; }
+        const all = window._voGalleryAll || [];
+        const tpl = dev
+          ? (all.find(t => t.id === dev.templateId) || all.find(t => t.name === dev.templateName) || null)
+          : null;
+        openFlashModal(tpl || { id: dev && dev.templateId, name: dev && dev.templateName, cls: dev && dev.cls });
+      }
+
+      // ── Pin UI ─────────────────────────────────────────────────────────────
+
+      function fmBuildPinUI() {
+        const profiles = PIN_PROFILES[_fmDisplay] || [];
+        const profRow  = document.getElementById('fm-pin-profiles');
+        const grid     = document.getElementById('fm-pin-grid');
+        if (!profRow || !grid) return;
+
+        // Profile buttons
+        profRow.innerHTML = '';
+        profiles.forEach(function(p) {
+          const btn = document.createElement('button');
+          btn.className = 'fm-pin-profile-btn' + (_fmPinProfileId === p.id ? ' selected' : '');
+          btn.textContent = p.name;
+          btn.onclick = function() { fmSelectPinProfile(p.id); };
+          profRow.appendChild(btn);
+        });
+
+        // Pin value cells
+        grid.innerHTML = '';
+        PIN_KEYS.forEach(function(key, i) {
+          const cell = document.createElement('div');
+          cell.className = 'fm-pin-cell';
+          const lbl = document.createElement('span');
+          lbl.className = 'fm-pin-label';
+          lbl.textContent = PIN_LABELS[i];
+          const inp = document.createElement('input');
+          inp.className = 'fm-pin-input';
+          inp.type = 'number';
+          inp.min = '-1';
+          inp.max = '39';
+          inp.value = (_fmPinValues[key] !== undefined) ? _fmPinValues[key] : -1;
+          inp.oninput = (function(k) { return function() { fmPinChange(k, this.value); }; }(key));
+          cell.appendChild(lbl);
+          cell.appendChild(inp);
+          grid.appendChild(cell);
+        });
+      }
+
+      function fmSelectPinProfile(id) {
+        _fmPinProfileId = id;
+        const profile = (PIN_PROFILES[_fmDisplay] || []).find(function(p) { return p.id === id; });
+        if (profile && profile.pins) _fmPinValues = Object.assign({}, profile.pins);
+        fmBuildPinUI();
+      }
+
+      function fmPinChange(key, raw) {
+        const val = parseInt(raw, 10);
+        _fmPinProfileId = 'custom';
+        if (!isNaN(val)) _fmPinValues[key] = val;
+      }
+
+      // ── Utility ────────────────────────────────────────────────────────────
+
+      function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+      // ── Global exports ─────────────────────────────────────────────────────
+
+      window.openFlashModal    = openFlashModal;
+      window.closeFlashModal   = closeFlashModal;
+      window.fmSelectDisplay   = fmSelectDisplay;
+      window.fmGoStep          = fmGoStep;
+      window.fmProvision       = fmProvision;
+      window.fmSelectPinProfile = fmSelectPinProfile;
+      window.fmPinChange       = fmPinChange;
+      window.voForgetDevice    = voForgetDevice;
+      window.voReflash         = voReflash;
+
+      // ── Initialisation ─────────────────────────────────────────────────────
+
+      document.addEventListener('DOMContentLoaded', function () {
+        // Modal close on backdrop click / Escape key
+        const overlay = document.getElementById('flash-modal');
+        overlay.addEventListener('click', function (e) {
+          if (e.target === e.currentTarget) closeFlashModal();
+        });
+        document.getElementById('flash-modal-close')
+                .addEventListener('click', closeFlashModal);
+
+        // esp-web-tools state-changed — fires when install completes or errors
+        // Use a short delay to allow the custom element to be defined first
+        setTimeout(function () {
+          const espBtn = document.getElementById('esp-btn');
+          if (!espBtn) return;
+          espBtn.addEventListener('state-changed', function (e) {
+            const raw   = (e.detail && e.detail.state) || '';
+            const state = raw.toLowerCase();
+            if (state === 'finished') {
+              onFlashFinished();
+            } else if (state === 'error') {
+              onFlashError(e.detail && e.detail.message);
+            } else if (state === 'initializing' || state === 'preparing' || state === 'flashing') {
+              document.getElementById('fm-flash-hint').textContent =
+                '⏳ ' + state + '…';
+            }
+          });
+        }, 800);
+
+        // Show device banner if returning user
+        // Defer slightly so window._voSelectTemplate is exposed by coverflow IIFE
+        setTimeout(showDeviceBanner, 0);
+      });
+
+    }());
+
+  </script>
+  <!-- Beta / development preview banner (dismissed state stored in localStorage) -->
+  <script src="js/beta-banner.js"></script>
+
+  <!-- Hidden iframe used by the browser-side push loop to render templates.
+       opacity:0 keeps Chrome's requestAnimationFrame running at full rate so
+       canvas animations reach their live state before the first grab fires.
+       allow-same-origin is required so the push loop can read contentDocument
+       and capture the template canvas via getImageData.
+       The "sandbox escape" DevTools warning is expected and intentional:
+       the iframe only ever loads content from our own origin (/SiteTemplate). -->
+  <iframe id="push-iframe"
+          sandbox="allow-scripts allow-same-origin"
+          style="position:fixed;left:0;top:0;width:480px;height:320px;border:none;opacity:0;pointer-events:none;z-index:-9999;"
+          title="push-worker"></iframe>
+</body>
+</html>

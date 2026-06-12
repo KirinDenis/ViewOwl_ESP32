@@ -1,0 +1,244 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Promo Display</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; width: 480px; height: 320px; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body id="body"
+      data-vow-name="Promo"
+      data-vow-category="ambient"
+      data-vow-description="Rotating promotional / advertising display board">
+  <canvas id="screen" width="480" height="320"></canvas>
+  <script>
+    'use strict';
+    const canvas = document.getElementById('screen');
+    const ctx    = canvas.getContext('2d', { alpha: false });
+    const W = 480, H = 320;
+
+    /* ── Slides ───────────────────────────────────────────────────────── */
+    const SLIDES = [
+      {
+        bg:    ['#0b0030', '#350080', '#7000c0'],
+        tag:   '✈  TRAVEL DEALS',
+        city:  'BARCELONA',
+        sub:   'FCO → BCN  from  €49',
+        info:  ['WIZZ AIR · RYANAIR · VUELING', 'EVERY DAY · NON-STOP', 'BOOK ONLINE TODAY'],
+        accent: '#ff44cc',
+        pill:   '#ff44cc',
+        pillTx: '#ffffff',
+        pillLb: 'FROM €49',
+      },
+      {
+        bg:    ['#001830', '#003060', '#006888'],
+        tag:   '🌤  WEATHER TODAY',
+        city:  'LOADING...',
+        sub:   'OPEN-METEO LIVE DATA',
+        info:  ['TEMPERATURE', 'WIND', 'HUMIDITY'],
+        vals:  null,                          // filled by fetchWx()
+        accent: '#00d4ff',
+        pill:   '#00aacc',
+        pillTx: '#ffffff',
+        pillLb: 'LIVE',
+        isWx:   true,
+      },
+      {
+        bg:    ['#001800', '#004000', '#008030'],
+        tag:   '💹  MARKETS LIVE',
+        city:  'EUR EXCHANGE',
+        sub:   'FRANKFURTER.APP · NO ADS · FREE',
+        info:  ['EUR/USD', 'EUR/GBP', 'EUR/CHF'],
+        vals:  ['1.0856', '0.8587', '0.9382'],
+        accent: '#44ff88',
+        pill:   '#009944',
+        pillTx: '#ffffff',
+        pillLb: 'LIVE RATES',
+        isFx:   true,
+      },
+      {
+        bg:    ['#200018', '#600018', '#c00030'],
+        tag:   '🚄  TRAIN DEALS',
+        city:  'WIEN → PARIS',
+        sub:   'EC 163 · 11H 30M · FROM €29',
+        info:  ['NIGHTJET · INTERCITY · TGV', 'RAILJET · EURAIL ACCEPTED', 'DOOR-TO-DOOR TRAVEL'],
+        accent: '#ff6688',
+        pill:   '#cc0022',
+        pillTx: '#ffffff',
+        pillLb: 'FROM €29',
+      },
+    ];
+
+    let slide = 0;
+    let slideT = 0;
+    const SLIDE_DUR = 7000;       // ms per slide
+    let transition = 0;           // 0..1
+    let transDir   = 1;
+
+    /* ── Weather & FX data ───────────────────────────────────────────── */
+    async function fetchWx() {
+      try {
+        const r = await fetch(
+          'https://api.open-meteo.com/v1/forecast'
+          + '?latitude=48.8566&longitude=2.3522'
+          + '&current=temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m'
+          + '&timezone=Europe%2FParis'
+        );
+        if (!r.ok) return;
+        const d = await r.json();
+        const c = d.current;
+        const WMO = {0:'CLEAR SKY',1:'MAINLY CLEAR',2:'PARTLY CLOUDY',3:'OVERCAST',
+          51:'DRIZZLE',61:'RAIN',71:'SNOW',80:'SHOWERS',95:'THUNDERSTORM'};
+        const cond = WMO[c.weather_code] ?? WMO[Math.floor(c.weather_code/10)*10] ?? 'CLOUDY';
+        const wxSlide = SLIDES.find(s => s.isWx);
+        if (wxSlide) {
+          wxSlide.city = `PARIS  ${Math.round(c.temperature_2m)}°C`;
+          wxSlide.sub  = cond;
+          wxSlide.info = [`WIND ${Math.round(c.wind_speed_10m)} KM/H`, `HUMIDITY ${c.relative_humidity_2m}%`, 'OPEN-METEO · FREE & GDPR'];
+        }
+      } catch (_) {}
+    }
+
+    async function fetchFX() {
+      try {
+        const r = await fetch('https://api.frankfurter.app/latest?from=EUR');
+        if (!r.ok) return;
+        const d = await r.json();
+        const fxSlide = SLIDES.find(s => s.isFx);
+        if (fxSlide && d.rates) {
+          fxSlide.vals = [
+            d.rates.USD?.toFixed(4) ?? '—',
+            d.rates.GBP?.toFixed(4) ?? '—',
+            d.rates.CHF?.toFixed(4) ?? '—',
+          ];
+        }
+      } catch (_) {}
+    }
+
+    /* ── Helpers ─────────────────────────────────────────────────────── */
+    function font(sz, bold, family) {
+      ctx.font = `${bold ? 'bold ' : ''}${sz}px ${family ?? '"Arial","Helvetica",sans-serif'}`;
+    }
+
+    function drawSlide(s, alpha) {
+      ctx.globalAlpha = alpha;
+
+      /* Background gradient */
+      const grd = ctx.createLinearGradient(0, 0, W, H);
+      grd.addColorStop(0,   s.bg[0]);
+      grd.addColorStop(0.5, s.bg[1]);
+      grd.addColorStop(1,   s.bg[2]);
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, W, H);
+
+      /* Decorative arc */
+      ctx.save();
+      ctx.globalAlpha = 0.18 * alpha;
+      ctx.beginPath();
+      ctx.arc(W - 60, H / 2, 200, 0, Math.PI * 2);
+      ctx.fillStyle = s.accent;
+      ctx.fill();
+      ctx.restore();
+
+      /* Tag line */
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = s.accent + 'cc';
+      font(10, true);
+      ctx.fillText(s.tag, 18, 26);
+
+      /* Horizontal rule */
+      ctx.fillStyle = s.accent + '44';
+      ctx.fillRect(18, 31, 250, 1);
+
+      /* City / main text */
+      ctx.fillStyle = '#ffffff';
+      font(36, true);
+      ctx.fillText(s.city, 18, 86);
+
+      /* Sub-title */
+      ctx.fillStyle = 'rgba(255,255,255,0.65)';
+      font(13, false);
+      ctx.fillText(s.sub, 18, 110);
+
+      /* Info lines */
+      s.info.forEach((line, i) => {
+        const hasVals = s.vals && s.vals[i] !== undefined;
+        ctx.fillStyle = hasVals ? s.accent : 'rgba(255,255,255,0.55)';
+        font(11, hasVals);
+        ctx.fillText(line, 18, 148 + i * 22);
+        if (hasVals) {
+          ctx.fillStyle = '#ffffff';
+          font(11, true);
+          ctx.fillText(s.vals[i], 200, 148 + i * 22);
+        }
+      });
+
+      /* Pill badge */
+      const pillW = 110, pillH = 30, pillX = 18, pillY = H - 58;
+      ctx.fillStyle = s.pill;
+      ctx.fillRect(pillX, pillY, pillW, pillH);
+      ctx.fillStyle = s.pillTx;
+      font(11, true);
+      ctx.textAlign = 'center';
+      ctx.fillText(s.pillLb, pillX + pillW / 2, pillY + 20);
+      ctx.textAlign = 'left';
+
+      /* Progress dots */
+      SLIDES.forEach((_, i) => {
+        const dotX = 18 + i * 16;
+        const dotY = H - 14;
+        ctx.fillStyle = i === slide ? s.accent : 'rgba(255,255,255,0.25)';
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, i === slide ? 4 : 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      /* Clock */
+      const now = new Date();
+      const hh  = String(now.getHours()).padStart(2,'0');
+      const mm  = String(now.getMinutes()).padStart(2,'0');
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      font(10, false, '"Courier New",monospace');
+      ctx.textAlign = 'right';
+      ctx.fillText(`${hh}:${mm}`, W - 12, H - 10);
+      ctx.textAlign = 'left';
+
+      ctx.globalAlpha = 1;
+    }
+
+    /* ── Render ──────────────────────────────────────────────────────── */
+    function render(ts) {
+      const elapsed = ts - slideT;
+      if (elapsed > SLIDE_DUR) {
+        slide   = (slide + 1) % SLIDES.length;
+        slideT  = ts;
+      }
+
+      const t = Math.min(elapsed / 400, 1);   // fade-in 400ms
+      const prev = (slide - 1 + SLIDES.length) % SLIDES.length;
+
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+
+      if (t < 1) {
+        drawSlide(SLIDES[prev], 1 - t);
+      }
+      drawSlide(SLIDES[slide], t);
+    }
+
+    function loop(ts) {
+      render(ts);
+      requestAnimationFrame(loop);
+    }
+
+    fetchWx();
+    fetchFX();
+    setInterval(fetchWx, 600_000);
+    setInterval(fetchFX, 600_000);
+    requestAnimationFrame(ts => { slideT = ts; requestAnimationFrame(loop); });
+  </script>
+</body>
+</html>

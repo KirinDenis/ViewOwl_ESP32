@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Denys Kirin
+Copyright (c) 2025–2026 Denys Kirin and ViewOwl contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+The core system concept (browser-rendered content delivery to resource-constrained
+devices via a server-side format broker) is dedicated to the public domain via
+defensive publication:
+
+DOI: 10.5281/zenodo.20325797
+URL: https://zenodo.org/records/20325797

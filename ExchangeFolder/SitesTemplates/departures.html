@@ -1,0 +1,177 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Departures — VIE</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #060a10; width: 480px; height: 320px; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body id="body"
+      data-vow-name="Departures"
+      data-vow-category="transport"
+      data-vow-description="Vienna VIE airport departure board with real-time status">
+  <canvas id="screen" width="480" height="320"></canvas>
+  <script>
+    'use strict';
+    const canvas = document.getElementById('screen');
+    const ctx    = canvas.getContext('2d', { alpha: false });
+    const W = 480, H = 320;
+
+    /* ── Palette ─────────────────────────────────────────────────────── */
+    const BG    = '#060a10';
+    const BG2   = '#0a1220';
+    const HDR   = '#e07800';
+    const HTXT  = '#1c0800';
+    const CHDR  = '#553800';
+    const AMB   = '#e08820';
+    const DIM   = '#334455';
+    const WHITE = '#dde4ee';
+    const CYAN  = '#00c8e8';
+    const GREEN = '#00cc44';
+    const RED   = '#ff2040';
+    const YELL  = '#ffd000';
+    const BLUE  = '#2299ff';
+    const ORA   = '#ff5520';
+    const GREY  = '#3a4a58';
+
+    /* ── Static schedule (offsets from now in minutes) ───────────────── */
+    const RAW = [
+      { flight: 'OS  271', dest: 'LONDON      LHR', gate: 'B22', delay:  0 },
+      { flight: 'LH 1234', dest: 'FRANKFURT   FRA', gate: 'A11', delay:  0 },
+      { flight: 'EK  129', dest: 'DUBAI       DXB', gate: 'C31', delay:  0 },
+      { flight: 'TK 1786', dest: 'ISTANBUL    IST', gate: 'B15', delay: 25 },
+      { flight: 'KL 1876', dest: 'AMSTERDAM   AMS', gate: 'A08', delay:  0 },
+      { flight: 'U2 3456', dest: 'MANCHESTER  MAN', gate: 'B31', delay:  0 },
+      { flight: 'W6  456', dest: 'BARCELONA   BCN', gate: 'D12', delay:  0 },
+      { flight: 'FR 9876', dest: 'ROME        FCO', gate: 'B44', delay: 15 },
+      { flight: 'QR  187', dest: 'DOHA        DOH', gate: 'C22', delay:  0 },
+      { flight: 'LX 1678', dest: 'ZURICH      ZRH', gate: 'A03', delay:  0 },
+    ];
+    const OFFS = [-52, -28, -8, 12, 28, 48, 68, 95, 120, 145];
+
+    let sched = [];
+    let scanY = 36;
+
+    function buildSched() {
+      const now = Date.now();
+      sched = RAW.map((f, i) => {
+        const dep  = now + (OFFS[i] + f.delay) * 60_000;
+        const mins = (dep - now) / 60_000;
+        let status, sc;
+        if      (mins < -3)  { status = 'DEPARTED '; sc = GREY; }
+        else if (mins <  3)  { status = 'LAST CALL'; sc = RED;  }
+        else if (mins < 20)  { status = 'BOARDING '; sc = YELL; }
+        else if (mins < 45)  { status = 'GATE OPEN'; sc = BLUE; }
+        else if (f.delay > 0){ status = `DLY+${f.delay}m  `; sc = ORA; }
+        else                 { status = 'ON TIME  '; sc = GREEN;}
+        const d  = new Date(dep);
+        const hh = String(d.getHours()).padStart(2,'0');
+        const mm = String(d.getMinutes()).padStart(2,'0');
+        return { ...f, time: `${hh}:${mm}`, status, sc, dep };
+      }).sort((a, b) => a.dep - b.dep);
+    }
+
+    /* ── Helpers ─────────────────────────────────────────────────────── */
+    function px(size, bold) {
+      ctx.font = `${bold ? 'bold ' : ''}${size}px "Courier New",monospace`;
+    }
+
+    function badge(text, color, x, y, w, h) {
+      ctx.fillStyle = color + '28';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.fillStyle   = color;
+      ctx.textAlign   = 'center';
+      px(8, true);
+      ctx.fillText(text.trim(), x + w / 2, y + h - 4);
+      ctx.textAlign   = 'left';
+    }
+
+    /* ── Render ──────────────────────────────────────────────────────── */
+    function render() {
+      ctx.fillStyle = BG;
+      ctx.fillRect(0, 0, W, H);
+
+      /* Header */
+      ctx.fillStyle = HDR;
+      ctx.fillRect(0, 0, W, 22);
+      ctx.fillStyle = HTXT;
+      px(12, true);
+      ctx.fillText('◈ VIENNA VIE  DEPARTURES', 8, 15);
+      const now = new Date();
+      const ts  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+      px(10, false);
+      ctx.fillText(ts, 374, 15);
+
+      /* Column labels */
+      ctx.fillStyle = CHDR;
+      ctx.fillRect(0, 22, W, 13);
+      ctx.fillStyle = AMB;
+      px(8, false);
+      ctx.fillText('TIME  FLIGHT    DESTINATION           STATUS     GATE', 6, 32);
+
+      /* Flight rows */
+      sched.slice(0, 8).forEach((row, i) => {
+        const y  = 35 + i * 36;
+        ctx.fillStyle = (i & 1) ? BG2 : BG;
+        ctx.fillRect(0, y, W, 35);
+        ctx.fillStyle = DIM;
+        ctx.fillRect(0, y + 34, W, 1);
+
+        /* Time */
+        ctx.fillStyle = AMB;
+        px(12, true);
+        ctx.fillText(row.time, 6, y + 14);
+
+        /* Flight */
+        ctx.fillStyle = WHITE;
+        px(10, false);
+        ctx.fillText(row.flight, 58, y + 14);
+
+        /* Destination */
+        px(10, false);
+        ctx.fillText(row.dest, 128, y + 14);
+
+        /* Status badge */
+        badge(row.status, row.sc, 292, y + 5, 82, 16);
+
+        /* Gate */
+        ctx.fillStyle = CYAN;
+        px(11, true);
+        ctx.fillText(row.gate, 392, y + 14);
+
+        /* Delay sub-line */
+        if (row.delay > 0 && row.sc !== GREY && row.sc !== RED) {
+          ctx.fillStyle = ORA;
+          px(8, false);
+          ctx.fillText(`DELAY +${row.delay} MIN`, 58, y + 28);
+        }
+      });
+
+      /* Scan-line sweep */
+      ctx.fillStyle = 'rgba(255,160,0,0.05)';
+      ctx.fillRect(0, scanY, W, 2);
+      scanY = (scanY - 35 + 2) % (H - 35) + 35;
+
+      /* Bottom rule */
+      ctx.fillStyle = HDR + '60';
+      ctx.fillRect(0, H - 1, W, 1);
+    }
+
+    let last = 0;
+    function loop(ts) {
+      if (ts - last > 30_000) { buildSched(); last = ts; }
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    buildSched();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

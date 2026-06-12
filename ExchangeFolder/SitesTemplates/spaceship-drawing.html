@@ -1,0 +1,312 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body
+  data-vow-class="C"
+  data-vow-name="Nostromo Boot Sequence"
+  data-vow-description="USCSS Nostromo wireframe schematic drawn line by line with 3D camera rotation from bow to top view — Alien 1979 phosphor CRT terminal"
+  data-vow-category="scifi"
+  data-vow-tags="alien,nostromo,wireframe,3d,crt,scifi,boot,uscss,weyland-yutani"
+  data-vow-frames="12"
+  data-vow-fps="3"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+
+const canvas = document.getElementById('c');
+canvas.width  = W;
+canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+
+const FRAMES     = 12;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+let   N = ((parseInt(frameParam ?? '0', 10) % FRAMES) + FRAMES) % FRAMES;
+
+/* ── Nostromo 3D wireframe geometry ──────────────────────────────────────── *
+ * Coordinates: X = right, Y = up, Z = aft (+).                              *
+ * Ship lies in the XZ plane (Y ≈ 0). Front of ship is at Z = -130.         *
+ * Top-down view = looking along -Y axis.                                    */
+const V = [
+  /* 0  */ [   0,  0, -130],   // nose tip
+  /* 1  */ [ -12,  2, -100],   // fwd-left neck
+  /* 2  */ [  12,  2, -100],   // fwd-right neck
+  /* 3  */ [ -38,  4,  -60],   // fwd-left body
+  /* 4  */ [  38,  4,  -60],   // fwd-right body
+  /* 5  */ [ -56,  2,  -10],   // mid-left (widest point)
+  /* 6  */ [  56,  2,  -10],   // mid-right (widest point)
+  /* 7  */ [ -82,  4,   22],   // left wing tip
+  /* 8  */ [  82,  4,   22],   // right wing tip
+  /* 9  */ [ -46,  2,   58],   // aft-left body
+  /* 10 */ [  46,  2,   58],   // aft-right body
+  /* 11 */ [ -26,  0,   88],   // aft-left narrow
+  /* 12 */ [  26,  0,   88],   // aft-right narrow
+  /* 13 */ [   0, -2,  108],   // aft centre tip
+  /* 14 */ [ -82,  0,   50],   // left engine pod — forward
+  /* 15 */ [  82,  0,   50],   // right engine pod — forward
+  /* 16 */ [ -82,  0,   78],   // left engine pod — aft
+  /* 17 */ [  82,  0,   78],   // right engine pod — aft
+  /* 18 */ [ -26, -2,  118],   // left exhaust nozzle
+  /* 19 */ [  26, -2,  118],   // right exhaust nozzle
+  /* 20 */ [   0, -2,  118],   // centre exhaust
+  /* 21 */ [ -38,  2,  -30],   // inner fwd-left rib
+  /* 22 */ [  38,  2,  -30],   // inner fwd-right rib
+  /* 23 */ [ -56,  2,   28],   // inner mid-left rib
+  /* 24 */ [  56,  2,   28],   // inner mid-right rib
+];
+
+/* Edges ordered so the outer silhouette is drawn first, internal ribs last.
+   Progressive reveal looks most natural with this ordering.                 */
+const E = [
+  /* hull silhouette */
+  [0,1],[0,2],[1,3],[2,4],[3,5],[4,6],[5,7],[6,8],
+  [7,9],[8,10],[9,11],[10,12],[11,13],[12,13],
+  /* cross-section braces */
+  [1,2],[3,4],[5,6],[9,10],[11,12],
+  /* engine pod frames */
+  [5,14],[6,15],[14,16],[15,17],[7,14],[8,15],[9,16],[10,17],
+  /* exhaust nozzles */
+  [11,18],[12,19],[18,20],[19,20],[18,13],[19,13],
+  /* internal structural ribs */
+  [21,22],[3,21],[4,22],[21,23],[22,24],[23,24],[5,23],[6,24],
+]; /* E.length = 41 */
+
+/* ── Per-frame animation parameters ─────────────────────────────────────── *
+ * pitch: X-axis camera tilt — 0 = top-down view, π/2 = pure side view.     *
+ * lines: how many edges of E[] are visible on this frame.                   */
+const PARAMS = [
+  { pitch: 1.35, lines:  3, text: 'INIT...'           },
+  { pitch: 1.20, lines:  7, text: 'SCAN 17%'          },
+  { pitch: 1.05, lines: 11, text: 'SCAN 27%'          },
+  { pitch: 0.90, lines: 15, text: 'STRUCT 37%'        },
+  { pitch: 0.75, lines: 19, text: 'STRUCT 46%'        },
+  { pitch: 0.60, lines: 23, text: 'VERIFY 56%'        },
+  { pitch: 0.45, lines: 27, text: 'VERIFY 66%'        },
+  { pitch: 0.30, lines: 31, text: 'RENDER 76%'        },
+  { pitch: 0.18, lines: 35, text: 'RENDER 85%'        },
+  { pitch: 0.10, lines: 38, text: 'COMPLETE 93%'      },
+  { pitch: 0.04, lines: 41, text: 'SCHEMATIC OK'      },
+  { pitch: 0.02, lines: 41, text: 'SCHEMATICS LOADED' },
+];
+
+/* ── 3D → 2D projection ──────────────────────────────────────────────────── */
+function project(v, pitch, yaw) {
+  const [x, y, z] = v;
+  /* Rotate around Y axis (static yaw — adds depth without spinning) */
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const x1 =  x * cy + z * sy;
+  const z1 = -x * sy + z * cy;
+  /* Rotate around X axis (pitch — controls camera elevation) */
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const y2 = y * cp - z1 * sp;
+  const z2 = y * sp + z1 * cp;
+  /* Perspective divide */
+  const fov = 480;
+  const d   = fov / (fov + z2 + 260);
+  return [VW / 2 + x1 * d * 0.93, VH / 2 + y2 * d * 0.93];
+}
+
+/* ── CRT monitor bezel (octagonal) ──────────────────────────────────────── */
+function drawCrtFrame(alpha) {
+  const cx = VW / 2, cy = VH / 2 + 4;
+  const rx = 226, ry = 142, cut = 20;
+
+  function octoPath(inset) {
+    ctx.beginPath();
+    ctx.moveTo(cx - rx + cut + inset, cy - ry + inset);
+    ctx.lineTo(cx + rx - cut - inset, cy - ry + inset);
+    ctx.lineTo(cx + rx - inset,       cy - ry + cut + inset);
+    ctx.lineTo(cx + rx - inset,       cy + ry - cut - inset);
+    ctx.lineTo(cx + rx - cut - inset, cy + ry - inset);
+    ctx.lineTo(cx - rx + cut + inset, cy + ry - inset);
+    ctx.lineTo(cx - rx + inset,       cy + ry - cut - inset);
+    ctx.lineTo(cx - rx + inset,       cy - ry + cut + inset);
+    ctx.closePath();
+  }
+
+  ctx.globalAlpha = alpha;
+  /* outer glow */
+  octoPath(-3);
+  ctx.strokeStyle = 'rgba(80,200,95,0.22)';
+  ctx.lineWidth = 7;
+  ctx.stroke();
+  /* primary bezel */
+  octoPath(0);
+  ctx.strokeStyle = 'rgba(95,224,112,0.52)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  /* inner hairline */
+  octoPath(5);
+  ctx.strokeStyle = 'rgba(95,224,112,0.20)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+/* ── CRT overlay effects ─────────────────────────────────────────────────── */
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.26)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2, VH/2, VH * 0.28, VW/2, VH/2, VH * 0.80);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.88)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, VW, VH);
+}
+
+function addGrain() {
+  /* Phosphor noise — operates in actual device pixel space (W×H) */
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d   = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const g = ((Math.random() * 30) - 11) | 0;
+    d[i]   = Math.max(0, Math.min(255, d[i]   + g));
+    d[i+1] = Math.max(0, Math.min(255, d[i+1] + g));
+    d[i+2] = Math.max(0, Math.min(255, d[i+2] + g));
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/* ── Render one frame ────────────────────────────────────────────────────── */
+function render() {
+  const p   = PARAMS[Math.min(N, PARAMS.length - 1)];
+  const yaw = -0.07;  /* constant slight yaw — ship reads as 3-D even at top view */
+
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+
+  /* Deep phosphor-green background */
+  ctx.fillStyle = '#020b05';
+  ctx.fillRect(0, 0, VW, VH);
+
+  /* Subtle alignment grid */
+  ctx.strokeStyle = 'rgba(26,78,34,0.11)';
+  ctx.lineWidth   = 0.5;
+  for (let x = 0; x <= VW; x += 24) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, VH); ctx.stroke();
+  }
+  for (let y = 0; y <= VH; y += 24) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VW, y); ctx.stroke();
+  }
+
+  /* CRT bezel fades in during second half of the sequence */
+  if (N >= 7) drawCrtFrame(Math.min(1, (N - 7) / 3));
+
+  /* Early-boot scattered vertex dots — before the edge structure forms */
+  if (N <= 2) {
+    const visible = Math.min(V.length, (N + 1) * 9);
+    for (let i = 0; i < visible; i++) {
+      const [px, py] = project(V[i], p.pitch, yaw);
+      ctx.fillStyle = 'rgba(140,255,155,0.62)';
+      ctx.fillRect(px - 1, py - 1, 2, 2);
+    }
+  }
+
+  /* Wireframe edges — progressive reveal, oldest first */
+  const count = Math.min(p.lines, E.length);
+  for (let i = 0; i < count; i++) {
+    const [a, b] = E[i];
+    const [ax, ay] = project(V[a], p.pitch, yaw);
+    const [bx, by] = project(V[b], p.pitch, yaw);
+    const isActive = (i === count - 1);  /* currently-being-scanned edge */
+
+    /* Phosphor glow halo */
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.strokeStyle = isActive
+      ? 'rgba(160,255,170,0.28)'
+      : 'rgba(80,200,95,0.13)';
+    ctx.lineWidth = isActive ? 5.5 : 3.5;
+    ctx.stroke();
+
+    /* Core emission line */
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.strokeStyle = isActive
+      ? 'rgba(210,255,215,0.96)'
+      : 'rgba(95,224,112,0.82)';
+    ctx.lineWidth = isActive ? 1.6 : 1.1;
+    ctx.stroke();
+
+    /* Bright scanning-tip cursor on the active edge */
+    if (isActive) {
+      ctx.fillStyle = '#e8ffe0';
+      ctx.fillRect(bx - 2, by - 2, 4, 4);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(bx - 1, by - 1, 2, 2);
+    }
+  }
+
+  /* ── HUD chrome ──────────────────────────────────────────────────────── */
+  ctx.fillStyle = 'rgba(2,11,5,0.90)';
+  ctx.fillRect(0, 0, VW, 20);
+  ctx.strokeStyle = 'rgba(95,224,112,0.30)';
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(0, 0, VW, 20);
+
+  ctx.font = 'bold 10px "Courier New", monospace';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(95,224,112,0.90)';
+  ctx.textAlign = 'left';
+  ctx.fillText('USCSS NOSTROMO  SCHEMATIC DATALOAD', 8, 10);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(95,224,112,0.55)';
+  ctx.fillText('MU/TH-755', VW - 8, 10);
+
+  ctx.fillStyle = 'rgba(2,11,5,0.90)';
+  ctx.fillRect(0, VH - 20, VW, 20);
+  ctx.strokeStyle = 'rgba(95,224,112,0.30)';
+  ctx.strokeRect(0, VH - 20, VW, 20);
+
+  ctx.fillStyle = 'rgba(95,224,112,0.55)';
+  ctx.textAlign = 'left';
+  ctx.fillText('WEYLAND-YUTANI CORP  BUILD 0.91.121.0', 8, VH - 10);
+
+  const pct    = Math.round((count / E.length) * 100);
+  const filled = Math.floor(pct / 10);
+  const bar    = '█'.repeat(filled) + '░'.repeat(10 - filled);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = N >= 10 ? 'rgba(160,255,170,0.95)' : 'rgba(95,224,112,0.90)';
+  ctx.fillText(p.text + '  ' + bar, VW - 8, VH - 10);
+
+  drawScanlines();
+  drawVignette();
+  addGrain();
+}
+
+render();
+
+/* ── Dev preview — browser only, no vow_frame param → animates all frames ─ *
+ * The grabber always passes ?vow_frame=N, so this block never runs on server. */
+if (frameParam === null) {
+  const FPS = 3;
+  let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) {
+      last = ts;
+      N = (N + 1) % FRAMES;
+      render();
+    }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

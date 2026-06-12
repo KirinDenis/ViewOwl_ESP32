@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<!-- Target .NET 8 cross-platform (no -windows suffix) -->
+		<TargetFramework>net8.0</TargetFramework>
+		<Version>1.2.0</Version>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<EnableNETAnalyzers>true</EnableNETAnalyzers>
+		<AnalysisMode>AllEnabledByDefault</AnalysisMode>
+		<WarningLevel>5</WarningLevel>
+		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+		<Features>strict</Features>
+		<!-- CA2007: ConfigureAwait — suppressed project-wide; await using scopes in top-level    -->
+		<!--          statements cannot use ConfigureAwait and ASP.NET Core does not need it.     -->
+		<!-- CA1031: catch(Exception) — intentional: navigation and capture errors must not       -->
+		<!--          crash background workers; we log and continue.                              -->
+		<!-- CA1848: LoggerMessage delegates — SiteTemplateController uses low-frequency logging; -->
+		<!--          the allocation overhead of interpolated strings is acceptable here.         -->
+		<!-- CA3003: file path injection — false positive; path is sanitised with                 -->
+		<!--          Path.GetFileName() before combining with a hardcoded folder prefix.         -->
+		<!-- CA1308: logins are intentionally stored as lower-case; ToLowerInvariant is correct.  -->
+		<!--          ToUpperInvariant would be inconsistent with the seeded admin user.          -->
+		<!-- CA1062: EF DateDiffHour usage in SecurityDashboardController uses generated lambdas  -->
+		<!--         that do not require null guards; suppressed for the generated expression tree.-->
+		<NoWarn>CA2007;CA1031;CA1848;CA3003;CA1308;CA1062</NoWarn>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
+		<!-- Microsoft.AspNetCore.RateLimiting is part of the ASP.NET Core 8 shared framework;   -->
+		<!-- no separate NuGet reference needed — it is available via Microsoft.NET.Sdk.Web.      -->
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+		<PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\ViewOwl.Config\ViewOwl.Config.csproj" />
+		<ProjectReference Include="..\ViewOwl.Data\ViewOwl.Data.csproj" />
+		<ProjectReference Include="..\ViewOwl.Grabber.DTO\ViewOwl.DTO.csproj" />
+		<ProjectReference Include="..\ViewOwl.Grabber.Engine\ViewOwl.Grabber.Engine.csproj" />
+		<ProjectReference Include="..\ViewOwl.Security\ViewOwl.Security.csproj" />
+	</ItemGroup>
+
+	<!-- Build the React dashboard before publish so wwwroot/dashboard is always fresh.
+	     BeforeTargets="Build" ensures this runs on every dotnet build/publish,
+	     eliminating the need to run npm separately in CI. -->
+	<Target Name="NpmBuild" BeforeTargets="Build" Condition="'$(SkipNpmBuild)' != 'true'">
+		<Message Importance="high" Text="Building React dashboard (npm run build)..." />
+		<Exec Command="npm install" WorkingDirectory="$(MSBuildThisFileDirectory)ClientApp" />
+		<Exec Command="npm run build" WorkingDirectory="$(MSBuildThisFileDirectory)ClientApp" />
+	</Target>
+
+</Project>

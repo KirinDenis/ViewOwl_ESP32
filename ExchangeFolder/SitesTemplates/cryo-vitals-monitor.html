@@ -1,0 +1,229 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="Cryo Vitals Monitor"
+  data-vow-description="Hypersleep capsule vitals — scrolling EKG/EEG/RESP/TEMP traces, Aliens blue CRT, RED on alarm"
+  data-vow-category="scifi"
+  data-vow-tags="cryo,medical,vitals,ekg,aliens,scifi,monitor,80s"
+  data-vow-frames="16"
+  data-vow-fps="6"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+const FRAMES = 16;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+let N = ((parseInt(frameParam ?? '0', 10) % FRAMES) + FRAMES) % FRAMES;
+let T = N / FRAMES;
+
+const C = {
+  bg:    '#020618',
+  grid:  '#0E2A55',
+  blue1: '#103E78',
+  blue2: '#1F70C8',
+  blue3: '#3FA8FF',
+  bright:'#9FD8FF',
+  phos:  '#E8F4FF',
+  red:   '#FF3030',
+  redD:  '#7C1010',
+  amber: '#FFB000',
+};
+
+function vstroke(c, lw, glow) {
+  ctx.shadowColor = c; ctx.shadowBlur = glow ?? 4;
+  ctx.strokeStyle = c; ctx.lineWidth = lw ?? 1.4;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+/* ── Trace rows — each draws a scrolling waveform ──────────────────────── */
+const TRACE_X0    = 80;
+const TRACE_W     = 360;
+const TRACE_HEIGHT= 50;
+const SAMPLES     = 180;     /* horizontal resolution in samples            */
+const SAMPLE_W    = TRACE_W / SAMPLES;
+
+/* All waveforms scroll left over time. Sample index `i` represents a       *
+ * point in time; the sample value at frame N is deterministic in N+i.       */
+function scrollOffset() { return Math.floor(T * SAMPLES * 1.0); }
+
+function drawTrace(label, y, fn, color, unit, valueAt0) {
+  /* Label + value box on the left */
+  ctx.font = 'bold 9px "Courier New", monospace';
+  ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+  ctx.fillStyle = C.blue2; ctx.shadowBlur = 0;
+  ctx.fillText(label, 8, y - 12);
+
+  /* Numeric value (current reading) */
+  ctx.font = 'bold 14px "Courier New", monospace';
+  ctx.fillStyle = color;
+  ctx.shadowColor = color; ctx.shadowBlur = 3;
+  ctx.fillText(valueAt0, 8, y + 4);
+  ctx.shadowBlur = 0;
+  ctx.font = 'bold 8px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText(unit, 8, y + 22);
+
+  /* Trace baseline + amplitude grid */
+  const baseY = y + TRACE_HEIGHT / 2;
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.moveTo(TRACE_X0, baseY); ctx.lineTo(TRACE_X0 + TRACE_W, baseY); ctx.stroke();
+
+  /* Frame box around trace */
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(TRACE_X0, y - 2, TRACE_W, TRACE_HEIGHT);
+
+  /* Plot */
+  ctx.strokeStyle = color; ctx.lineWidth = 1.4;
+  ctx.shadowColor = color; ctx.shadowBlur = 4;
+  ctx.beginPath();
+  const offset = scrollOffset();
+  for (let i = 0; i < SAMPLES; i++) {
+    const t = i + offset;          /* deterministic in N + i               */
+    const v = fn(t);                /* -1..1                                */
+    const px = TRACE_X0 + i * SAMPLE_W;
+    const py = baseY - v * (TRACE_HEIGHT / 2 - 4);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+/* ── Waveform generators — all deterministic in t ───────────────────────── */
+
+/* EKG: long flat baseline + occasional sharp QRS spike */
+function ekg(t) {
+  const period = 50;                /* ~12 BPM in cryo (one beat per cycle) */
+  const phase  = t % period;
+  if (phase < 2)        return  0.6 - phase * 0.8;        /* P  wave        */
+  if (phase >= 8 && phase < 10)  return -0.6;             /* Q              */
+  if (phase >= 10 && phase < 11) return  1.6;             /* R spike        */
+  if (phase >= 11 && phase < 13) return -0.5;             /* S              */
+  if (phase >= 18 && phase < 24) return  0.35 * Math.sin((phase - 18) * 0.5);
+  return 0;
+}
+
+/* EEG: complex low-amplitude noise (deterministic via sin combinations) */
+function eeg(t) {
+  return 0.18 * Math.sin(t * 0.9)
+       + 0.12 * Math.sin(t * 1.7 + 1.3)
+       + 0.08 * Math.sin(t * 3.1 + 0.4)
+       + 0.05 * Math.sin(t * 5.3 + 2.1);
+}
+
+/* RESPIRATION: slow gentle sine */
+function resp(t) {
+  return 0.7 * Math.sin(t * 0.10);
+}
+
+/* TEMP: very slow drift, mostly steady */
+function temp(t) {
+  return 0.18 * Math.sin(t * 0.03) + 0.04 * Math.sin(t * 0.11 + 1);
+}
+
+function drawBackground() {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, VW, VH);
+}
+
+function drawHud() {
+  /* Header */
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, 0, VW, 24);
+  ctx.strokeStyle = C.blue1; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  ctx.strokeRect(0, 0, VW, 24);
+
+  ctx.font         = 'bold 12px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle    = C.blue3;
+  ctx.shadowColor  = C.blue3; ctx.shadowBlur = 3;
+  ctx.fillText('CRYO POD 03 // SUBJ: HICKS, D.', 8, 7);
+
+  /* Status — NOMINAL in blue (no alarms in this sequence) */
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.bright;
+  ctx.shadowColor = C.bright;
+  ctx.fillText('NOMINAL', VW - 8, 7);
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'left';
+
+  /* Footer — uptime + days in cryo */
+  const fy = VH - 18;
+  ctx.fillStyle = 'rgba(8,28,72,0.7)';
+  ctx.fillRect(0, fy, VW, 18);
+  ctx.strokeStyle = C.blue1;
+  ctx.strokeRect(0, fy, VW, 18);
+  ctx.font = 'bold 10px "Courier New", monospace';
+  ctx.fillStyle = C.blue2;
+  ctx.fillText('STASIS DAY 0247 // CORE TEMP -196°C', 8, fy + 4);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.blue3;
+  ctx.fillText('FR ' + String(N + 1).padStart(2, '0') + '/' + FRAMES, VW - 8, fy + 4);
+  ctx.textAlign = 'left';
+}
+
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW, VH) * 0.4,
+                                     VW/2, VH/2, Math.max(VW, VH) * 0.7);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.75)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+
+function render() {
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+  drawBackground();
+
+  /* Four scrolling traces stacked vertically */
+  drawTrace('HEART',   46,  ekg,  C.blue3,  'BPM 14',  '14');
+  drawTrace('BRAIN',   116, eeg,  C.bright, 'Hz 04',   '04');
+  drawTrace('RESP',    186, resp, C.blue3,  '/min 02', '02');
+  drawTrace('TEMP',    256, temp, C.amber,  'C -196',  '-196');
+
+  drawHud();
+  drawScanlines();
+  drawVignette();
+}
+
+render();
+
+if (frameParam === null) {
+  const FPS = 6;
+  let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) {
+      last = ts;
+      N = (N + 1) % FRAMES;
+      T = N / FRAMES;
+      render();
+    }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

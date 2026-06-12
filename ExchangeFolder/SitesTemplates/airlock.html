@@ -1,0 +1,321 @@
+﻿<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body"
+  data-vow-name="Airlock"
+  data-vow-category="scifi"
+  data-vow-description="Sci-fi airlock status panel — EVA operations, pressure cycle, atmospheric composition, suit telemetry"
+  data-vow-class="B">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict'
+const W=480,H=320,cv=document.getElementById('screen'),cx=cv.getContext('2d')
+
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+function dither(){
+  const id=cx.getImageData(0,0,W,H),d=id.data
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=(y*W+x)*4
+    for(let c=0;c<3;c++){
+      const bits=c===1?6:5,max=(1<<bits)-1,old=d[i+c]
+      const nv=Math.round(old/255*max)/max*255,err=old-nv
+      d[i+c]=nv
+      if(x+1<W)d[i+4+c]+=err*7/16
+      if(y+1<H){if(x>0)d[i+(W-1)*4+c]+=err*3/16;d[i+W*4+c]+=err*5/16;if(x+1<W)d[i+(W+1)*4+c]+=err/16}
+    }
+  }
+  cx.putImageData(id,0,0)
+}
+
+const P={
+  bg:  css(0,8,16),   pan: css(0,18,32),  pan2:css(0,26,44),
+  bdr: css(0,88,116), bdrd:css(0,36,52),  bdrl:css(0,140,168),
+  cy:  css(0,220,248),cy2: css(0,152,188),cy3: css(0,40,64),  cy4:css(0,64,92),
+  bl:  css(8,52,128), bld: css(0,20,48),  bll: css(16,80,192),
+  gn:  css(0,208,72), gnd: css(0,72,24),  gnl: css(80,248,120),
+  am:  css(240,152,0),amd: css(72,44,0),  aml: css(255,204,40),
+  rd:  css(240,32,32),rdd: css(88,16,16),
+  tx:  css(128,200,220),tx2:css(56,108,132),tx3:css(32,64,84),
+  wh:  css(216,240,248),
+}
+
+function fill(x,y,w,h,c){cx.fillStyle=c;cx.fillRect(x,y,w,h)}
+function ln(x1,y1,x2,y2,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()}
+function box(x,y,w,h,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.strokeRect(x,y,w,h)}
+function dot(x,y,r,c){cx.beginPath();cx.arc(x,y,r,0,Math.PI*2);cx.fillStyle=c;cx.fill()}
+function txt(s,x,y,c,sz=8,al='left',bold=false){
+  cx.font=`${bold?'bold ':''}${sz}px monospace`;cx.fillStyle=c;cx.textAlign=al;cx.fillText(s,x,y);cx.textAlign='left'
+}
+
+/* ── Panel with corner brackets ────────────────────────────────────── */
+function panel(x,y,w,h,title,accent,titleRight){
+  fill(x,y,w,h,P.pan)
+  fill(x,y,w,2,accent)
+  box(x,y,w,h,P.bdrd)
+  const b=6,ac=accent
+  cx.strokeStyle=ac;cx.lineWidth=1
+  // corners
+  for(const[px,py,dx,dy]of[[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]]){
+    cx.beginPath();cx.moveTo(px,py+dy*b);cx.lineTo(px,py);cx.lineTo(px+dx*b,py);cx.stroke()
+  }
+  if(title){
+    fill(x+1,y+1,w-2,13,P.pan2)
+    txt(title,x+5,y+10,P.tx2,7)
+    if(titleRight) txt(titleRight,x+w-4,y+10,P.tx3,6,'right')
+  }
+}
+
+/* ── Arc pressure gauge ─────────────────────────────────────────────── */
+function arcGauge(gx,gy,r,pct,col){
+  // Background arc 135°→405°
+  cx.strokeStyle=P.cy3;cx.lineWidth=3;cx.beginPath()
+  cx.arc(gx,gy,r,135*Math.PI/180,405*Math.PI/180);cx.stroke()
+  // Value arc
+  if(pct>0){
+    const ea=(135+pct*270)*Math.PI/180
+    cx.strokeStyle=col;cx.lineWidth=3;cx.beginPath()
+    cx.arc(gx,gy,r,135*Math.PI/180,ea);cx.stroke()
+    // Glow tip
+    dot(gx+r*Math.cos(ea),gy+r*Math.sin(ea),3,col)
+  }
+  // Ticks
+  for(let i=0;i<=8;i++){
+    const a=(135+i*270/8)*Math.PI/180
+    const major=i%4===0,tr=major?r-7:r-4
+    ln(gx+tr*Math.cos(a),gy+tr*Math.sin(a),gx+(r+1)*Math.cos(a),gy+(r+1)*Math.sin(a),major?P.tx2:P.cy3,1)
+    if(major) txt(~~(i/4*100)+'',gx+(r+10)*Math.cos(a)-5,gy+(r+10)*Math.sin(a)+3,P.tx3,6)
+  }
+}
+
+/* ── Airlock door ───────────────────────────────────────────────────── */
+function door(x,y,w,h,pct,col,label,slideUp){
+  const slide=~~(pct/100*36),dy=y+(slideUp?-slide:slide)
+  // Track guide
+  fill(x-2,slideUp?y-2:y+h-2,w+4,4,P.cy3)
+  // Door body
+  fill(x,dy,w,h,P.bld)
+  const pw=~~(w/3)
+  for(let p=0;p<3;p++){
+    box(x+p*pw+2,dy+2,pw-4,h-4,col,0.5)
+    dot(x+p*pw+5,dy+5,2,col)
+    dot(x+p*pw+pw-6,dy+5,2,col)
+    dot(x+p*pw+5,dy+h-5,2,col)
+    dot(x+p*pw+pw-6,dy+h-5,2,col)
+  }
+  box(x,dy,w,h,col,pct>0?1.5:1)
+  // Status leds
+  dot(x+7,dy+h/2,3,pct>0?P.am:P.gn)
+  dot(x+w-8,dy+h/2,3,pct>0?P.am:P.gn)
+  // Label
+  txt(label+'  '+pct+'% OPEN',x+w/2,slideUp?dy-4:dy+h+9,pct>0?col:P.tx2,6,'center')
+}
+
+/* ── Mini bar ───────────────────────────────────────────────────────── */
+function bar(x,y,w,h,pct,fg,bg){fill(x,y,w,h,bg);fill(x,y,~~(w*pct),h,fg)}
+
+const FRAMES=[
+  {st:'SEALED',      prs:101,od:0,  id:0,warn:false,col:P.gn, phase:0,eva:false},
+  {st:'CYCLE INIT',  prs:101,od:0,  id:0,warn:true, col:P.am, phase:1,eva:false},
+  {st:'DEPRESSURIZE',prs:38, od:45, id:0,warn:true, col:P.am, phase:2,eva:false},
+  {st:'EVA ACTIVE',  prs:0,  od:100,id:0,warn:false,col:P.cy, phase:3,eva:true},
+  {st:'SEALING',     prs:44, od:50, id:0,warn:true, col:P.am, phase:4,eva:false},
+  {st:'REPRESSURIZE',prs:89, od:0,  id:0,warn:false,col:P.cy2,phase:5,eva:false},
+]
+let fi=0,tk=0
+
+function tick(){
+  const f=FRAMES[fi],bl=(tk++%2)===0
+  const nw=new Date()
+  const ts=`${String(nw.getHours()).padStart(2,'0')}:${String(nw.getMinutes()).padStart(2,'0')}:${String(nw.getSeconds()).padStart(2,'0')}`
+
+  /* ── Background grid ── */
+  fill(0,0,W,H,P.bg)
+  cx.strokeStyle=P.cy3;cx.lineWidth=0.3
+  for(let x=0;x<W;x+=24){cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke()}
+  for(let y=0;y<H;y+=24){cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke()}
+
+  /* ── HEADER ── */
+  fill(0,0,W,23,P.pan)
+  fill(0,0,W,2,f.warn&&bl?P.am:P.bdr)
+  ln(0,23,W,23,P.bdrd)
+  cx.fillStyle=f.warn&&bl?P.aml:P.cy;cx.font='bold 10px monospace';cx.fillText('⬡ AIRLOCK CONTROL SYSTEM',7,15)
+  txt('NODE ALPHA · SECTOR 7G',190,15,P.tx2,8)
+  dot(W-74,12,3,f.warn&&bl?P.am:P.gn)
+  txt(ts,W-68,15,P.tx,8)
+
+  /* ══════════════════════════════════════════════════════════════
+     LEFT PANEL  x=2 y=26 w=108 h=217
+  ══════════════════════════════════════════════════════════════ */
+  const LX=2,LY=26,LW=108,LH=217
+  panel(LX,LY,LW,LH,'PRESSURE',P.bdr,'kPa')
+
+  // Arc gauge
+  const GX=LX+54,GY=LY+72,GR=36
+  arcGauge(GX,GY,GR,f.prs/101,f.prs>60?P.cy:f.prs>20?P.am:P.rd)
+  txt(String(f.prs),GX,GY+5,P.wh,16,'center',true)
+  txt('kPa',GX,GY+16,P.tx2,7,'center')
+  const pLabel=f.prs>80?'NOMINAL':f.prs>30?'LOW PRESS':f.prs>0?'CRITICAL':'VACUUM'
+  txt(pLabel,GX,GY-24,f.prs>80?P.gn:f.prs>30?P.am:P.rd,7,'center')
+
+  // Divider
+  ln(LX+6,LY+114,LX+LW-6,LY+114,P.bdrd)
+  txt('ATMOSPHERE',LX+LW/2,LY+122,P.tx2,7,'center')
+
+  const atmos=[['O₂',~~(21*f.prs/101),P.cy],['N₂',~~(79*f.prs/101),P.cy2],['CO₂',f.prs>0?1:0,P.tx3]]
+  for(let i=0;i<3;i++){
+    const[lab,val,col]=atmos[i],ry=LY+128+i*17
+    txt(lab,LX+5,ry+8,P.tx2,7)
+    bar(LX+26,ry+1,66,8,f.prs>0?val/101:0,col,P.cy3)
+    box(LX+26,ry+1,66,8,P.bdrd,0.5)
+    txt(f.prs>0?val+'%':'—',LX+LW-4,ry+8,col,7,'right')
+  }
+
+  // Divider
+  ln(LX+6,LY+181,LX+LW-6,LY+181,P.bdrd)
+
+  // Suit telemetry mini
+  txt('EVA SUIT',LX+LW/2,LY+190,P.tx2,7,'center')
+  const suitRows=[
+    ['O₂',f.eva?82:100,P.cy,f.eva?P.cy:P.gn],
+    ['BAT',f.eva?67:95,P.gn,f.eva?P.gn:P.cy2],
+  ]
+  for(let i=0;i<2;i++){
+    const[lab,val,col]=suitRows[i],ry=LY+196+i*13
+    txt(lab,LX+5,ry+8,P.tx2,7)
+    bar(LX+26,ry+1,60,8,val/100,col,P.cy3)
+    box(LX+26,ry+1,60,8,P.bdrd,0.5)
+    txt(val+'%',LX+LW-4,ry+8,col,7,'right')
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     CENTER PANEL  x=114 y=26 w=244 h=217
+  ══════════════════════════════════════════════════════════════ */
+  const AX=114,AY=26,AW=244,AH=217
+  panel(AX,AY,AW,AH,'AIRLOCK CROSS-SECTION  7G-A',P.bdrl)
+
+  // Space zone
+  fill(AX+1,AY+14,AW-2,44,P.bg)
+  const stars=[[120,32],[148,44],[176,31],[205,48],[232,36],[258,43],[285,30],[310,49],[335,38],[358,44],[370,30],[383,52]]
+  for(const[sx,sy]of stars){
+    cx.fillStyle=`rgba(200,236,248,${Math.max(0.15,f.od/100)})`
+    cx.fillRect(sx,sy,sx%3?1:2,sy%2?1:2)
+  }
+  if(f.od>30) txt('·· VACUUM ·· DEEP SPACE ··',AX+AW/2,AY+25,P.cy3,7,'center')
+  txt('HULL EXTERIOR',AX+8,AY+53,P.tx3,6)
+  ln(AX+1,AY+58,AX+AW-1,AY+58,P.cy3)
+
+  // Outer door
+  const DX=AX+52,DW=AW-104
+  door(DX,AY+60,DW,14,f.od,f.od>0?P.am:P.cy,'OUTER DOOR',true)
+
+  // Chamber
+  const CHY=AY+86,CHH=68,CHX=AX+36,CHW=AW-72
+  // Side walls with depth shading
+  fill(CHX-6,CHY,6,CHH,P.cy4)
+  fill(CHX+CHW,CHY,6,CHH,P.cy4)
+  // Chamber fill
+  fill(CHX,CHY,CHW,CHH,f.prs>0?css(0,12,24):css(0,4,8))
+  // Interior grid
+  for(let gx=CHX+10;gx<CHX+CHW;gx+=10) ln(gx,CHY,gx,CHY+CHH,f.prs>0?css(0,22,38):css(0,8,16),0.4)
+  for(let gy=CHY+10;gy<CHY+CHH;gy+=10) ln(CHX,gy,CHX+CHW,gy,f.prs>0?css(0,22,38):css(0,8,16),0.4)
+  // Hazard stripes
+  const sc=f.warn&&bl?P.am:P.amd
+  for(let s=0;s<9;s++){const sw2=~~(CHW/9);if(s%2===0){fill(CHX+s*sw2,CHY,sw2,5,sc);fill(CHX+s*sw2,CHY+CHH-5,sw2,5,sc)}}
+  box(CHX,CHY,CHW,CHH,P.bdr,1.5)
+  // Chamber label + reading
+  txt('CHAMBER 7G-A',AX+AW/2,CHY+CHH/2+3,P.tx2,8,'center')
+  txt(f.prs>0?f.prs+' kPa':'VACUUM',AX+AW/2,CHY+CHH/2+14,f.prs>0?P.cy:P.rd,7,'center')
+  // Warning LEDs on wall
+  for(let w=0;w<3;w++){
+    dot(CHX-10,CHY+14+w*18,4,f.warn&&bl?P.am:f.warn?P.amd:P.cy3)
+    ln(CHX-6,CHY+14+w*18,CHX,CHY+14+w*18,f.warn&&bl?P.am:P.cy3)
+    dot(CHX+CHW+10,CHY+14+w*18,4,f.warn&&bl?P.am:f.warn?P.amd:P.cy3)
+    ln(CHX+CHW,CHY+14+w*18,CHX+CHW+6,CHY+14+w*18,f.warn&&bl?P.am:P.cy3)
+  }
+
+  // Inner door
+  door(DX,AY+164,DW,14,f.id,f.id>0?P.am:P.cy2,'INNER DOOR',false)
+
+  // Habitat zone
+  ln(AX+1,AY+184,AX+AW-1,AY+184,P.cy3)
+  fill(AX+1,AY+185,AW-2,AH-(185-1)-1,css(0,8,18))
+  txt('HABITAT MODULE',AX+8,AY+196,P.tx3,6)
+  // Hab equipment
+  for(let eq=0;eq<4;eq++){
+    fill(AX+28+eq*52,AY+188,14,18,P.pan2);box(AX+28+eq*52,AY+188,14,18,P.bdrd,0.5)
+    dot(AX+35+eq*52,AY+194,3,P.cy3)
+  }
+  // Docking ports
+  for(let p=0;p<2;p++){fill(AX+90+p*80,AY+184,20,4,P.bl);box(AX+90+p*80,AY+184,20,4,P.cy3,0.5)}
+
+  /* ══════════════════════════════════════════════════════════════
+     RIGHT PANEL  x=362 y=26 w=116 h=217
+  ══════════════════════════════════════════════════════════════ */
+  const RX=362,RY=26,RW=116,RH=217
+  panel(RX,RY,RW,RH,'SYSTEM STATUS',f.warn?P.am:P.bdr)
+
+  // State badge
+  fill(RX+4,RY+16,RW-8,17,f.warn&&bl?P.amd:P.bld)
+  box(RX+4,RY+16,RW-8,17,f.warn&&bl?P.am:f.col,1)
+  txt(f.st,RX+RW/2,RY+28,f.warn&&bl?P.aml:f.col,8,'center',true)
+
+  const checks=[
+    ['INNER SEAL',f.id===0],['OUTER SEAL',f.od===0],
+    ['PRESSURE',f.prs>80],['ATMOSPHERE',f.prs>60],
+    ['SUIT LINK',f.eva],['COMMS',true],['POWER',true],['RADIATION',true],
+  ]
+  for(let i=0;i<checks.length;i++){
+    const[lab,ok]=checks[i],ty=RY+38+i*18
+    if(!ok&&bl) fill(RX+1,ty-1,RW-2,14,P.rdd)
+    dot(RX+9,ty+5,3,ok?P.gn:P.rd)
+    txt(lab,RX+17,ty+8,ok?P.tx:P.tx2,7)
+    txt(ok?'OK':'FAIL',RX+RW-4,ty+8,ok?P.gn:P.rd,7,'right')
+  }
+
+  ln(RX+4,RY+184,RX+RW-4,RY+184,P.bdrd)
+  const statsY=RY+188
+  const statRows=[
+    ['CYCLES','000'+String(247+fi),P.cy],
+    ['EVA T.',f.eva?'00:0'+fi+'m':'—',P.tx],
+    ['NEXT SVC','003:08h',P.tx2],
+  ]
+  for(let i=0;i<3;i++){
+    const[lab,val,col]=statRows[i]
+    txt(lab,RX+5,statsY+i*10+8,P.tx2,6)
+    txt(val,RX+RW-4,statsY+i*10+8,col,7,'right')
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     BOTTOM SEQUENCE STRIP
+  ══════════════════════════════════════════════════════════════ */
+  const BY=246
+  fill(0,BY,W,H-BY,P.pan)
+  ln(0,BY,W,BY,P.bdrd)
+
+  const stageW=~~(W/FRAMES.length)
+  for(let i=0;i<FRAMES.length;i++){
+    const sx=i*stageW+1,sw=stageW-2
+    const active=i===fi,done=i<fi
+    fill(sx,BY+2,sw,H-BY-3,active?P.bld:done?P.gnd:P.pan)
+    box(sx,BY+2,sw,H-BY-3,active?(f.warn&&bl?P.am:P.cy):done?P.gn:P.bdrd,active?1:0.5)
+    txt(String(i+1),sx+sw/2,BY+14,done?P.gn:active?(f.warn&&bl?P.am:P.cy):P.tx2,9,'center',active)
+    const lab=FRAMES[i].st.length>8?FRAMES[i].st.slice(0,7)+'…':FRAMES[i].st
+    txt(lab,sx+sw/2,BY+26,done?P.gn:active?(f.warn&&bl?P.am:P.cy):P.tx3,6,'center')
+    if(done&&!active){
+      txt('✔',sx+sw/2,BY+36,P.gn,8,'center')
+    }
+    if(i<FRAMES.length-1) txt('▶',sx+sw,BY+13,done?P.gn:P.cy3,7)
+  }
+
+  // Bottom right status
+  txt(`OUT:${f.od}%  IN:${f.id}%  PRESS:${f.prs}kPa`,W/2,BY+36,P.tx3,7,'center')
+
+  dither()
+  fi=(fi+1)%FRAMES.length
+}
+
+tick()
+setInterval(tick,1000)
+</script></body></html>

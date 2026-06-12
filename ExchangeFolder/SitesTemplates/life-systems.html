@@ -1,0 +1,208 @@
+﻿<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body" data-vow-name="Life Systems" data-vow-category="scifi" data-vow-description="Sci-fi life support systems panel">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict'
+const W=480,H=320,cv=document.getElementById('screen'),cx=cv.getContext('2d')
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+function dither(){
+  const id=cx.getImageData(0,0,W,H),d=id.data
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=(y*W+x)*4
+    for(let c=0;c<3;c++){
+      const bits=c===1?6:5,max=(1<<bits)-1,old=d[i+c]
+      const nv=Math.round(old/255*max)/max*255,err=old-nv
+      d[i+c]=nv
+      if(x+1<W)d[i+4+c]+=err*7/16
+      if(y+1<H){if(x>0)d[i+(W-1)*4+c]+=err*3/16;d[i+W*4+c]+=err*5/16;if(x+1<W)d[i+(W+1)*4+c]+=err/16}
+    }
+  }
+  cx.putImageData(id,0,0)
+}
+const P={
+  bg:css(0,6,14),pan:css(0,18,32),bdr:css(0,76,108),bdrd:css(0,32,48),
+  cy:css(0,216,248),cy2:css(0,144,180),cy3:css(0,40,64),
+  gn:css(0,208,72),gnd:css(0,48,20),
+  am:css(240,152,0),amd:css(72,40,0),
+  rd:css(240,32,32),rdd:css(64,8,8),
+  tx:css(120,196,216),tx2:css(52,104,128),
+  wh:css(208,236,248),
+  bl2:css(0,100,180)
+}
+function fill(x,y,w,h,col){cx.fillStyle=col;cx.fillRect(x,y,w,h)}
+function line(x1,y1,x2,y2,col,lw=1){cx.strokeStyle=col;cx.lineWidth=lw;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()}
+function txt(s,x,y,col,sz=9,al='left'){cx.font=`${sz}px monospace`;cx.fillStyle=col;cx.textAlign=al;cx.fillText(s,x,y);cx.textAlign='left'}
+function vbar(x,y,w,h,pct,fg,bg){fill(x,y,w,h,bg);const ph=~~(h*Math.min(pct,1));fill(x,y+h-ph,w,ph,fg);cx.strokeStyle=P.bdr;cx.lineWidth=0.5;cx.strokeRect(x,y,w,h)}
+function hbar(x,y,w,h,pct,fg,bg){fill(x,y,w,h,bg);fill(x,y,~~(w*Math.min(pct,1)),h,fg);cx.strokeStyle=P.bdr;cx.lineWidth=0.5;cx.strokeRect(x,y,w,h)}
+function node(x,y,label,col){
+  fill(x-18,y-8,36,16,css(0,16,30));cx.strokeStyle=col;cx.lineWidth=1;cx.strokeRect(x-18,y-8,36,16)
+  txt(label,x,y+4,col,6,'center')
+}
+function pipe(x1,y1,x2,y2,col,flow){
+  cx.strokeStyle=col;cx.lineWidth=flow?2:1;cx.setLineDash(flow?[4,3]:[]);cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke();cx.setLineDash([])
+}
+
+// Life support subsystem states per frame
+const FRAMES=[
+  {o2:94,co2:0.04,h2o:88,pwr:82, o2pump:true, co2scrub:true, h2orec:true, heatex:true,
+   alert:false,mode:'NOMINAL',  note:'ALL SYSTEMS NOMINAL'},
+  {o2:91,co2:0.06,h2o:86,pwr:79, o2pump:true, co2scrub:true, h2orec:true, heatex:true,
+   alert:false,mode:'NOMINAL',  note:'ROUTINE MONITORING'},
+  {o2:87,co2:0.09,h2o:86,pwr:75, o2pump:true, co2scrub:false,h2orec:true, heatex:true,
+   alert:true, mode:'CAUTION',  note:'CO₂ SCRUBBER DEGRADED'},
+  {o2:82,co2:0.13,h2o:84,pwr:78, o2pump:true, co2scrub:false,h2orec:true, heatex:false,
+   alert:true, mode:'WARNING',  note:'MANUAL BYPASS ACTIVE'},
+  {o2:89,co2:0.05,h2o:85,pwr:80, o2pump:true, co2scrub:true, h2orec:true, heatex:true,
+   alert:false,mode:'RECOVERY', note:'SYSTEMS RESTORED'},
+]
+
+let fi=0,tk=0
+
+function tick(){
+  const f=FRAMES[fi],bl=(tk++%2)===0
+  const nw=new Date(),ts=`${String(nw.getHours()).padStart(2,'0')}:${String(nw.getMinutes()).padStart(2,'0')}:${String(nw.getSeconds()).padStart(2,'0')}`
+
+  fill(0,0,W,H,P.bg)
+  cx.strokeStyle=P.cy3;cx.lineWidth=0.5
+  for(let x=0;x<W;x+=40)line(x,0,x,H,P.cy3,0.5)
+  for(let y=0;y<H;y+=40)line(0,y,W,y,P.cy3,0.5)
+
+  // Header
+  fill(0,0,W,24,P.pan);line(0,24,W,24,P.bdrd)
+  cx.fillStyle=f.alert&&bl?P.am:P.cy;cx.font='bold 11px monospace';cx.fillText('⬡ LIFE SUPPORT SYSTEMS — DECK A',8,16)
+  txt(ts,W-8,16,P.tx2,9,'right')
+
+  // === LEFT: Level gauges ===
+  fill(4,28,88,256,P.pan);cx.strokeStyle=P.bdrd;cx.lineWidth=1;cx.strokeRect(4,28,88,256)
+  txt('RESERVES',8,40,P.tx2,8)
+
+  const gauges=[
+    {label:'O₂',  pct:f.o2/100,   col:f.o2>70?P.gn:f.o2>40?P.am:P.rd, val:f.o2+'%'},
+    {label:'H₂O', pct:f.h2o/100,  col:f.h2o>60?P.cy:P.am,              val:f.h2o+'%'},
+    {label:'PWR',  pct:f.pwr/100,  col:f.pwr>60?P.gn:P.am,             val:f.pwr+'%'},
+  ]
+  for(let i=0;i<gauges.length;i++){
+    const g=gauges[i],gx=12+i*28,gy=52,gh=140
+    vbar(gx,gy,18,gh,g.pct,g.col,P.cy3)
+    txt(g.label,gx+9,gy+gh+10,P.tx2,6,'center')
+    txt(g.val,gx+9,gy+gh+20,g.col,6,'center')
+  }
+
+  // CO2 level indicator (horizontal — lower = better)
+  txt('CO₂ PPM',8,210,P.tx2,7)
+  const co2pct=Math.min(f.co2/0.20,1)
+  const co2col=f.co2<0.08?P.gn:f.co2<0.12?P.am:P.rd
+  hbar(8,218,76,10,co2pct,co2col,P.cy3)
+  txt((f.co2*1000).toFixed(0)+' ppm',8,236,co2col,8)
+
+  // Crew safety rating
+  const safe=f.o2>85&&f.co2<0.08&&f.h2o>80
+  txt('CREW SAFE',8,252,P.tx2,7)
+  fill(8,258,76,16,safe?css(0,28,16):css(40,16,0))
+  txt(safe?'✔ SAFE':'⚠ RISK',46,270,safe?P.gn:f.alert&&bl?P.am:P.rd,8,'center')
+
+  // === CENTER: Flow schematic ===
+  const SX=96,SY=28,SW=280,SH=256
+  fill(SX,SY,SW,SH,css(0,4,10));cx.strokeStyle=P.bdrd;cx.lineWidth=1;cx.strokeRect(SX,SY,SW,SH)
+  txt('FLOW SCHEMATIC',SX+SW/2,SY+12,P.tx2,8,'center')
+
+  // Node layout (schematic positions)
+  const NX={hab:SX+140,tank_o2:SX+36,tank_h2o:SX+36,reactor:SX+244,co2:SX+140,hx:SX+244}
+  const NY={hab:SY+80, tank_o2:SY+60, tank_h2o:SY+130,reactor:SY+80, co2:SY+160,hx:SY+160}
+
+  // Habitat node (central)
+  fill(NX.hab-28,NY.hab-14,56,28,css(0,14,28))
+  cx.strokeStyle=P.cy;cx.lineWidth=1.5;cx.strokeRect(NX.hab-28,NY.hab-14,56,28)
+  txt('HABITAT',NX.hab,NY.hab+4,P.cy,7,'center')
+
+  // O2 tank
+  node(NX.tank_o2,NY.tank_o2,'O₂ TANK',f.o2>70?P.gn:P.am)
+
+  // H2O tank
+  node(NX.tank_h2o,NY.tank_h2o,'H₂O REC',f.h2orec?P.cy2:P.am)
+
+  // CO2 scrubber
+  node(NX.co2,NY.co2,'CO₂ SCRB',f.co2scrub?P.gn:f.alert&&bl?P.am:P.rdd)
+
+  // Heat exchanger
+  node(NX.hx,NY.hx,'HEAT EX',f.heatex?P.cy2:P.am)
+
+  // Reactor (power source)
+  node(NX.reactor,NY.reactor,'REACTOR',P.gn)
+
+  // Pipe: O2 tank → habitat
+  pipe(NX.tank_o2+18,NY.tank_o2,NX.hab-28,NY.hab,f.o2pump?P.gn:P.gnd,f.o2pump)
+  // Pipe: habitat → CO2 scrubber
+  pipe(NX.hab,NY.hab+14,NX.co2,NY.co2-8,f.co2scrub?P.gn:f.alert&&bl?P.am:P.cy3,f.co2scrub)
+  // Pipe: H2O reclaim ↔ habitat
+  pipe(NX.tank_h2o+18,NY.tank_h2o,NX.hab-28,NY.hab+6,f.h2orec?P.cy:P.cy3,f.h2orec)
+  // Pipe: reactor → heat exchanger
+  pipe(NX.reactor+18,NY.reactor,NX.hx-18,NY.hx,f.heatex?P.cy2:P.cy3,f.heatex)
+  // Pipe: heat exchanger → habitat
+  pipe(NX.hx-18,NY.hx,NX.hab+28,NY.hab+6,f.heatex?P.cy2:P.cy3,false)
+  // Pipe: reactor → habitat (power)
+  pipe(NX.reactor,NY.reactor-14,NX.hab+28,NY.hab-8,P.am,true)
+
+  // Flow direction arrows (simplified chevrons)
+  const arrowAt=(x,y,dir,col)=>{
+    cx.strokeStyle=col;cx.lineWidth=1;cx.beginPath()
+    if(dir==='r'){cx.moveTo(x-4,y-4);cx.lineTo(x+4,y);cx.lineTo(x-4,y+4)}
+    else{cx.moveTo(x+4,y-4);cx.lineTo(x-4,y);cx.lineTo(x+4,y+4)}
+    cx.stroke()
+  }
+  arrowAt(NX.hab-20,NY.hab-2,'r',f.o2pump?P.gn:P.cy3)
+  arrowAt(NX.co2-8,NY.co2-6,'r',f.co2scrub?P.gn:P.am)
+
+  // Legend
+  txt('━━ ACTIVE',SX+8,SY+SH-28,P.gn,7)
+  txt('- - FAULT',SX+8,SY+SH-16,P.am,7)
+  txt('━━ COOLANT',SX+90,SY+SH-28,P.cy2,7)
+  txt('━━ POWER',SX+90,SY+SH-16,P.am,7)
+
+  // === RIGHT: Status panel ===
+  fill(380,28,96,256,P.pan);cx.strokeStyle=P.bdrd;cx.lineWidth=1;cx.strokeRect(380,28,96,256)
+  txt('SUBSYSTEMS',384,40,P.tx2,8)
+
+  // Mode badge
+  const mcol=f.mode==='NOMINAL'?P.gn:f.mode==='RECOVERY'?P.cy:f.alert&&bl?P.am:P.am
+  fill(384,44,84,18,f.mode==='NOMINAL'?css(0,24,12):css(36,20,0))
+  txt(f.mode,426,57,mcol,8,'center')
+
+  // Subsystem checklist
+  const subs=[
+    ['O₂ PUMP',   f.o2pump],
+    ['CO₂ SCRUB', f.co2scrub],
+    ['H₂O RECLAIM',f.h2orec],
+    ['HEAT EXCH', f.heatex],
+    ['PRESSURE',  f.o2>60],
+    ['VENTILATION',true],
+    ['SENSORS',   true],
+  ]
+  for(let i=0;i<subs.length;i++){
+    const[lab,ok]=subs[i],ty=68+i*22
+    const sc=ok?P.gn:(f.alert&&bl?P.am:P.rdd)
+    txt(ok?'●':'●',384,ty,sc,8)
+    txt(lab,394,ty,ok?P.tx:P.tx2,6)
+  }
+
+  // Uptime
+  txt('UPTIME:',384,234,P.tx2,7)
+  txt('12847:06',384,246,P.cy,9)
+  txt('NEXT SVC:',384,262,P.tx2,7)
+  txt('096 h',384,274,P.tx,8)
+
+  // Bottom bar
+  fill(0,289,W,31,P.pan);line(0,289,W,289,P.bdrd)
+  txt('▶ '+f.note,8,306,f.alert&&bl?P.am:P.cy,9)
+  txt(`O₂:${f.o2}%  CO₂:${(f.co2*1000).toFixed(0)}ppm  H₂O:${f.h2o}%`,200,306,P.tx2,8)
+  txt(`${fi+1}/${FRAMES.length}`,W-8,306,P.gn,8,'right')
+
+  dither()
+  fi=(fi+1)%FRAMES.length
+}
+tick();setInterval(tick,1000)
+</script></body></html>

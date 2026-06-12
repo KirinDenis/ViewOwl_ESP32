@@ -1,0 +1,213 @@
+.knocking-panel {
+  width: 100%;
+  border: 1px solid rgba(255, 200, 0, 0.5);
+  background: rgba(10, 14, 26, 0.95);
+  box-shadow: 0 0 20px rgba(255, 200, 0, 0.12);
+  backdrop-filter: blur(4px);
+  font-family: var(--font);
+}
+
+/* Header row */
+.kp-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 200, 0, 0.2);
+  background: rgba(255, 200, 0, 0.04);
+  user-select: none;
+}
+
+.kp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffc800;
+  box-shadow: 0 0 6px rgba(255, 200, 0, 0.8);
+  animation: kp-pulse 1.5s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes kp-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 200, 0, 0.8); }
+  50%       { box-shadow: 0 0 10px rgba(255, 200, 0, 1); }
+}
+
+.kp-title {
+  font-size: 0.55rem;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  color: #ffc800;
+  flex: 1;
+}
+
+.kp-count {
+  font-size: 0.58rem;
+  color: #ffc800;
+  background: rgba(255, 200, 0, 0.12);
+  border: 1px solid rgba(255, 200, 0, 0.3);
+  border-radius: 2px;
+  padding: 1px 5px;
+  line-height: 1.4;
+}
+
+.kp-toggle {
+  font-size: 0.65rem;
+  color: rgba(255, 200, 0, 0.6);
+}
+
+/* Scrollable entries list */
+.kp-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.kp-list::-webkit-scrollbar { width: 3px; }
+.kp-list::-webkit-scrollbar-thumb { background: rgba(255, 200, 0, 0.25); border-radius: 2px; }
+
+/* Single device entry */
+.kp-entry {
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(255, 200, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.kp-entry:last-child { border-bottom: none; }
+
+.kp-entry-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kp-ip {
+  font-size: 0.65rem;
+  font-weight: bold;
+  color: var(--text);
+  flex: 1;
+  letter-spacing: 0.04em;
+}
+
+.kp-reason {
+  font-size: 0.45rem;
+  letter-spacing: 0.12em;
+  color: #ffc800;
+  background: rgba(255, 200, 0, 0.08);
+  border: 1px solid rgba(255, 200, 0, 0.2);
+  padding: 1px 4px;
+  white-space: nowrap;
+}
+
+.kp-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.kp-dismiss:hover { color: var(--danger); }
+
+.kp-entry-bottom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kp-token {
+  font-size: 0.52rem;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kp-device-name {
+  font-size: 0.55rem;
+  color: var(--secondary);
+  letter-spacing: 0.06em;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kp-meta {
+  font-size: 0.48rem;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* Device name input */
+.kp-name-input {
+  width: 100%;
+  background: rgba(255, 200, 0, 0.05);
+  border: 1px solid rgba(255, 200, 0, 0.25);
+  color: var(--text, #c8e6ff);
+  font-family: var(--font, monospace);
+  font-size: 10px;
+  padding: 3px 6px;
+  border-radius: 2px;
+  margin-top: 5px;
+  outline: none;
+  box-sizing: border-box;
+}
+.kp-name-input:focus {
+  border-color: rgba(255, 200, 0, 0.6);
+  background: rgba(255, 200, 0, 0.08);
+}
+.kp-name-input::placeholder { color: rgba(255, 200, 0, 0.35); }
+.kp-name-input:disabled { opacity: 0.5; }
+
+/* Register row: display selector + register button */
+.kp-register-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.kp-display-select {
+  flex: 1;
+  background: rgba(0, 180, 255, 0.08);
+  border: 1px solid rgba(0, 180, 255, 0.3);
+  color: var(--text, #c8e6ff);
+  font-family: var(--font, monospace);
+  font-size: 10px;
+  padding: 3px 5px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.kp-display-select:disabled { opacity: 0.5; }
+
+/* Register button */
+.kp-register-btn {
+  flex-shrink: 0;
+  background: rgba(0, 200, 100, 0.12);
+  border: 1px solid rgba(0, 229, 100, 0.45);
+  color: rgba(0, 229, 100, 0.9);
+  font-family: var(--font);
+  font-size: 0.5rem;
+  font-weight: bold;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding: 5px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+.kp-register-btn:hover:not(:disabled) {
+  background: rgba(0, 220, 100, 0.22);
+  border-color: rgba(0, 229, 100, 0.8);
+  box-shadow: 0 0 8px rgba(0, 200, 80, 0.3);
+}
+.kp-register-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body"
+  data-vow-name="Deep Range Scanner"
+  data-vow-category="scifi"
+  data-vow-description="Cinematic deep-space tracking display — rotating wireframe contact, radar sweep, telemetry, event log"
+  data-vow-class="C"
+  data-vow-frames="16"
+  data-vow-fps="4"
+  data-vow-refresh="0">
+<canvas id="screen"></canvas>
+<script>
+'use strict'
+/* Logical design space is 480x320; the canvas is sized to the real viewport
+ * and scaled, so backend grabs at 320x240 render natively (no cropping). */
+const W=480,H=320
+const cv=document.getElementById('screen')
+const VW=window.innerWidth||W, VH=window.innerHeight||H
+cv.width=VW; cv.height=VH
+const cx=cv.getContext('2d')
+
+const FRAME_COUNT=16
+
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+
+/* Floyd-Steinberg dithering to the BGR565 grid — runs over real pixels. */
+function dither(){
+  const id=cx.getImageData(0,0,VW,VH),d=id.data
+  for(let y=0;y<VH;y++)for(let x=0;x<VW;x++){
+    const i=(y*VW+x)*4
+    for(let c=0;c<3;c++){
+      const bits=c===1?6:5,max=(1<<bits)-1,old=d[i+c]
+      const nv=Math.round(old/255*max)/max*255,err=old-nv
+      d[i+c]=nv
+      if(x+1<VW)d[i+4+c]+=err*7/16
+      if(y+1<VH){if(x>0)d[i+(VW-1)*4+c]+=err*3/16;d[i+VW*4+c]+=err*5/16;if(x+1<VW)d[i+(VW+1)*4+c]+=err/16}
+    }
+  }
+  cx.putImageData(id,0,0)
+}
+
+/* Palette tuned for low-contrast TN panels (CYD): foregrounds carry high
+ * luminance (white / orange / bright cyan / green); background stays near
+ * black so contrast survives off-axis viewing. */
+const P={
+  bg:  css(2,8,16),
+  pan: css(8,20,34),   pan2:css(14,30,48),
+  grid:css(10,34,52),  bdr: css(56,128,180),
+  cyF: css(0,96,140),  cyM: css(0,176,220), cyB: css(150,245,255),
+  gn:  css(0,228,96),  gnD: css(0,84,40),   gnB: css(120,255,160),
+  am:  css(255,164,0), amB: css(255,210,64),amD: css(96,60,0),
+  rd:  css(255,56,56),
+  tx:  css(232,244,252),tx2:css(150,190,214),tx3:css(96,130,156),
+  wh:  css(248,252,255),
+}
+
+function fill(x,y,w,h,c){cx.fillStyle=c;cx.fillRect(x,y,w,h)}
+function ln(x1,y1,x2,y2,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()}
+function box(x,y,w,h,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.strokeRect(x,y,w,h)}
+function dot(x,y,r,c){cx.beginPath();cx.arc(x,y,r,0,Math.PI*2);cx.fillStyle=c;cx.fill()}
+function txt(s,x,y,c,sz=9,al='left',bold=false){
+  cx.font=`${bold?'bold ':''}${sz}px monospace`;cx.fillStyle=c;cx.textAlign=al;cx.fillText(s,x,y);cx.textAlign='left'
+}
+
+/* ── Wireframe ship geometry (built once, deterministic) ─────────────── */
+const VERTS=[],EDGES=[]
+function V(x,y,z){return VERTS.push([x,y,z])-1}
+function ring(x,r){const s=[];for(let i=0;i<6;i++){const a=i*Math.PI/3;s.push(V(x,r*Math.cos(a),r*Math.sin(a)))}return s}
+const NOSE=V(78,0,0)
+const RA=ring(46,10),RB=ring(8,17),RC=ring(-40,13),RD=ring(-56,7)
+function cyc(R){for(let i=0;i<6;i++)EDGES.push([R[i],R[(i+1)%6]])}
+function join(R1,R2){for(let i=0;i<6;i++)EDGES.push([R1[i],R2[i]])}
+for(const i of RA)EDGES.push([NOSE,i])
+cyc(RA);cyc(RB);cyc(RC);cyc(RD);join(RA,RB);join(RB,RC);join(RC,RD)
+/* Wings: triangular spar + nacelle line, mirrored on Z. */
+for(const s of[1,-1]){
+  const root=V(8,0,17*s),tipF=V(2,0,46*s),nacR=V(-30,0,46*s)
+  EDGES.push([root,s>0?RB[1]:RB[5]],[root,s>0?RB[2]:RB[4]])
+  EDGES.push([root,tipF],[tipF,nacR],[nacR,root])
+}
+
+/* ── Fixed star field (index-derived, no randomness) ─────────────────── */
+const STARS=[]
+for(let i=0;i<34;i++)STARS.push([12+(i*97)%280,32+(i*53)%212,i%3])
+
+/* ── Radar contacts (fixed polar positions) ──────────────────────────── */
+const BLIPS=[
+  {a:40, r:0.55},
+  {a:150,r:0.82},
+  {a:215,r:0.38},
+  {a:305,r:0.68,tgt:true},
+]
+
+/* ── Cyclic event log — window slides with frame, loops seamlessly ───── */
+const LOG=[
+  'sweep 7G nominal','contact echo +040','lock refine 0.2%','drift corr -0.04',
+  'hull ping 220ms','contact echo +150','telemetry sync ok','thermal margin ok',
+  'lock refine 0.1%','contact echo +215','band noise -62db','gyro bias trimmed',
+  'tgt echo +305 ***','range gate set','doppler bin 14','cycle checkpoint',
+]
+
+function render(frame){
+  frame=((frame%FRAME_COUNT)+FRAME_COUNT)%FRAME_COUNT
+  cx.setTransform(VW/W,0,0,VH/H,0,0)
+  const bl=(frame%2)===0
+  const ph=frame/FRAME_COUNT            /* 0..1 loop phase */
+  const th=ph*Math.PI*2                 /* ship yaw + radar sweep angle */
+
+  /* Mission clock — pure function of frame, loops with the animation. */
+  const tt=83*3600+14*60+frame*2
+  const ts=`T+${String(~~(tt/3600)).padStart(3,'0')}:${String(~~(tt/60)%60).padStart(2,'0')}:${String(tt%60).padStart(2,'0')}`
+
+  /* ── Background ── */
+  fill(0,0,W,H,P.bg)
+
+  /* ── Header ── */
+  fill(0,0,W,22,P.pan)
+  fill(0,0,W,2,P.bdr)
+  ln(0,22,W,22,P.grid)
+  txt('◆ DEEP RANGE SCANNER',8,15,P.cyB,11,'left',true)
+  txt('ARRAY 7G — LONG SWEEP',196,15,P.tx3,9)
+  dot(W-104,11,3,bl?P.gn:P.gnD)
+  txt(ts,W-96,15,P.tx,10)
+
+  /* ══ LEFT: tracking viewport ══════════════════════════════════════ */
+  const LX=4,LY=27,LW=302,LH=252
+  fill(LX,LY,LW,LH,css(3,10,20))
+  box(LX,LY,LW,LH,P.grid)
+  /* faint grid */
+  cx.strokeStyle=P.grid;cx.lineWidth=0.4
+  for(let gx=LX+30;gx<LX+LW;gx+=30){cx.beginPath();cx.moveTo(gx,LY);cx.lineTo(gx,LY+LH);cx.stroke()}
+  for(let gy=LY+30;gy<LY+LH;gy+=30){cx.beginPath();cx.moveTo(LX,gy);cx.lineTo(LX+LW,gy);cx.stroke()}
+  /* stars */
+  for(const[sx,sy,m]of STARS){
+    cx.fillStyle=m===0?P.tx2:m===1?P.tx3:P.grid
+    cx.fillRect(LX+sx*(LW/300),LY+sy*(LH/250),m===0?2:1,m===0?2:1)
+  }
+  txt('TRACKING — CONTACT K-9 "KESTREL"',LX+7,LY+13,P.tx2,9,'left',true)
+  txt('OPTICAL+LIDAR FUSION',LX+LW-7,LY+13,P.tx3,8,'right')
+
+  /* ── Rotating wireframe ship ── */
+  const SCX=LX+LW/2,SCY=LY+LH/2+8,K=1.35
+  const csn=Math.cos(th),sn=Math.sin(th)
+  const tilt=0.30,ctl=Math.cos(tilt),stl=Math.sin(tilt)
+  const pts=VERTS.map(([x,y,z])=>{
+    const x1=x*csn+z*sn, z1=-x*sn+z*csn
+    const y2=y*ctl-z1*stl, z2=y*stl+z1*ctl
+    return[SCX+x1*K,SCY-y2*K,z2]
+  })
+  const eds=EDGES.map(([a,b])=>({a,b,z:(pts[a][2]+pts[b][2])/2}))
+  eds.sort((p,q)=>p.z-q.z)              /* painter's order: far first */
+  for(const e of eds){
+    const n=Math.max(0,Math.min(1,(e.z+60)/120))
+    const col=n<0.34?P.cyF:n<0.67?P.cyM:P.cyB
+    if(n>=0.67){                        /* phosphor glow on near edges */
+      cx.globalAlpha=0.25
+      ln(pts[e.a][0],pts[e.a][1],pts[e.b][0],pts[e.b][1],P.cyB,3)
+      cx.globalAlpha=1
+    }
+    ln(pts[e.a][0],pts[e.a][1],pts[e.b][0],pts[e.b][1],col,n>=0.67?1.4:1)
+  }
+  /* engine flare — pulses with loop phase */
+  const ex=pts[RD[0]],flare=2.5+1.5*Math.sin(th*2)
+  const exC=[(pts[RD[0]][0]+pts[RD[3]][0])/2,(pts[RD[0]][1]+pts[RD[3]][1])/2]
+  cx.globalAlpha=0.5;dot(exC[0],exC[1],flare+2,P.amD);cx.globalAlpha=1
+  dot(exC[0],exC[1],flare,P.am)
+
+  /* targeting brackets — blink amber */
+  const bw=118,bh=84,bc=bl?P.amB:P.am,bs=10
+  cx.strokeStyle=bc;cx.lineWidth=1.4
+  for(const[px,py,dx,dy]of[[SCX-bw,SCY-bh,1,1],[SCX+bw,SCY-bh,-1,1],[SCX-bw,SCY+bh,1,-1],[SCX+bw,SCY+bh,-1,-1]]){
+    cx.beginPath();cx.moveTo(px,py+dy*bs);cx.lineTo(px,py);cx.lineTo(px+dx*bs,py);cx.stroke()
+  }
+  txt('LOCK',SCX+bw-2,SCY-bh-4,bc,9,'right',true)
+
+  /* heading tape under ship */
+  const hdg=(ph*360)%360
+  txt(`HDG ${hdg.toFixed(1).padStart(5,'0')}°`,LX+8,LY+LH-10,P.cyB,10,'left',true)
+  txt(`ROLL +00.0   PITCH -17.2`,LX+118,LY+LH-10,P.tx3,8)
+  txt(`Δθ 22.5°/f`,LX+LW-8,LY+LH-10,P.tx3,8,'right')
+
+  /* ══ RIGHT: radar ═════════════════════════════════════════════════ */
+  const RX=312,RY=27,RW=164,RH=148
+  fill(RX,RY,RW,RH,P.pan)
+  box(RX,RY,RW,RH,P.grid)
+  fill(RX,RY,RW,2,P.gnD)
+  txt('PROXIMITY SWEEP',RX+6,RY+12,P.tx2,8,'left',true)
+  const cxr=RX+RW/2,cyr=RY+RH/2+6,RR=56
+  cx.strokeStyle=P.gnD;cx.lineWidth=0.8
+  for(const rr of[RR/3,RR*2/3,RR]){cx.beginPath();cx.arc(cxr,cyr,rr,0,Math.PI*2);cx.stroke()}
+  ln(cxr-RR,cyr,cxr+RR,cyr,P.gnD,0.6);ln(cxr,cyr-RR,cxr,cyr+RR,P.gnD,0.6)
+  /* sweep beam + 5 trailing sectors */
+  for(let t=0;t<5;t++){
+    const a0=th-(t+1)*0.14,a1=th-t*0.14
+    cx.fillStyle=P.gn;cx.globalAlpha=0.30*(1-t/5)
+    cx.beginPath();cx.moveTo(cxr,cyr);cx.arc(cxr,cyr,RR,a0,a1);cx.closePath();cx.fill()
+  }
+  cx.globalAlpha=1
+  ln(cxr,cyr,cxr+RR*Math.cos(th),cyr+RR*Math.sin(th),P.gnB,1.4)
+  /* contacts — brightness decays with angle since last sweep pass */
+  for(const b of BLIPS){
+    const ba=b.a*Math.PI/180
+    let d=(th-ba)%(Math.PI*2);if(d<0)d+=Math.PI*2
+    const k=1-d/(Math.PI*2)
+    const bx=cxr+RR*b.r*Math.cos(ba),by=cyr+RR*b.r*Math.sin(ba)
+    if(b.tgt){
+      dot(bx,by,k>0.85?4:3,k>0.85?P.amB:P.am)
+      box(bx-6,by-6,12,12,P.am,0.8)
+      txt('TGT',bx+9,by+3,P.amB,8,'left',true)
+    }else{
+      cx.globalAlpha=0.25+0.75*k
+      dot(bx,by,k>0.85?3:2,k>0.85?P.wh:P.gn)
+      cx.globalAlpha=1
+    }
+  }
+  txt(`BRG ${String(~~((ph*360)%360)).padStart(3,'0')}`,RX+6,RY+RH-6,P.gnB,8,'left',true)
+  txt('R 12km',RX+RW-6,RY+RH-6,P.tx3,8,'right')
+
+  /* ══ RIGHT: telemetry ═════════════════════════════════════════════ */
+  const TX=312,TY=180,TW=164,TH=99
+  fill(TX,TY,TW,TH,P.pan)
+  box(TX,TY,TW,TH,P.grid)
+  fill(TX,TY,TW,2,P.bdr)
+  txt('TELEMETRY',TX+6,TY+12,P.tx2,8,'left',true)
+  const wave=(o)=>0.5+0.5*Math.sin(th+o)
+  const rows=[
+    ['RANGE', `${(11.2+1.6*wave(0)).toFixed(1)}km`, wave(0),      P.cyB],
+    ['REL-V', `${(184+40*wave(2.1)).toFixed(0)}m/s`,wave(2.1),    P.gn ],
+    ['SIGNAL',`${(72+22*wave(4.2)).toFixed(0)}%`,   0.72+0.22*Math.sin(th+4.2)/1, P.am ],
+  ]
+  for(let i=0;i<3;i++){
+    const[lab,val,pc,col]=rows[i],ry=TY+22+i*16
+    txt(lab,TX+6,ry+8,P.tx2,8)
+    fill(TX+48,ry+1,72,8,css(6,16,28))
+    fill(TX+48,ry+1,~~(72*Math.max(0.05,Math.min(1,pc))),8,col)
+    box(TX+48,ry+1,72,8,P.grid,0.5)
+    txt(val,TX+TW-5,ry+8,col,8,'right')
+  }
+  /* event log — sliding window over cyclic buffer */
+  ln(TX+5,TY+72,TX+TW-5,TY+72,P.grid)
+  for(let i=0;i<2;i++){
+    const e=LOG[(frame+i)%LOG.length]
+    const hot=e.includes('***')
+    txt('> '+e,TX+6,TY+82+i*9,hot?P.amB:i===1?P.tx:P.tx3,8,'left',hot)
+  }
+
+  /* ══ BOTTOM: scan-cycle strip ═════════════════════════════════════ */
+  const BY=284
+  fill(0,BY,W,H-BY,P.pan)
+  ln(0,BY,W,BY,P.grid)
+  txt('SCAN CYCLE',8,BY+14,P.tx2,8,'left',true)
+  const segW=~~((W-180)/FRAME_COUNT)
+  for(let i=0;i<FRAME_COUNT;i++){
+    const sx=88+i*segW
+    const on=i<=frame
+    fill(sx,BY+6,segW-2,12,on?(i===frame?P.cyB:P.cyM):css(8,22,36))
+    if(i===frame)box(sx,BY+6,segW-2,12,P.wh,0.8)
+  }
+  txt(`${String(frame+1).padStart(2,'0')}/${FRAME_COUNT}`,W-86,BY+15,P.cyB,9,'left',true)
+  txt(`${(ph*100).toFixed(0).padStart(3,'0')}%`,W-8,BY+15,P.tx,9,'right')
+  txt('PASSIVE MODE — EMCON 2 — NO ACTIVE PING',8,BY+30,P.tx3,8)
+  txt(bl?'● REC':'  REC',W-8,BY+30,bl?P.rd:P.tx3,8,'right',true)
+
+  dither()
+}
+
+/* ── Driver ───────────────────────────────────────────────────────────
+ * Grab path: server appends ?vow_frame=N → render exactly that frame.
+ * Preview path: self-animate so the dashboard thumbnail shows motion. */
+const vf=new URLSearchParams(location.search).get('vow_frame')
+if(vf!==null){
+  render(parseInt(vf,10)||0)
+}else{
+  let pf=0
+  render(pf)
+  setInterval(()=>{pf=(pf+1)%FRAME_COUNT;render(pf)},250)
+}
+</script></body></html>

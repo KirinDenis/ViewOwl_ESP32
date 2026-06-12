@@ -1,0 +1,229 @@
+/* ── Left sidebar — ISA-101 calm layout ─────────────────────────────────────── */
+.sidebar-left {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  height: 100%;
+  background: var(--bg);
+}
+
+/* Fixed-size panels must not grow */
+.sidebar-left .hud-panel { flex-shrink: 0; }
+
+/* Device list — fixed height scroll */
+.sidebar-device-list .panel-content { max-height: 160px; overflow-y: auto; padding: 5px var(--space-md); }
+
+/* Event log — takes all remaining vertical space */
+.sidebar-event-log {
+  flex: 1 !important;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-event-log .panel-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 5px var(--space-md);
+}
+
+/* ── Alert Board — L1 severity count grid ────────────────────────────────── */
+.alert-counts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-bottom: 1px solid var(--border);
+  margin: 0;
+}
+
+.alert-count-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-sm) 0;
+  background: var(--bg-panel);
+  gap: 2px;
+}
+
+.ac-value {
+  font-family: var(--font);
+  font-size: var(--text-xl);   /* 24px — large enough to see at a glance */
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ac-label {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Severity color coding */
+.ac-p1 .ac-value { color: var(--p1-color); }
+.ac-p1 .ac-label { color: var(--p1-color); opacity: 0.8; }
+
+.ac-p2 .ac-value { color: var(--p2-color); }
+.ac-p2 .ac-label { color: var(--p2-color); opacity: 0.8; }
+
+.ac-p3 .ac-value { color: var(--p3-color); }
+.ac-p3 .ac-label { color: var(--p3-color); opacity: 0.8; }
+
+.ac-p4 .ac-value { color: var(--p4-color); }
+.ac-p4 .ac-label { color: var(--p4-color); opacity: 0.8; }
+
+/* Zero counts — dim, not eye-catching when healthy */
+.ac-dim .ac-value { color: var(--neutral-idle); }
+.ac-dim .ac-label { color: var(--neutral-text); }
+
+/* ── Alert Board — L2 alert list ────────────────────────────────────────── */
+.alert-board-ok {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  color: var(--neutral-text);
+  text-align: center;
+  padding: var(--space-sm) 0;
+  letter-spacing: 0.08em;
+}
+
+.alert-list {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: 5px var(--space-md);
+  border-bottom: 1px solid var(--border);
+}
+
+.alert-item-badge {
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.alert-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.alert-item-name {
+  font-family: var(--font);
+  font-size: var(--text-sm);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alert-item-detail {
+  font-family: var(--font);
+  font-size: 10px;
+  color: var(--neutral-text);
+}
+
+/* Severity-specific badge and row colors */
+.alert-item-p1 .alert-item-badge {
+  background: rgba(204, 51, 51, 0.18);
+  border: 1px solid var(--p1-color);
+  color: var(--p1-color);
+}
+.alert-item-p2 .alert-item-badge {
+  background: rgba(212, 160, 23, 0.15);
+  border: 1px solid var(--p2-color);
+  color: var(--p2-color);
+}
+
+.alert-item-p3 .alert-item-badge {
+  background: rgba(200, 184, 0, 0.12);
+  border: 1px solid var(--p3-color);
+  color: var(--p3-color);
+}
+
+.alert-item-p4 .alert-item-badge {
+  background: rgba(51, 153, 255, 0.12);
+  border: 1px solid var(--p4-color);
+  color: var(--p4-color);
+}
+
+/* ── Shared panel items ───────────────────────────────────────────────────── */
+.sidebar-empty {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  text-align: center;
+  padding: var(--space-sm) 0;
+  letter-spacing: 0.08em;
+}
+
+.device-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 4px 2px;
+}
+.device-list-name {
+  font-family: var(--font);
+  font-size: var(--text-sm);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Event log rows */
+.event-item {
+  display: flex;
+  gap: var(--space-sm);
+  padding: 2px 0;
+  font-family: var(--font);
+  font-size: 10px;
+}
+.event-time { color: var(--neutral-text); flex-shrink: 0; }
+.event-msg  { color: var(--text); }
+.event-success .event-msg { color: var(--accent-success); }
+.event-warning .event-msg { color: var(--status-warn); }
+.event-error   .event-msg { color: var(--status-error); }
+
+/* ── Collapse toggle ─────────────────────────────────────────────────────── */
+.sidebar-collapse-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 0.65rem;
+  cursor: pointer;
+  padding: 3px 5px;
+  align-self: flex-end;
+  transition: color 0.15s, border-color 0.15s;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+.sidebar-collapse-btn:hover {
+  color: var(--text);
+  border-color: var(--border-bright);
+}
+.sidebar-collapse-btn-left  { align-self: flex-end; margin-bottom: 2px; }
+
+.sidebar-left.sidebar-collapsed {
+  padding: var(--space-sm) 4px;
+  align-items: center;
+  overflow: hidden;
+}

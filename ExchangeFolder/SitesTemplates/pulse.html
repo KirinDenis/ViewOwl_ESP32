@@ -1,0 +1,246 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vital Signs Monitor</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; width: 480px; height: 320px; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="Pulse" data-vow-category="ambient" data-vow-description="Pulse rhythm ambient display">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+function quantChannel(v, bits) {
+    const shift = 8 - bits;
+    const q = Math.min((1 << bits) - 1, v >> shift);
+    return (q << shift) | (q >> (bits - shift));
+}
+function snap565(r, g, b) {
+    return { r: quantChannel(r,5), g: quantChannel(g,6), b: quantChannel(b,5) };
+}
+function css(r, g, b) {
+    const q = snap565(r, g, b);
+    return `rgb(${q.r},${q.g},${q.b})`;
+}
+
+function dither() {
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const oR = d[i], oG = d[i+1], oB = d[i+2];
+            const q = snap565(oR, oG, oB);
+            d[i] = q.r; d[i+1] = q.g; d[i+2] = q.b;
+            const eR = oR-q.r, eG = oG-q.g, eB = oB-q.b;
+            if (x+1<W){const j=i+4;d[j]=clamp(d[j]+((eR*7)>>4));d[j+1]=clamp(d[j+1]+((eG*7)>>4));d[j+2]=clamp(d[j+2]+((eB*7)>>4));}
+            if (y+1<H){
+                if (x>0){const j=((y+1)*W+(x-1))*4;d[j]=clamp(d[j]+((eR*3)>>4));d[j+1]=clamp(d[j+1]+((eG*3)>>4));d[j+2]=clamp(d[j+2]+((eB*3)>>4));}
+                {const j=((y+1)*W+x)*4;d[j]=clamp(d[j]+((eR*5)>>4));d[j+1]=clamp(d[j+1]+((eG*5)>>4));d[j+2]=clamp(d[j+2]+((eB*5)>>4));}
+                if (x+1<W){const j=((y+1)*W+(x+1))*4;d[j]=clamp(d[j]+(eR>>4));d[j+1]=clamp(d[j+1]+(eG>>4));d[j+2]=clamp(d[j+2]+(eB>>4));}
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
+const HEADER_H = 36, FOOTER_H = 0;
+const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pad(n) { return String(n).padStart(2,'0'); }
+let clockStr = '00:00:00', dateStr = 'Mon 01 Jan';
+function tickClock() {
+    const now = new Date();
+    clockStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    dateStr = `${DAY[now.getDay()]} ${pad(now.getDate())} ${MON[now.getMonth()]}`;
+}
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
+function line(x1,y1,x2,y2,c,t){
+    ctx.strokeStyle=c;ctx.lineWidth=t||1;
+    const ox=(y1===y2)?0:0.5,oy=(x1===x2)?0:0.5;
+    ctx.beginPath();ctx.moveTo(x1+ox,y1+oy);ctx.lineTo(x2+ox,y2+oy);ctx.stroke();
+}
+function drawText(s,x,y,sz,c,align,bold){
+    ctx.fillStyle=c;
+    ctx.font=`${bold===false?'':'bold '}${sz}px Arial,Helvetica,sans-serif`;
+    ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';
+    ctx.fillText(String(s),x,y);
+}
+
+// --- Weather fetch for London ---
+const LAT = 51.51, LON = -0.13;
+let wx = { temp: null, humidity: null, wind: null, pressure: null };
+
+function fetchWeather() {
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,relativehumidity_2m,windspeed_10m,surface_pressure&timezone=Europe%2FLondon`)
+        .then(r => r.json())
+        .then(data => {
+            const c = data.current;
+            wx.temp     = c.temperature_2m;
+            wx.humidity = c.relativehumidity_2m;
+            wx.wind     = c.windspeed_10m;
+            wx.pressure = c.surface_pressure;
+        })
+        .catch(() => {});
+}
+
+// --- ECG waveform ring buffer ---
+// 480 Y values (one per pixel column). We scroll left by appending new samples.
+const ECG_BUF_SIZE = W;
+const ecgBuf = new Float32Array(ECG_BUF_SIZE);
+let ecgHead = 0; // index of the next write position
+
+// ECG wave pattern: one heartbeat cycle = 75 samples (≈80 BPM at 1 sample/frame-tick)
+// Composed of: flat → P wave → flat → QRS spike → T wave → flat
+const CYCLE_LEN = 75;
+const ecgPattern = new Float32Array(CYCLE_LEN);
+(function buildEcgPattern() {
+    // All values 0 = baseline; positive = up; negative = down
+    // P wave: gentle bump at positions 10-20
+    for (let i = 10; i < 20; i++) ecgPattern[i] = Math.sin((i - 10) / 10 * Math.PI) * 0.15;
+    // Q dip: position 28-30
+    for (let i = 28; i < 30; i++) ecgPattern[i] = -0.2;
+    // R spike: position 30-36
+    ecgPattern[30] = 0.0;
+    ecgPattern[31] = 0.4;
+    ecgPattern[32] = 1.0;  // peak
+    ecgPattern[33] = 0.5;
+    ecgPattern[34] = 0.0;
+    ecgPattern[35] = -0.3; // S dip
+    ecgPattern[36] = 0.0;
+    // T wave: positions 42-55
+    for (let i = 42; i < 55; i++) ecgPattern[i] = Math.sin((i - 42) / 13 * Math.PI) * 0.25;
+})();
+
+// Phase tracks which sample in the CYCLE_LEN pattern we emit next
+let ecgPhase = 0;
+// How many new ECG samples per animation frame (~60fps → emit ~2 samples/frame for realistic scroll)
+const SAMPLES_PER_FRAME = 2;
+
+// ECG display area
+const ECG_X = 0, ECG_Y = HEADER_H;
+const ECG_W = W, ECG_H = 200; // top 2/3 of content
+const ECG_MID = ECG_Y + Math.round(ECG_H / 2);
+const ECG_AMP = 80; // pixels from midline to peak
+
+// Bottom vitals area
+const VIT_Y = ECG_Y + ECG_H;
+const VIT_H = H - VIT_Y;
+const BOX_W = 120;
+
+function pushEcgSamples(n) {
+    for (let k = 0; k < n; k++) {
+        ecgBuf[ecgHead] = ecgPattern[ecgPhase];
+        ecgHead = (ecgHead + 1) % ECG_BUF_SIZE;
+        ecgPhase = (ecgPhase + 1) % CYCLE_LEN;
+    }
+}
+
+function render() {
+    // Dark medical background
+    fillRect(0, 0, W, H, css(0, 8, 0));
+
+    // --- Header ---
+    fillRect(0, 0, W, HEADER_H, css(0, 20, 0));
+    line(0, HEADER_H - 1, W, HEADER_H - 1, css(0, 100, 0));
+    drawText('VITAL SIGNS MONITOR', 8, 25, 14, css(0, 248, 0), 'left', true);
+    drawText(clockStr, W - 8, 25, 13, css(0, 200, 0), 'right', false);
+
+    // --- ECG area background ---
+    fillRect(ECG_X, ECG_Y, ECG_W, ECG_H, css(0, 6, 0));
+
+    // Horizontal grid lines (5 lines)
+    for (let row = 1; row < 5; row++) {
+        const gy = ECG_Y + Math.round(row * ECG_H / 5);
+        line(ECG_X, gy, ECG_X + ECG_W, gy, css(0, 28, 0));
+    }
+    // Vertical grid lines every 60px
+    for (let gx = 60; gx < ECG_W; gx += 60) {
+        line(gx, ECG_Y, gx, ECG_Y + ECG_H, css(0, 28, 0));
+    }
+
+    // Midline
+    line(ECG_X, ECG_MID, ECG_X + ECG_W, ECG_MID, css(0, 48, 0));
+
+    // Draw ECG trace from ring buffer (oldest first = left side of screen)
+    ctx.strokeStyle = css(0, 248, 0);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let x = 0; x < ECG_BUF_SIZE; x++) {
+        // index into ring buffer: oldest sample is at ecgHead
+        const idx = (ecgHead + x) % ECG_BUF_SIZE;
+        const sample = ecgBuf[idx];
+        const py = ECG_MID - sample * ECG_AMP;
+        if (x === 0) ctx.moveTo(x + 0.5, py);
+        else ctx.lineTo(x + 0.5, py);
+    }
+    ctx.stroke();
+
+    // Scan line (bright dot at current write position = right edge)
+    const scanX = (ecgHead === 0 ? ECG_BUF_SIZE - 1 : ecgHead - 1);
+    const scanSample = ecgBuf[(scanX) % ECG_BUF_SIZE];
+    const scanY = ECG_MID - scanSample * ECG_AMP;
+    ctx.fillStyle = css(0, 248, 0);
+    ctx.beginPath();
+    ctx.arc(scanX, scanY, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- Vitals boxes ---
+    fillRect(0, VIT_Y, W, VIT_H, css(0, 4, 0));
+    line(0, VIT_Y, W, VIT_Y, css(0, 80, 0));
+
+    const vitals = [
+        { label: 'TEMP C',   value: wx.temp     === null ? '---' : wx.temp.toFixed(1),     unit: '°C',   color: css(0, 248, 0) },
+        { label: 'SpO2 %',   value: wx.humidity === null ? '---' : wx.humidity.toFixed(0),  unit: '%',    color: css(0, 248, 0) },
+        { label: 'PULSE BPM',value: wx.wind     === null ? '---' : Math.round(wx.wind * 1.2 + 60).toString(), unit: 'BPM', color: css(248, 0, 0) },
+        { label: 'SYS mmHg', value: wx.pressure === null ? '---' : Math.round(wx.pressure).toString(), unit: 'hPa', color: css(0, 248, 0) },
+    ];
+
+    for (let i = 0; i < 4; i++) {
+        const bx = i * BOX_W;
+        const v = vitals[i];
+        // Box border
+        line(bx, VIT_Y, bx, H, css(0, 60, 0));
+        // Label row
+        drawText(v.label, bx + 4, VIT_Y + 14, 10, css(0, 160, 0), 'left', false);
+        // Large value
+        drawText(v.value, bx + BOX_W / 2, VIT_Y + 46, 22, v.color, 'center', true);
+        // Unit
+        drawText(v.unit, bx + BOX_W / 2, VIT_Y + 62, 10, css(0, 120, 0), 'center', false);
+    }
+    // Final right border
+    line(W - 1, VIT_Y, W - 1, H, css(0, 60, 0));
+}
+
+function frame() {
+    pushEcgSamples(SAMPLES_PER_FRAME);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.lineWidth = 1; ctx.lineCap = 'butt';
+    render();
+    dither();
+    requestAnimationFrame(frame);
+}
+
+// Initialise ECG buffer with one full pre-fill so screen is not blank
+for (let i = 0; i < ECG_BUF_SIZE; i++) pushEcgSamples(1);
+
+fetchWeather();
+setInterval(fetchWeather, 600000);
+tickClock();
+setInterval(tickClock, 1000);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

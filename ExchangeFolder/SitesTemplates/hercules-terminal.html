@@ -1,0 +1,227 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="Hercules Terminal"
+  data-vow-description="Emerald phosphor CRT terminal — typewriter cursor, block cursor, line-complete flash, Hercules MDA style"
+  data-vow-category="scifi"
+  data-vow-tags="terminal,hercules,crt,typewriter,green,phosphor,retro,monochrome"
+  data-vow-frames="16"
+  data-vow-fps="8"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+const FRAMES = 16;
+const frameParam   = new URLSearchParams(location.search).get('vow_frame');
+const initialFrame = parseInt(frameParam ?? '0', 10);
+let N = ((initialFrame % FRAMES) + FRAMES) % FRAMES;
+
+/* ── Emerald / Hercules phosphor palette ─────────────────────────────────── */
+const BG      = '#000D08';   // near-black green tint
+const HIST    = '#0B3A1C';   // old static history — very dim
+const DIM     = '#0F5228';   // completed lines — dim
+const NRM     = '#25B84E';   // normal bright text
+const BRT     = '#44FF88';   // active typing + cursor
+const FLASH_C = '#C8FFDA';   // line-complete flash colour
+
+/* ── Font & layout ───────────────────────────────────────────────────────── */
+const FONT_PX = 15;
+const LINE_H  = 22;
+const PAD_X   = 18;
+const HDR_H   = 28;     // header band height
+const SEP_Y   = HDR_H + 4 + 3 * LINE_H + 6;   // separator y after 3 history lines
+
+/* Measure monospace char width once (no transform active yet) */
+ctx.font = `bold ${FONT_PX}px "Courier New", monospace`;
+const CW = ctx.measureText('M').width;   // character width in logical px
+
+/* ── Static history lines (always visible, dim) ──────────────────────────── */
+const HISTORY = [
+  '  WEYLAND-YUTANI CORP.      ',
+  '  BIOSCAN SYS v4.2.1        ',
+  '  CONN: USCSS SULACO        ',
+];
+
+/* ── Animated typing lines ───────────────────────────────────────────────── */
+const LINES = [
+  '> UPLINK ACTIVE',
+  '> CONTACTS: 3 CONFIRMED',
+  '> SECTOR LV-426',
+  '> BIOSCAN: ALERT LEVEL 3',
+];
+
+const TOTAL_CHARS = LINES.reduce((s, l) => s + l.length, 0);  // 15+23+15+24 = 77
+
+/* ── How many chars to show at frame N ───────────────────────────────────── */
+/* Frame 0 = 0 chars (blank reset beat); frame FRAMES-1 = all chars          */
+function charsAt(n) {
+  if (n === 0) return 0;
+  return Math.round((n / (FRAMES - 1)) * TOTAL_CHARS);
+}
+
+/* ── Decompose total char count into per-line state ─────────────────────── */
+function getTyped(total) {
+  const out = [];
+  let rem = total;
+  for (const full of LINES) {
+    if (rem <= 0) break;
+    if (rem >= full.length) { out.push({ text: full, done: true });  rem -= full.length; }
+    else                    { out.push({ text: full.slice(0, rem), done: false }); rem = 0; }
+  }
+  return out;
+}
+
+/* ── Pre-compute first frame where each line completes ───────────────────── */
+const DONE_AT = {};
+for (let n = 0; n < FRAMES; n++) {
+  getTyped(charsAt(n)).forEach((l, i) => {
+    if (l.done && DONE_AT[i] === undefined) DONE_AT[i] = n;
+  });
+}
+
+/* Flash alpha: bright for FLASH_DUR frames after completion, then fades     */
+const FLASH_DUR = 3;
+function flashA(lineIdx, n) {
+  const d = DONE_AT[lineIdx];
+  if (d === undefined) return 0;
+  const age = n - d;
+  if (age < 0 || age >= FLASH_DUR) return 0;
+  return 1 - age / FLASH_DUR;
+}
+
+/* Cursor blinks every other frame */
+const curOn = () => (N & 1) === 0;
+
+/* ── Render ──────────────────────────────────────────────────────────────── */
+function render() {
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+
+  /* Background */
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, VW, VH);
+
+  /* Phosphor ambient glow */
+  const glow = ctx.createRadialGradient(VW/2, VH/2, 40, VW/2, VH/2, 240);
+  glow.addColorStop(0, 'rgba(0,120,50,0.10)');
+  glow.addColorStop(1, 'rgba(0,20,8,0.00)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, VW, VH);
+
+  /* ── Header band ──────────────────────────────────────────────────────── */
+  ctx.fillStyle = '#000F0A';
+  ctx.fillRect(0, 0, VW, HDR_H);
+  ctx.strokeStyle = DIM; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, HDR_H); ctx.lineTo(VW, HDR_H); ctx.stroke();
+
+  ctx.font         = `10px "Courier New", monospace`;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle    = DIM;
+  ctx.textAlign    = 'left';
+  ctx.fillText('HERCULES MDA  REV.2', PAD_X, HDR_H / 2);
+  ctx.textAlign = 'right';
+  ctx.fillText('WY CORP  TERMINAL-07', VW - PAD_X, HDR_H / 2);
+  ctx.textAlign = 'left';
+
+  /* ── Static history lines ─────────────────────────────────────────────── */
+  ctx.font         = `bold ${FONT_PX}px "Courier New", monospace`;
+  ctx.textBaseline = 'top';
+
+  HISTORY.forEach((line, i) => {
+    ctx.fillStyle = HIST;
+    ctx.fillText(line, PAD_X, HDR_H + 4 + i * LINE_H);
+  });
+
+  /* Separator after history */
+  const sepStr = '─'.repeat(40);
+  ctx.fillStyle = HIST;
+  ctx.fillText(sepStr, PAD_X, SEP_Y);
+
+  /* ── Animated lines ───────────────────────────────────────────────────── */
+  const typed    = getTyped(charsAt(N));
+  const baseY    = SEP_Y + LINE_H + 2;   // first animated line Y
+  const activeIdx = typed.findIndex(l => !l.done);   // currently typing line
+
+  for (let i = 0; i < typed.length; i++) {
+    const { text, done } = typed[i];
+    const y  = baseY + i * LINE_H;
+    const fa = flashA(i, N);
+
+    if (fa > 0) {
+      /* Line-complete flash: whole line goes bright then fades */
+      ctx.globalAlpha = 0.5 + fa * 0.5;
+      ctx.fillStyle   = FLASH_C;
+      ctx.fillText(text, PAD_X, y);
+      ctx.globalAlpha = 1;
+    } else if (done && i < typed.length - 1) {
+      /* History: dimmed */
+      ctx.fillStyle = DIM;
+      ctx.fillText(text, PAD_X, y);
+    } else {
+      /* Active or most-recent: normal bright */
+      ctx.fillStyle = (done ? NRM : BRT);
+      ctx.fillText(text, PAD_X, y);
+    }
+
+    /* Block cursor on the currently-typing line */
+    if (!done && curOn()) {
+      ctx.fillStyle = BRT;
+      ctx.fillRect(PAD_X + text.length * CW, y + 1, CW, FONT_PX + 1);
+    }
+  }
+
+  /* Cursor on empty line after last completed (ready state) */
+  if (typed.length === LINES.length && typed.every(l => l.done) && curOn()) {
+    const y = baseY + typed.length * LINE_H;
+    ctx.fillStyle = NRM;
+    ctx.fillRect(PAD_X, y + 1, CW, FONT_PX + 1);
+  }
+
+  /* Cursor on empty first line before any typing */
+  if (typed.length === 0 && curOn()) {
+    ctx.fillStyle = BRT;
+    ctx.fillRect(PAD_X, baseY + 1, CW, FONT_PX + 1);
+  }
+
+  /* ── CRT scanlines ────────────────────────────────────────────────────── */
+  ctx.fillStyle = 'rgba(0,0,0,0.34)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+
+  /* ── Vignette ─────────────────────────────────────────────────────────── */
+  const vig = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW,VH)*0.28,
+                                       VW/2, VH/2, Math.max(VW,VH)*0.68);
+  vig.addColorStop(0, 'rgba(0,0,0,0.00)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.72)');
+  ctx.fillStyle = vig; ctx.fillRect(0, 0, VW, VH);
+}
+
+render();
+
+if (frameParam === null) {
+  const FPS = 8; let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) { last = ts; N = (N + 1) % FRAMES; render(); }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

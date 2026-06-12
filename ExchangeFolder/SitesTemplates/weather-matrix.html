@@ -1,0 +1,285 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body id="body"
+  data-vow-class="B"
+  data-vow-name="Weather Matrix"
+  data-vow-description="Matrix-style weather panel — cyan rain backdrop, amber data readout, 8-shade palette, rAF animated"
+  data-vow-category="weather"
+  data-vow-tags="weather,scifi,matrix,phosphor"
+  data-vow-refresh="5"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+/* ── Canvas sizing — fills actual viewport; drawing happens in 480×320 logical ── */
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+
+const canvas = document.getElementById('c');
+canvas.width  = W;
+canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+/* ── Grid geometry — same 12×20 cell as Matrix Rain ─────────────────────── */
+const CELL_W = 12;
+const CELL_H = 20;
+const COLS   = Math.floor(VW / CELL_W);      /* 40 */
+const ROWS   = Math.floor(VH / CELL_H);      /* 16 */
+
+/* ── Palette — 8 flat BGR565-safe shades ────────────────────────────────── */
+const C = {
+  bg:      '#000000',
+  rainDim: '#002030',        /* matrix backdrop — deep cyan                */
+  rainMid: '#00607C',        /* mid cyan                                   */
+  rainLit: '#00C0E0',        /* bright cyan                                */
+  panel:   '#081828',         /* data panel base                            */
+  amb1:    '#603000',         /* dim amber                                  */
+  amb2:    '#FFB000',         /* bright amber                               */
+  amb3:    '#FFE5A0',         /* amber highlight                            */
+};
+
+/* ── Character set — weather-themed glyphs for the rain backdrop ────────── */
+const CHARS = '0123456789*.:·°↑↓→←/|-+_~';
+
+/* ── Deterministic per-column state (mulberry32 like Matrix) ────────────── */
+function mulberry32(seed) {
+  let s = seed >>> 0;
+  return function () {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), 1 | t);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const rng    = mulberry32(0xBADC0FFEE);
+const phase  = new Array(COLS);
+const speed  = new Array(COLS);
+const active = new Array(COLS);
+const chrGrid = new Array(COLS);
+for (let c = 0; c < COLS; c++) {
+  phase[c]  = Math.floor(rng() * ROWS);
+  const r   = rng();
+  speed[c]  = r < 0.75 ? 1 : (r < 0.95 ? 2 : 3);
+  active[c] = rng() > 0.15;
+  chrGrid[c] = new Array(ROWS);
+  for (let r2 = 0; r2 < ROWS; r2++) {
+    chrGrid[c][r2] = CHARS.charAt(Math.floor(rng() * CHARS.length));
+  }
+}
+
+/* ── Weather data (filled in by fetch; placeholders until then) ─────────── */
+let data = { temp: null, hum: null, wind: null, pres: null, code: 0, ok: false };
+
+const WMO = {
+  0:'CLEAR',1:'MAINLY CLEAR',2:'PART CLOUDY',3:'OVERCAST',
+  45:'FOG',48:'RIME FOG',
+  51:'DRIZZLE',53:'DRIZZLE',55:'DRIZZLE',
+  61:'RAIN LIGHT',63:'RAIN',65:'RAIN HEAVY',
+  71:'SNOW LIGHT',73:'SNOW',75:'SNOW HEAVY',
+  80:'SHOWERS',81:'SHOWERS',82:'SHOWERS',
+  95:'STORM',96:'STORM+HAIL',99:'STORM+HAIL',
+};
+
+/* ── Rendering ──────────────────────────────────────────────────────────── */
+function drawRain(tick) {
+  /* Short 3-stop trail — fewer shades than Matrix (3 vs 12) */
+  const TRAIL = [C.rainLit, C.rainMid, C.rainDim];
+  ctx.font         = 'bold 16px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.textAlign    = 'left';
+
+  for (let c = 0; c < COLS; c++) {
+    if (!active[c]) continue;
+    const head = (phase[c] + Math.floor(tick * speed[c] * 0.25)) % ROWS;
+    for (let d = 0; d < TRAIL.length; d++) {
+      const r = (head - d + ROWS) % ROWS;
+      ctx.fillStyle = TRAIL[d];
+      ctx.fillText(chrGrid[c][r], c * CELL_W + 1, r * CELL_H + 2);
+    }
+  }
+}
+
+function drawPanel(tick) {
+  /* Center panel covers rows 3..12, cols 4..35 — solid fill obscures rain */
+  const x0 = 4 * CELL_W, y0 = 3 * CELL_H;
+  const pw = 32 * CELL_W, ph = 10 * CELL_H;
+  ctx.fillStyle = C.panel;
+  ctx.fillRect(x0, y0, pw, ph);
+
+  /* Panel border — amber corners only (4 L-shapes, 3 cells long) */
+  ctx.fillStyle = C.amb2;
+  const B = 2;
+  const L = 18;
+  /* top-left */
+  ctx.fillRect(x0, y0, L, B);       ctx.fillRect(x0, y0, B, L);
+  /* top-right */
+  ctx.fillRect(x0 + pw - L, y0, L, B);  ctx.fillRect(x0 + pw - B, y0, B, L);
+  /* bottom-left */
+  ctx.fillRect(x0, y0 + ph - B, L, B);  ctx.fillRect(x0, y0 + ph - L, B, L);
+  /* bottom-right */
+  ctx.fillRect(x0 + pw - L, y0 + ph - B, L, B);
+  ctx.fillRect(x0 + pw - B, y0 + ph - L, B, L);
+
+  /* Temperature — big amber digits with slow pulse (amb2 ↔ amb3) */
+  const pulse = (Math.sin(tick * 0.12) + 1) / 2;
+  const tempColor = pulse > 0.5 ? C.amb3 : C.amb2;
+  const tStr = (data.temp != null ? (data.temp > 0 ? '+' : '') + data.temp : '--');
+  ctx.font = 'bold 76px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = tempColor;
+  ctx.fillText(tStr, x0 + 10, y0 + 18);
+
+  ctx.font = 'bold 26px "Courier New", monospace';
+  ctx.fillStyle = C.amb1;
+  ctx.fillText('°C', x0 + 10 + ctx.measureText(tStr).width * 1.55, y0 + 70);
+
+  /* Right-side labels */
+  const rx = x0 + 210;
+  ctx.font = 'bold 11px "Courier New", monospace';
+  ctx.fillStyle = C.rainLit;
+  ctx.fillText('ATMO / WARSAW', rx, y0 + 14);
+  ctx.fillStyle = C.amb2;
+  ctx.font = 'bold 16px "Courier New", monospace';
+  ctx.fillText(WMO[data.code] ?? '--', rx, y0 + 32);
+  ctx.font = 'bold 10px "Courier New", monospace';
+  ctx.fillStyle = C.rainMid;
+  ctx.fillText('52.23N 21.01E', rx, y0 + 56);
+
+  /* Separator inside the panel */
+  ctx.fillStyle = C.amb1;
+  ctx.fillRect(x0 + 8, y0 + 100, pw - 16, 1);
+
+  /* Three animated bars — sweep-fill across 20 cells */
+  const stats = [
+    { y: y0 + 110, label: 'HUMID',  val: data.hum,  unit: '%',    frac: (data.hum  ?? 0) / 100 },
+    { y: y0 + 130, label: 'WIND',   val: data.wind, unit: 'km/h', frac: (data.wind ?? 0) / 60  },
+    { y: y0 + 150, label: 'PRESS',  val: data.pres, unit: 'hPa',  frac: ((data.pres ?? 1000) - 970) / 70 },
+  ];
+  const barX = x0 + 70;
+  const barCellW = 10;
+  const barCellH = 10;
+  const barCells = 20;
+  for (let i = 0; i < stats.length; i++) {
+    const s = stats[i];
+    /* Label */
+    ctx.font = 'bold 11px "Courier New", monospace';
+    ctx.fillStyle = C.amb2;
+    ctx.fillText(s.label, x0 + 12, s.y);
+
+    /* Sweep-fill animation — target cells appear left-to-right over a cycle */
+    const filledTarget = Math.max(0, Math.min(barCells, Math.round(s.frac * barCells)));
+    const sweep = (tick - i * 6) % 80;
+    const sweepVisible = Math.min(filledTarget, Math.max(0, Math.floor(sweep / 4)));
+    for (let k = 0; k < barCells; k++) {
+      let cc;
+      if (k < sweepVisible)        cc = C.amb3;
+      else if (k < filledTarget)   cc = C.amb2;
+      else                          cc = C.amb1;
+      ctx.fillStyle = cc;
+      ctx.fillRect(barX + k * barCellW, s.y, barCellW - 2, barCellH);
+    }
+
+    /* Value */
+    ctx.fillStyle = C.amb3;
+    const v = (s.val != null) ? (s.val + ' ' + s.unit) : '-- ' + s.unit;
+    ctx.fillText(v, barX + barCells * barCellW + 6, s.y);
+  }
+}
+
+function drawHeader(tick) {
+  /* Header band row 0 */
+  ctx.fillStyle = C.rainDim;
+  ctx.fillRect(0, 0, VW, CELL_H);
+
+  /* Traveling amber dot — single bright pixel block scanning across */
+  const sx = (tick * 4) % VW;
+  ctx.fillStyle = C.amb2;
+  ctx.fillRect(sx, 4, 6, 4);
+
+  ctx.font = 'bold 14px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = C.rainLit;
+  ctx.fillText('> WEATHER-MATRIX', 4, 2);
+  ctx.fillStyle = data.ok ? C.amb3 : C.amb1;
+  ctx.fillText(data.ok ? 'LINK OK' : 'LINK --', VW - 80, 2);
+}
+
+function drawFooter(tick) {
+  const fy = VH - CELL_H;
+  ctx.fillStyle = C.rainDim;
+  ctx.fillRect(0, fy, VW, CELL_H);
+
+  ctx.font = 'bold 11px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = C.rainMid;
+  ctx.fillText('CH 07 // 480x320 // ENCRYPTED', 4, fy + 4);
+
+  /* Blinking cursor */
+  if ((tick >> 3) & 1) {
+    ctx.fillStyle = C.amb2;
+    ctx.fillRect(VW - 14, fy + 6, 8, CELL_H - 12);
+  }
+}
+
+function render(tick) {
+  /* Map logical 480×320 → actual canvas */
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+
+  /* Background */
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, VW, VH);
+
+  drawRain(tick);
+  drawHeader(tick);
+  drawPanel(tick);
+  drawFooter(tick);
+}
+
+/* ── Main loop ──────────────────────────────────────────────────────────── */
+let tick = 0;
+function loop() {
+  render(tick);
+  tick++;
+  requestAnimationFrame(loop);
+}
+
+async function loadWeather() {
+  const url = 'https://api.open-meteo.com/v1/forecast'
+    + '?latitude=52.23&longitude=21.01'
+    + '&current=temperature_2m,relative_humidity_2m,wind_speed_10m,surface_pressure,weather_code';
+  try {
+    const r = await fetch(url);
+    const j = await r.json();
+    const cur = j.current;
+    data = {
+      temp: Math.round(cur.temperature_2m),
+      hum:  Math.round(cur.relative_humidity_2m),
+      wind: Math.round(cur.wind_speed_10m),
+      pres: Math.round(cur.surface_pressure),
+      code: cur.weather_code,
+      ok:   true,
+    };
+  } catch (e) {
+    data.ok = false;
+  }
+}
+
+loadWeather();
+loop();
+</script>
+</body>
+</html>

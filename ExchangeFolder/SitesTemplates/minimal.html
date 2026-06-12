@@ -1,0 +1,316 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vienna Weather</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 480px; height: 320px; overflow: hidden; background: #000; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="Minimal" data-vow-category="other" data-vow-description="Minimal clean display template">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+function quantChannel(v, bits) {
+    const shift = 8 - bits;
+    const q = Math.min((1 << bits) - 1, v >> shift);
+    return (q << shift) | (q >> (bits - shift));
+}
+function snap565(r, g, b) {
+    return { r: quantChannel(r,5), g: quantChannel(g,6), b: quantChannel(b,5) };
+}
+function css(r, g, b) {
+    const q = snap565(r, g, b);
+    return `rgb(${q.r},${q.g},${q.b})`;
+}
+
+function dither() {
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const oR = d[i], oG = d[i+1], oB = d[i+2];
+            const q = snap565(oR, oG, oB);
+            d[i] = q.r; d[i+1] = q.g; d[i+2] = q.b;
+            const eR = oR-q.r, eG = oG-q.g, eB = oB-q.b;
+            if (x+1<W){const j=i+4;d[j]=clamp(d[j]+((eR*7)>>4));d[j+1]=clamp(d[j+1]+((eG*7)>>4));d[j+2]=clamp(d[j+2]+((eB*7)>>4));}
+            if (y+1<H){
+                if (x>0){const j=((y+1)*W+(x-1))*4;d[j]=clamp(d[j]+((eR*3)>>4));d[j+1]=clamp(d[j+1]+((eG*3)>>4));d[j+2]=clamp(d[j+2]+((eB*3)>>4));}
+                {const j=((y+1)*W+x)*4;d[j]=clamp(d[j]+((eR*5)>>4));d[j+1]=clamp(d[j+1]+((eG*5)>>4));d[j+2]=clamp(d[j+2]+((eB*5)>>4));}
+                if (x+1<W){const j=((y+1)*W+(x+1))*4;d[j]=clamp(d[j]+(eR>>4));d[j+1]=clamp(d[j+1]+(eG>>4));d[j+2]=clamp(d[j+2]+(eB>>4));}
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
+const HEADER_H = 36, FOOTER_H = 24;
+const CONTENT_Y = HEADER_H, CONTENT_H = H - HEADER_H - FOOTER_H;
+const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pad(n) { return String(n).padStart(2,'0'); }
+let clockStr = '00:00:00', dateStr = 'Mon 01 Jan';
+function tickClock() {
+    const now = new Date();
+    clockStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    dateStr = `${DAY[now.getDay()]} ${pad(now.getDate())} ${MON[now.getMonth()]}`;
+}
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
+function line(x1,y1,x2,y2,c,t){
+    ctx.strokeStyle=c;ctx.lineWidth=t||1;
+    const ox=(y1===y2)?0:0.5,oy=(x1===x2)?0:0.5;
+    ctx.beginPath();ctx.moveTo(x1+ox,y1+oy);ctx.lineTo(x2+ox,y2+oy);ctx.stroke();
+}
+function drawText(s,x,y,sz,c,align,bold){
+    ctx.fillStyle=c;
+    ctx.font=`${bold===false?'':'bold '}${sz}px Arial,Helvetica,sans-serif`;
+    ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';
+    ctx.fillText(String(s),x,y);
+}
+
+function redraw() {
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.lineWidth=1;ctx.lineCap='butt';
+    render();
+    dither();
+}
+function tick() { tickClock(); redraw(); }
+
+// ---- Weather label helper ----
+function wLabel(code) {
+    if (code === 0) return 'CLEAR';
+    if (code <= 2) return 'P.CLOUDY';
+    if (code <= 3) return 'CLOUDY';
+    if (code <= 48) return 'FOGGY';
+    if (code <= 67) return 'RAINY';
+    if (code <= 77) return 'SNOWY';
+    if (code <= 82) return 'SHOWERS';
+    return 'STORMY';
+}
+
+// ---- Canvas weather icon ----
+function drawWIcon(cx, cy, s, code) {
+    if (code === 0) {
+        ctx.fillStyle = C.yellow;
+        ctx.beginPath(); ctx.arc(cx, cy, s*0.35, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = C.yellow; ctx.lineWidth = 1;
+        for (let i=0;i<8;i++){
+            const a=i*Math.PI/4;
+            ctx.beginPath();
+            ctx.moveTo(cx+Math.cos(a)*s*0.45,cy+Math.sin(a)*s*0.45);
+            ctx.lineTo(cx+Math.cos(a)*s*0.7,cy+Math.sin(a)*s*0.7);
+            ctx.stroke();
+        }
+    } else if (code <= 2) {
+        ctx.fillStyle = C.yellow;
+        ctx.beginPath(); ctx.arc(cx-s*0.15, cy-s*0.15, s*0.25, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = C.ltGray;
+        ctx.fillRect(cx-s*0.4, cy, s*0.8, s*0.35);
+        ctx.fillRect(cx-s*0.2, cy-s*0.2, s*0.5, s*0.3);
+    } else if (code <= 3) {
+        ctx.fillStyle = C.ltGray;
+        ctx.fillRect(cx-s*0.45, cy-s*0.1, s*0.9, s*0.4);
+        ctx.fillRect(cx-s*0.25, cy-s*0.4, s*0.5, s*0.35);
+    } else if (code <= 67) {
+        ctx.fillStyle = C.gray;
+        ctx.fillRect(cx-s*0.4, cy-s*0.2, s*0.8, s*0.3);
+        ctx.fillRect(cx-s*0.2, cy-s*0.42, s*0.4, s*0.28);
+        ctx.fillStyle = C.blue;
+        for (let i=0;i<4;i++) ctx.fillRect(cx-s*0.35+i*s*0.22, cy+s*0.2, 2, s*0.28);
+    } else if (code <= 77) {
+        ctx.fillStyle = C.ltGray;
+        ctx.fillRect(cx-s*0.4, cy-s*0.2, s*0.8, s*0.3);
+        ctx.fillStyle = C.white;
+        for (let i=0;i<4;i++){
+            ctx.beginPath();
+            ctx.arc(cx-s*0.3+i*s*0.2, cy+s*0.28, 3, 0, Math.PI*2);
+            ctx.fill();
+        }
+    } else {
+        ctx.fillStyle = C.gray;
+        ctx.fillRect(cx-s*0.4, cy-s*0.2, s*0.8, s*0.3);
+        ctx.fillStyle = C.yellow;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy+s*0.12);
+        ctx.lineTo(cx-s*0.15, cy+s*0.35);
+        ctx.lineTo(cx, cy+s*0.22);
+        ctx.lineTo(cx+s*0.1, cy+s*0.5);
+        ctx.closePath();
+        ctx.fill();
+    }
+}
+
+// ---- Palette ----
+const C = {
+    bg:     css(  2,   6,  18),
+    panel:  css(  6,  12,  32),
+    border: css( 20,  32,  80),
+    cyan:   css(  0, 220, 200),
+    white:  css(255, 255, 255),
+    gray:   css(140, 140, 150),
+    dimGray:css( 80,  80,  90),
+    yellow: css(255, 210,   0),
+    red:    css(255,  60,  60),
+    blue:   css( 80, 160, 255),
+    green:  css( 60, 220, 120),
+    ltGray: css(200, 200, 210),
+};
+
+// ---- Weather state ----
+const wx = {
+    temp: '---', feelsLike: '---', condition: '---', code: -1,
+    humidity: '--', wind: '--', pressure: '----', daily: []
+};
+
+function fetchWeather() {
+    const url = 'https://api.open-meteo.com/v1/forecast' +
+        '?latitude=48.21&longitude=16.37' +
+        '&current=temperature_2m,weathercode,windspeed_10m,relativehumidity_2m,apparent_temperature,surface_pressure' +
+        '&daily=temperature_2m_max,temperature_2m_min,weathercode' +
+        '&forecast_days=7&timezone=Europe%2FVienna';
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const cur = data.current;
+            wx.temp      = Math.round(cur.temperature_2m) + '\u00b0C';
+            wx.feelsLike = Math.round(cur.apparent_temperature) + '\u00b0C';
+            wx.code      = cur.weathercode;
+            wx.condition = wLabel(cur.weathercode);
+            wx.humidity  = cur.relativehumidity_2m + '%';
+            wx.wind      = Math.round(cur.windspeed_10m) + ' km/h';
+            wx.pressure  = Math.round(cur.surface_pressure) + ' hPa';
+            // Build 7-day forecast array
+            const d = data.daily;
+            wx.daily = [];
+            for (let i = 0; i < 7; i++) {
+                const dt = new Date(d.time[i]);
+                wx.daily.push({
+                    day:  DAY[dt.getDay()],
+                    hi:   Math.round(d.temperature_2m_max[i]),
+                    lo:   Math.round(d.temperature_2m_min[i]),
+                    cond: wLabel(d.weathercode[i]),
+                });
+            }
+        })
+        .catch(() => {});
+}
+
+fetchWeather();
+// Refresh weather every 10 minutes
+setInterval(fetchWeather, 600000);
+
+function render() {
+    // Background
+    fillRect(0, 0, W, H, C.bg);
+
+    // ---- HEADER ----
+    fillRect(0, 0, W, HEADER_H, C.panel);
+    line(0, HEADER_H, W, HEADER_H, C.border, 1);
+
+    drawText('VIENNA WEATHER', 10, 23, 14, C.cyan, 'left', true);
+    drawText(dateStr, W/2, 23, 12, C.gray, 'center', false);
+    drawText(clockStr, W - 8, 23, 14, C.white, 'right', true);
+
+    // ---- LEFT HALF: temperature + condition ----
+    const lx = 12;
+
+    // Large temperature
+    ctx.fillStyle = C.white;
+    ctx.font = 'bold 72px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(wx.temp, lx, HEADER_H + 84);
+
+    // Condition label
+    ctx.fillStyle = C.cyan;
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.fillText(wx.condition, lx, HEADER_H + 112);
+
+    // Feels-like
+    ctx.fillStyle = C.gray;
+    ctx.font = '13px Arial, sans-serif';
+    ctx.fillText('Feels like ' + wx.feelsLike, lx, HEADER_H + 134);
+
+    // Vertical separator
+    line(240, HEADER_H + 4, 240, H - FOOTER_H - 4, C.border, 1);
+
+    // ---- RIGHT HALF: icon + data rows ----
+    const rx = 252;
+    const iconCX = rx + 50;
+    const iconCY = HEADER_H + 56;
+
+    if (wx.code >= 0) {
+        drawWIcon(iconCX, iconCY, 44, wx.code);
+    }
+
+    // Four data rows
+    const dataX1 = rx + 8;
+    const dataX2 = W - 8;
+    const rowH = 22;
+    const rows = [
+        { label: 'HUMIDITY',  val: wx.humidity },
+        { label: 'WIND',      val: wx.wind },
+        { label: 'PRESSURE',  val: wx.pressure },
+        { label: 'CONDITION', val: wx.condition },
+    ];
+    const rowStartY = HEADER_H + 110;
+    rows.forEach((row, i) => {
+        const ry = rowStartY + i * rowH;
+        ctx.fillStyle = C.dimGray;
+        ctx.font = '11px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(row.label, dataX1, ry);
+        ctx.fillStyle = C.white;
+        ctx.font = 'bold 11px Arial, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(row.val, dataX2, ry);
+    });
+
+    // ---- FOOTER: 7-day forecast ----
+    const footerY = H - FOOTER_H;
+    fillRect(0, footerY, W, FOOTER_H, C.panel);
+    line(0, footerY, W, footerY, C.border, 1);
+
+    if (wx.daily.length === 7) {
+        const colW = Math.floor(W / 7);
+        wx.daily.forEach((d, i) => {
+            const fx = i * colW + colW / 2;
+            const fy = footerY + 9;
+
+            ctx.fillStyle = C.gray;
+            ctx.font = 'bold 9px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText(d.day.toUpperCase(), fx, fy);
+
+            // High / low temperature colors
+            const hiC = d.hi >= 0 ? C.red : C.blue;
+            const loC = C.blue;
+            ctx.fillStyle = hiC;
+            ctx.font = 'bold 9px Arial, sans-serif';
+            ctx.fillText(d.hi + '\u00b0', fx - 10, fy + 12);
+            ctx.fillStyle = loC;
+            ctx.fillText(d.lo + '\u00b0', fx + 10, fy + 12);
+        });
+    } else {
+        drawText('Fetching forecast...', W / 2, footerY + 15, 11, C.gray, 'center', false);
+    }
+}
+
+// Start
+tickClock();
+redraw();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

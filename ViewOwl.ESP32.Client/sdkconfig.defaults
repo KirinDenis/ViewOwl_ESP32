@@ -1,0 +1,74 @@
+# ViewOwl ESP32 — memory-optimised defaults
+#
+# Prioritises free DRAM for the large-frame receive buffer over WiFi throughput.
+# The UDP protocol is stop-and-wait with ~1009-byte payloads, so AMPDU batching
+# and oversized RX queues provide no benefit and only waste precious DRAM.
+#
+# Expected net gain over factory defaults: ~35-50 KB of free heap.
+
+# ── WiFi RX static buffers ───────────────────────────────────────────────────
+# Each buffer is 1600 B; reducing from 10 to 4 frees 9.6 KB of static DRAM.
+# 4 buffers is the minimum recommended for a stable STA connection.
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM=4
+
+# ── WiFi RX dynamic buffers ──────────────────────────────────────────────────
+# Allocated from heap on demand; reducing the ceiling from 32 to 16 lowers
+# worst-case heap consumption during burst reception.
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
+CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM=16
+
+# ── AMPDU TX (Block-Acknowledgment aggregation) ──────────────────────────────
+# Disabled: we send only 15-byte ACK/HELLO/PING packets.  The BA window
+# (TX_BA_WIN=6 × ~1600 B) is wasted memory for our access pattern.
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=n
+CONFIG_ESP32_WIFI_AMPDU_TX_ENABLED=n
+
+# ── AMPDU RX (Block-Acknowledgment reorder buffer) ───────────────────────────
+# Disabled: the server sends a single DATA packet then waits for ACK.
+# There is never an out-of-order window to reassemble, so the reorder buffer
+# (RX_BA_WIN × 1600 B, typically 9.6 KB) is wasted.
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=n
+CONFIG_ESP32_WIFI_AMPDU_RX_ENABLED=n
+
+# ── Place runtime code into flash to free IRAM ───────────────────────────────
+# ESP32 IRAM (192 KB) is partially available as DRAM via MALLOC_CAP_INTERNAL.
+# Moving these function tables to flash frees ~15-20 KB of IRAM for the heap.
+# None of these functions are called from ISR context in our firmware.
+CONFIG_HEAP_PLACE_FUNCTION_INTO_FLASH=y
+CONFIG_FREERTOS_PLACE_FUNCTIONS_INTO_FLASH=y
+CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH=y
+
+# ── RTC fast memory as heap ──────────────────────────────────────────────────
+# Adds the 8 KB RTC fast memory region to the heap allocator.
+# This memory survives deep sleep but we use it as general heap here.
+CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP=y
+
+# ── Flash size ───────────────────────────────────────────────────────────────
+# All ViewOwl ESP32 boards use 4 MB flash.  The frames partition alone is
+# 2.375 MB (0x260000), which requires 4 MB flash; 2 MB would be rejected by
+# gen_esp32part.py at build time.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# ── WiFi TX power — reduced to survive brownout on the RPi LCD board ─────────
+# At 20 dBm (default) WiFi association peaks at ~300 mA, drooping VCC by
+# 0.6-0.9 V on a typical USB cable and triggering the brownout detector.
+# 13 dBm cuts the peak to ~150 mA — sufficient for any in-room router.
+# The BOD threshold is ~2.43 V (level 0); at 13 dBm the droop stays above it.
+CONFIG_ESP32_PHY_MAX_WIFI_TX_POWER=13
+CONFIG_ESP32_PHY_MAX_TX_POWER=13
+
+# ── Brownout Detector — DISABLED on RPi LCD board ────────────────────────────
+# The ESP32-D0WD on this board triggers BOD during WiFi association even at
+# minimum TX power (13 dBm). The USB power supply cannot sustain the ~150 mA
+# association peak without VCC drooping below the 2.43 V BOD threshold.
+# Disabling BOD allows the device to survive the peak and connect normally.
+# Safe: the device resets on actual supply failure anyway (VCC drops to 0).
+CONFIG_ESP_BROWNOUT_DET=n
+
+# ── PSRAM / SPIRAM — DISABLED ─────────────────────────────────────────────────
+# The ESP32-D0WD on this board has no PSRAM.  With SPIRAM enabled and
+# SPIRAM_IGNORE_NOTFOUND=y the firmware boots but wastes ~15 ms on
+# failed PSRAM init and prints a noisy error on every boot.
+CONFIG_SPIRAM=n

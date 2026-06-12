@@ -1,0 +1,386 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Weather — Vienna</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; width: 480px; height: 320px; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="Weather Canvas" data-vow-category="weather" data-vow-description="Live weather data canvas display">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+function quantChannel(v, bits) {
+    const shift = 8 - bits;
+    const q = Math.min((1 << bits) - 1, v >> shift);
+    return (q << shift) | (q >> (bits - shift));
+}
+function snap565(r, g, b) {
+    return { r: quantChannel(r,5), g: quantChannel(g,6), b: quantChannel(b,5) };
+}
+function css(r, g, b) {
+    const q = snap565(r, g, b);
+    return `rgb(${q.r},${q.g},${q.b})`;
+}
+
+function dither() {
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const oR = d[i], oG = d[i+1], oB = d[i+2];
+            const q = snap565(oR, oG, oB);
+            d[i] = q.r; d[i+1] = q.g; d[i+2] = q.b;
+            const eR = oR-q.r, eG = oG-q.g, eB = oB-q.b;
+            if (x+1<W){const j=i+4;d[j]=clamp(d[j]+((eR*7)>>4));d[j+1]=clamp(d[j+1]+((eG*7)>>4));d[j+2]=clamp(d[j+2]+((eB*7)>>4));}
+            if (y+1<H){
+                if (x>0){const j=((y+1)*W+(x-1))*4;d[j]=clamp(d[j]+((eR*3)>>4));d[j+1]=clamp(d[j+1]+((eG*3)>>4));d[j+2]=clamp(d[j+2]+((eB*3)>>4));}
+                {const j=((y+1)*W+x)*4;d[j]=clamp(d[j]+((eR*5)>>4));d[j+1]=clamp(d[j+1]+((eG*5)>>4));d[j+2]=clamp(d[j+2]+((eB*5)>>4));}
+                if (x+1<W){const j=((y+1)*W+(x+1))*4;d[j]=clamp(d[j]+(eR>>4));d[j+1]=clamp(d[j+1]+(eG>>4));d[j+2]=clamp(d[j+2]+(eB>>4));}
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
+const HEADER_H = 36, FORECAST_H = 88;
+const MAIN_Y = HEADER_H;
+const MAIN_H = H - HEADER_H - FORECAST_H;  // 196px
+const FORECAST_Y = H - FORECAST_H;
+
+const DAY  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pad(n) { return String(n).padStart(2,'0'); }
+let clockStr = '00:00:00', dateStr = 'Mon 01 Jan';
+function tickClock() {
+    const now = new Date();
+    clockStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    dateStr = `${DAY[now.getDay()]} ${pad(now.getDate())} ${MON[now.getMonth()]}`;
+}
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
+function line(x1,y1,x2,y2,c,t){
+    ctx.strokeStyle=c;ctx.lineWidth=t||1;
+    const ox=(y1===y2)?0:0.5,oy=(x1===x2)?0:0.5;
+    ctx.beginPath();ctx.moveTo(x1+ox,y1+oy);ctx.lineTo(x2+ox,y2+oy);ctx.stroke();
+}
+function drawText(s,x,y,sz,c,align,bold){
+    ctx.fillStyle=c;
+    ctx.font=`${bold===false?'':'bold '}${sz}px Arial,Helvetica,sans-serif`;
+    ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';
+    ctx.fillText(String(s),x,y);
+}
+
+function redraw() {
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.lineWidth=1;ctx.lineCap='butt';
+    render();
+    dither();
+}
+function tick() { tickClock(); redraw(); }
+
+// --- Weather fetch for Vienna ---
+const LAT = 48.21, LON = 16.37;
+let wx = {
+    temp: null, feelsLike: null, humidity: null,
+    wind: null, pressure: null, code: null,
+    dailyMax: [], dailyMin: [], dailyCodes: [], dailyDays: [],
+};
+
+function wLabel(code) {
+    if (code === 0) return 'CLEAR';
+    if (code <= 2) return 'P.CLOUDY';
+    if (code <= 3) return 'CLOUDY';
+    if (code <= 48) return 'FOGGY';
+    if (code <= 67) return 'RAINY';
+    if (code <= 77) return 'SNOWY';
+    if (code <= 82) return 'SHOWERS';
+    return 'STORMY';
+}
+
+function fetchWeather() {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
+        `&current=temperature_2m,weathercode,windspeed_10m,relativehumidity_2m,apparent_temperature,surface_pressure` +
+        `&daily=temperature_2m_max,temperature_2m_min,weathercode&forecast_days=7&timezone=Europe%2FVienna`;
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const c = data.current;
+            wx.temp      = c.temperature_2m;
+            wx.feelsLike = c.apparent_temperature;
+            wx.humidity  = c.relativehumidity_2m;
+            wx.wind      = c.windspeed_10m;
+            wx.pressure  = c.surface_pressure;
+            wx.code      = c.weathercode;
+            // Daily forecast: skip today (index 0), take next 6 days
+            const d = data.daily;
+            wx.dailyMax   = d.temperature_2m_max.slice(1, 7);
+            wx.dailyMin   = d.temperature_2m_min.slice(1, 7);
+            wx.dailyCodes = d.weathercode.slice(1, 7);
+            // Compute day-of-week abbreviations for the next 6 days
+            wx.dailyDays = [];
+            const today = new Date();
+            for (let i = 1; i <= 6; i++) {
+                const dd = new Date(today);
+                dd.setDate(today.getDate() + i);
+                wx.dailyDays.push(DAY[dd.getDay()]);
+            }
+        })
+        .catch(() => {});
+}
+
+// --- Palette ---
+const C_BG       = () => css(4,   8,  24);
+const C_HDR      = () => css(0,  32,  80);
+const C_PANEL    = () => css(8,  16,  40);
+const C_SEP      = () => css(0,  64, 128);
+const C_WHITE    = () => css(248, 248, 248);
+const C_CYAN     = () => css(0,  220, 248);
+const C_YELLOW   = () => css(248, 220,   0);
+const C_BLUE     = () => css(0,  128, 248);
+const C_GREEN    = () => css(0,  220,   0);
+const C_GRAY     = () => css(128, 128, 128);
+const C_LTGRAY   = () => css(192, 192, 192);
+
+// Temperature color: cold=blue, hot=red, mild=white
+function tempColor(t) {
+    if (t === null) return C_GRAY();
+    if (t <= 0)  return C_BLUE();
+    if (t >= 30) return css(248, 64, 0);
+    return C_WHITE();
+}
+
+// --- Weather icon drawing ---
+// Each icon drawn in a box of roughly iconSize x iconSize centered at (cx, cy)
+
+// Draw sun icon
+function drawIconSun(cx, cy, sz) {
+    const r = Math.round(sz * 0.28);
+    // Center disc
+    ctx.fillStyle = C_YELLOW();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    // 8 rays
+    ctx.strokeStyle = C_YELLOW();
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const r0 = r + 3, r1 = r + 7;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+        ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+        ctx.stroke();
+    }
+}
+
+// Draw cloud icon
+function drawIconCloud(cx, cy, sz) {
+    const s = sz / 40;
+    ctx.fillStyle = C_LTGRAY();
+    // Three overlapping circles for cloud body
+    ctx.beginPath();
+    ctx.arc(cx,      cy,      Math.round(10*s), 0, Math.PI*2); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx+10*s, cy+4*s,  Math.round(8*s),  0, Math.PI*2); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx-10*s, cy+4*s,  Math.round(7*s),  0, Math.PI*2); ctx.fill();
+    // Cloud base fill rectangle
+    fillRect(Math.round(cx-17*s), Math.round(cy+4*s), Math.round(34*s), Math.round(8*s), C_LTGRAY());
+}
+
+// Draw rain icon (cloud + drops)
+function drawIconRain(cx, cy, sz) {
+    drawIconCloud(cx, cy - sz * 0.12, sz);
+    // Rain drops
+    ctx.strokeStyle = C_BLUE();
+    ctx.lineWidth = 1;
+    const dropOffsets = [-8, -2, 4, 10];
+    for (const dx of dropOffsets) {
+        const bx = cx + dx * (sz / 40);
+        const by = cy + sz * 0.28;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx - 2, by + 7 * (sz / 40));
+        ctx.stroke();
+    }
+}
+
+// Draw snow icon (cloud + snowflake dots)
+function drawIconSnow(cx, cy, sz) {
+    drawIconCloud(cx, cy - sz * 0.12, sz);
+    ctx.fillStyle = C_WHITE();
+    const s = sz / 40;
+    const dotPositions = [[-8,8],[0,12],[8,8],[-4,16],[4,16]];
+    for (const [dx,dy] of dotPositions) {
+        fillRect(Math.round(cx + dx*s), Math.round(cy + dy*s), 2, 2, C_WHITE());
+    }
+}
+
+// Draw partly cloudy: small sun offset + cloud
+function drawIconPartCloudy(cx, cy, sz) {
+    drawIconSun(cx - sz * 0.15, cy - sz * 0.12, sz * 0.75);
+    drawIconCloud(cx + sz * 0.1, cy + sz * 0.06, sz * 0.8);
+}
+
+// Draw fog (horizontal lines)
+function drawIconFog(cx, cy, sz) {
+    ctx.strokeStyle = C_GRAY();
+    ctx.lineWidth = 2;
+    const s = sz / 40;
+    for (let row = -2; row <= 2; row++) {
+        const ry = cy + row * 7 * s;
+        ctx.beginPath();
+        ctx.moveTo(cx - 16*s, ry);
+        ctx.lineTo(cx + 16*s, ry);
+        ctx.stroke();
+    }
+}
+
+// Draw storm icon (cloud + lightning bolt)
+function drawIconStorm(cx, cy, sz) {
+    drawIconCloud(cx, cy - sz * 0.12, sz);
+    const s = sz / 40;
+    // Lightning bolt
+    ctx.fillStyle = C_YELLOW();
+    ctx.beginPath();
+    ctx.moveTo(cx + 2*s, cy + 4*s);
+    ctx.lineTo(cx - 4*s, cy + 14*s);
+    ctx.lineTo(cx + 0,   cy + 14*s);
+    ctx.lineTo(cx - 3*s, cy + 22*s);
+    ctx.lineTo(cx + 6*s, cy + 10*s);
+    ctx.lineTo(cx + 2*s, cy + 10*s);
+    ctx.closePath();
+    ctx.fill();
+}
+
+// Dispatch icon draw by weather code
+function drawWeatherIcon(code, cx, cy, sz) {
+    if (code === null)  { drawIconCloud(cx, cy, sz); return; }
+    if (code === 0)     { drawIconSun(cx, cy, sz); return; }
+    if (code <= 2)      { drawIconPartCloudy(cx, cy, sz); return; }
+    if (code <= 3)      { drawIconCloud(cx, cy, sz); return; }
+    if (code <= 48)     { drawIconFog(cx, cy, sz); return; }
+    if (code <= 67)     { drawIconRain(cx, cy, sz); return; }
+    if (code <= 77)     { drawIconSnow(cx, cy, sz); return; }
+    if (code <= 82)     { drawIconRain(cx, cy, sz); return; }
+    drawIconStorm(cx, cy, sz);
+}
+
+// Visibility label from wind/code heuristic
+function visLabel(code) {
+    if (code === null) return '---';
+    if (code <= 1)  return 'EXCELLENT';
+    if (code <= 3)  return 'GOOD';
+    if (code <= 48) return 'POOR';
+    return 'MODERATE';
+}
+
+// Wind direction: approximate cardinal from degrees (not available from open-meteo current,
+// so we derive a pseudo-direction from the hour as a display placeholder)
+function windDir() {
+    const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+    const h = new Date().getHours();
+    return dirs[h % 8];
+}
+
+function render() {
+    fillRect(0, 0, W, H, C_BG());
+
+    // ---- HEADER (36px) ----
+    fillRect(0, 0, W, HEADER_H, C_HDR());
+    line(0, HEADER_H - 1, W, HEADER_H - 1, C_SEP());
+    drawText('VIENNA', 8, 26, 16, C_CYAN(), 'left', true);
+    drawText(clockStr, W - 8, 22, 15, C_WHITE(), 'right', true);
+    drawText(dateStr,  W - 8, 34, 10, C_GRAY(), 'right', false);
+
+    // ---- LEFT PANEL (220px wide, from y=36, height=196) ----
+    const LP_X = 0, LP_W = 220;
+    fillRect(LP_X, MAIN_Y, LP_W, MAIN_H, C_PANEL());
+
+    // Large weather icon centered in top portion of left panel
+    const ICON_CX = LP_X + LP_W / 2 - 10;
+    const ICON_CY = MAIN_Y + 52;
+    drawWeatherIcon(wx.code, ICON_CX, ICON_CY, 44);
+
+    // Temperature (large)
+    const tempStr = wx.temp === null ? '---' : (wx.temp >= 0 ? '+' : '') + wx.temp.toFixed(0) + '°C';
+    drawText(tempStr, LP_X + LP_W / 2, MAIN_Y + 120, 46, tempColor(wx.temp), 'center', true);
+
+    // Condition label
+    const condStr = wx.code === null ? '---' : wLabel(wx.code);
+    drawText(condStr, LP_X + LP_W / 2, MAIN_Y + 144, 13, C_LTGRAY(), 'center', false);
+
+    // Separator between panels
+    line(LP_W, MAIN_Y, LP_W, MAIN_Y + MAIN_H, C_SEP());
+
+    // ---- RIGHT PANEL (260px wide, from x=220, y=36, height=196) ----
+    const RP_X = LP_W + 1, RP_W = W - LP_W - 1;
+    fillRect(RP_X, MAIN_Y, RP_W, MAIN_H, C_PANEL());
+
+    // 5 detail rows: label + value
+    const details = [
+        { lbl: 'Feels like', val: wx.feelsLike === null ? '---' : (wx.feelsLike >= 0 ? '+' : '') + wx.feelsLike.toFixed(0) + '°C' },
+        { lbl: 'Humidity',   val: wx.humidity  === null ? '---' : wx.humidity.toFixed(0) + ' %' },
+        { lbl: 'Wind',       val: wx.wind      === null ? '---' : wx.wind.toFixed(0) + ' km/h ' + windDir() },
+        { lbl: 'Pressure',   val: wx.pressure  === null ? '---' : Math.round(wx.pressure) + ' hPa' },
+        { lbl: 'Visibility', val: visLabel(wx.code) },
+    ];
+
+    const ROW_SPACING = 36;
+    const DETAIL_Y0 = MAIN_Y + 28;
+    for (let i = 0; i < details.length; i++) {
+        const ry = DETAIL_Y0 + i * ROW_SPACING;
+        drawText(details[i].lbl + ':', RP_X + 8, ry, 11, C_CYAN(), 'left', false);
+        drawText(details[i].val, RP_X + RP_W - 8, ry, 12, C_WHITE(), 'right', true);
+        if (i < details.length - 1) {
+            line(RP_X + 4, ry + 8, RP_X + RP_W - 4, ry + 8, css(0, 32, 64));
+        }
+    }
+
+    // ---- FORECAST STRIP (88px, 6 columns of 80px) ----
+    fillRect(0, FORECAST_Y, W, FORECAST_H, css(2, 6, 20));
+    line(0, FORECAST_Y, W, FORECAST_Y, C_SEP());
+    drawText('7-DAY FORECAST', 4, FORECAST_Y + 12, 9, C_CYAN(), 'left', false);
+
+    const COL_W = 80;
+    const FCOL_Y0 = FORECAST_Y + 16;
+    for (let i = 0; i < 6; i++) {
+        const fx = i * COL_W;
+        // Vertical divider (except first)
+        if (i > 0) line(fx, FORECAST_Y, fx, H, css(0, 32, 64));
+
+        // Day label
+        const dayLbl = wx.dailyDays.length > i ? wx.dailyDays[i] : DAY[(new Date().getDay() + i + 1) % 7];
+        drawText(dayLbl, fx + COL_W / 2, FCOL_Y0, 10, C_CYAN(), 'center', true);
+
+        // Small icon (centered)
+        const fcode = wx.dailyCodes.length > i ? wx.dailyCodes[i] : null;
+        drawWeatherIcon(fcode, fx + COL_W / 2, FCOL_Y0 + 22, 28);
+
+        // Hi / Lo temperatures
+        const hiStr = wx.dailyMax.length > i ? (wx.dailyMax[i] >= 0 ? '+' : '') + Math.round(wx.dailyMax[i]) + '°' : '--';
+        const loStr = wx.dailyMin.length > i ? (wx.dailyMin[i] >= 0 ? '+' : '') + Math.round(wx.dailyMin[i]) + '°' : '--';
+        drawText(hiStr, fx + COL_W / 2 - 2, FCOL_Y0 + 54, 11, tempColor(wx.dailyMax[i] ?? null), 'right', true);
+        drawText('/', fx + COL_W / 2 + 1, FCOL_Y0 + 54, 11, C_GRAY(), 'center', false);
+        drawText(loStr, fx + COL_W / 2 + 4, FCOL_Y0 + 54, 11, tempColor(wx.dailyMin[i] ?? null), 'left', false);
+    }
+}
+
+fetchWeather();
+setInterval(fetchWeather, 600000);
+tickClock();
+redraw();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

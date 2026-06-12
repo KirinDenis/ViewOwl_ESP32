@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body
+  data-vow-class="C"
+  data-vow-name="Nostromo Cross-Section"
+  data-vow-description="USCSS Nostromo interior architectural cross-section — line-by-line floor-plan schematic rotating from top-view to angled perspective, Alien 1979 CRT phosphor"
+  data-vow-category="scifi"
+  data-vow-tags="alien,nostromo,blueprint,cross-section,crt,scifi,uscss,weyland-yutani"
+  data-vow-frames="12"
+  data-vow-fps="3"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const VW = 480, VH = 320;
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+
+const FRAMES     = 12;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+let   N = ((parseInt(frameParam ?? '0', 10) % FRAMES) + FRAMES) % FRAMES;
+
+/* ── Geometry DSL ────────────────────────────────────────────────────────── *
+ * All coordinates in [x, y, z]:                                             *
+ *   X = starboard (+) / port (-)                                            *
+ *   Y = up (thin slab, ±3–4)                                                *
+ *   Z = aft (+) / forward (-)                                               *
+ * Top-down view: Z maps to screen Y, X maps to screen X.                   *
+ * Hull fits ≈ ±215 X, ±130 Z — fills 480×320 frame nearly edge-to-edge.   */
+const V = [], E = [];
+const v    = (x, y, z) => (V.push([x, y, z]), V.length - 1);
+const e    = (a, b)    =>  E.push([a, b]);
+const poly = (...pts)  => { for (let i = 0; i < pts.length; i++) e(pts[i], pts[(i+1)%pts.length]); };
+const rect = (x1, z1, x2, z2, y = 1) => {
+  const [a,b,c,d] = [v(x1,y,z1), v(x2,y,z1), v(x2,y,z2), v(x1,y,z2)];
+  poly(a,b,c,d);
+};
+const hl = (x1, z, x2, y=2) => e(v(x1,y,z),  v(x2,y,z));   /* horizontal segment */
+const vl = (x, z1, z2, y=2) => e(v(x,y,z1),  v(x,y,z2));   /* vertical segment   */
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 1 — OUTER OCTAGONAL HULL
+   The hull is a landscape-oriented octagon sized to fill the display.
+   Forward (bow) = top of screen = negative Z.
+   ════════════════════════════════════════════════════════════════════════════ */
+const OH = [
+  v(-162, 4, -130), v( 162, 4, -130),   /* fore flat edge     */
+  v( 215, 4,  -78), v( 215, 4,   78),   /* starboard flat     */
+  v( 162, 4,  130), v(-162, 4,  130),   /* aft flat edge      */
+  v(-215, 4,   78), v(-215, 4,  -78),   /* port flat          */
+];
+poly(...OH);   /* 8 edges */
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 2 — INNER PRESSURE HULL (octagonal, ~77% scale)
+   ════════════════════════════════════════════════════════════════════════════ */
+const PH = [
+  v(-124, 3, -100), v( 124, 3, -100),
+  v( 166, 3,  -60), v( 166, 3,   60),
+  v( 124, 3,  100), v(-124, 3,  100),
+  v(-166, 3,   60), v(-166, 3,  -60),
+];
+poly(...PH);   /* 8 edges */
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 3 — MAIN CORRIDOR RING (octagonal, ~57% scale)
+   This ring marks the inner boundary of the outer corridors.
+   ════════════════════════════════════════════════════════════════════════════ */
+const CR = [
+  v( -88, 2,  -72), v(  88, 2,  -72),
+  v( 118, 2,  -44), v( 118, 2,   44),
+  v(  88, 2,   72), v( -88, 2,   72),
+  v(-118, 2,   44), v(-118, 2,  -44),
+];
+poly(...CR);   /* 8 edges */
+
+/* Radial structural spars: corridor ring → pressure hull */
+for (let i = 0; i < 8; i++) e(CR[i], PH[i]);   /* 8 edges */
+
+/* Structural spars: pressure hull → outer hull */
+for (let i = 0; i < 8; i++) e(PH[i], OH[i]);   /* 8 edges */
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 4 — FORE–AFT CENTRELINE SPINE
+   ════════════════════════════════════════════════════════════════════════════ */
+vl(0, -100,  -44);   /* fore segment  */
+vl(0,  -44,   44);   /* central       */
+vl(0,   44,  100);   /* aft segment   */
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 5 — BRIDGE / COMMAND DECK (fore-most, Z: -100 → -76)
+   Central command room with two console rows visible in cross-section.
+   ════════════════════════════════════════════════════════════════════════════ */
+rect(-38, -100,  38, -76);    /* outer bridge room          */
+hl(-22, -93,  22);            /* aft console row            */
+hl(-22, -83,  22);            /* fwd console row            */
+vl(-22, -93, -83);            /* port console wall          */
+vl( 22, -93, -83);            /* stbd console wall          */
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 6 — NAVIGATION ALCOVE (port fore, Z: -100 → -76)
+   ════════════════════════════════════════════════════════════════════════════ */
+rect(-88, -100, -42, -76);
+hl(-80, -90, -52);            /* workstation surface        */
+vl(-66, -100, -76);           /* internal divider           */
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 7 — SCIENCE STATION (stbd fore, Z: -100 → -76)
+   ════════════════════════════════════════════════════════════════════════════ */
+rect(42, -100, 88, -76);
+hl(52, -90, 80);
+vl(66, -100, -76);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 8 — FORE TRANSVERSE BULKHEAD (Z = -76)
+   ════════════════════════════════════════════════════════════════════════════ */
+hl(-88, -76, 88);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 9 — FORE CABINS (port side, Z: -76 → -44, outside corridor ring)
+   4 small crew cabins stacked fore–aft.
+   ════════════════════════════════════════════════════════════════════════════ */
+for (let i = 0; i < 4; i++) rect(-124, -76 + i*8, -88, -68 + i*8);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 10 — FORE CABINS (stbd side, mirror of section 9)
+   ════════════════════════════════════════════════════════════════════════════ */
+for (let i = 0; i < 4; i++) rect( 88, -76 + i*8, 124, -68 + i*8);
+
+/* Inner cabin row — port (between corridor ring and spine) */
+for (let i = 0; i < 3; i++) rect(-88, -76 + i*10, -44, -66 + i*10);
+
+/* Inner cabin row — stbd */
+for (let i = 0; i < 3; i++) rect( 44, -76 + i*10,  88, -66 + i*10);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 11 — MID TRANSVERSE BULKHEAD (Z = -44)
+   ════════════════════════════════════════════════════════════════════════════ */
+hl(-118, -44, 118);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 12 — PORT CREW QUARTERS (Z: -44 → +16)
+   Two rows of cabins: one outer (against pressure hull), one inner.
+   ════════════════════════════════════════════════════════════════════════════ */
+rect(-118, -44,  -88, -24);   rect( -88, -44,  -48, -24);
+rect(-118, -24,  -88,  -4);   rect( -88, -24,  -48,  -4);
+rect(-118,  -4,  -88,  16);   rect( -88,  -4,  -48,  16);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 13 — STARBOARD CREW QUARTERS (mirror of section 12)
+   ════════════════════════════════════════════════════════════════════════════ */
+rect(  48, -44,   88, -24);   rect(  88, -44,  118, -24);
+rect(  48, -24,   88,  -4);   rect(  88, -24,  118,  -4);
+rect(  48,  -4,   88,  16);   rect(  88,  -4,  118,  16);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 14 — MESS HALL / COMMON AREA (central, Z: -44 → -4)
+   ════════════════════════════════════════════════════════════════════════════ */
+rect(-44, -44, 44, -4);
+hl(-26, -33, 26);             /* table top edge             */
+hl(-26, -17, 26);             /* table bottom edge          */
+vl(-26, -33, -17);
+vl( 26, -33, -17);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 15 — CENTRAL JUNCTION (crossroads, Z: -4 → +16)
+   Main fore–aft and port–stbd corridors intersect here.
+   ════════════════════════════════════════════════════════════════════════════ */
+rect(-44, -4, 44, 16);
+hl(-118, 6, 118);             /* main transverse corridor   */
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 16 — CARGO BAY (Z: +16 → +72)
+   Large open bay with structural grid (cargo container positions).
+   ════════════════════════════════════════════════════════════════════════════ */
+rect(-88, 16, 88, 72);
+for (let x = -66; x <= 66; x += 22) vl(x, 20, 68);   /* 7 column dividers  */
+hl(-88, 36, 88);                                       /* cargo row 1        */
+hl(-88, 52, 88);                                       /* cargo row 2        */
+hl(-88, 68, 88);                                       /* cargo row 3        */
+
+/* Outer cargo holds (port + stbd) */
+rect(-124, 16, -88, 72);
+rect(  88, 16, 124, 72);
+/* Internal shelving in outer holds */
+hl(-124, 36, -88);   hl(-124, 52, -88);
+hl(  88, 36, 124);   hl(  88, 52, 124);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 17 — ENGINE ROOM (Z: +72 → +126)
+   Signature feature: multiple parallel engine banks across the full width.
+   ════════════════════════════════════════════════════════════════════════════ */
+rect(-124, 72, 124, 126);
+
+/* Engine bank vertical dividers (4 engine units) */
+vl(-56,  72, 126);
+vl(  0,  72, 126);
+vl( 56,  72, 126);
+
+/* Engine bank horizontal rows (6 cross-sections showing internal structure) */
+hl(-112,  80, 112);
+hl(-112,  88, 112);
+hl(-112,  96, 112);
+hl(-112, 104, 112);
+hl(-112, 112, 112);
+hl(-112, 120, 112);
+
+/* Internal engine detail — heat exchangers / pipe runs per bank */
+for (let bx = -98; bx <= 98; bx += 56) {   /* 4 banks centred at -84,-28,28,84 */
+  vl(bx - 12,  80, 120);
+  vl(bx + 12,  80, 120);
+}
+
+/* Exhaust nozzle pods at aft wall */
+for (let nx = -98; nx <= 98; nx += 28) {
+  hl(nx - 10, 126, nx + 10);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 18 — OUTER HULL SIDE BAYS (port, between outer & pressure hulls)
+   Inter-hull space subdivided into service bays / access corridors.
+   ════════════════════════════════════════════════════════════════════════════ */
+for (let i = 0; i < 6; i++) rect(-215, -68 + i*22, -166, -68 + i*22 + 20);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 19 — OUTER HULL SIDE BAYS (starboard, mirror of section 18)
+   ════════════════════════════════════════════════════════════════════════════ */
+for (let i = 0; i < 6; i++) rect( 166, -68 + i*22,  215, -68 + i*22 + 20);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 20 — INTER-HULL CONNECTOR BAYS (fore & aft between hulls)
+   Small service compartments at fore and aft of the outer ring.
+   ════════════════════════════════════════════════════════════════════════════ */
+/* Fore inter-hull (between outer and pressure hull, fore corners) */
+rect(-162, -130, -124, -100);  hl(-162, -115, -124);
+rect( 124, -130,  162, -100);  hl( 124, -115,  162);
+/* Aft inter-hull */
+rect(-162,  100, -124,  130);  hl(-162,  115, -124);
+rect( 124,  100,  162,  130);  hl( 124,  115,  162);
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SECTION 21 — ADDITIONAL INTERIOR DETAIL
+   Life support duct runs, secondary bulkheads, access hatches.
+   ════════════════════════════════════════════════════════════════════════════ */
+/* Life support corridor (port, running fore–aft along pressure hull) */
+vl(-148, -60, 60);
+
+/* Life support corridor (stbd) */
+vl( 148, -60, 60);
+
+/* Secondary bulkhead at mid-aft */
+hl(-88, 44, 88);
+
+/* Access hatch markers at corridor ring nodes */
+for (let i = 0; i < 8; i++) {
+  const [hx, , hz] = V[CR[i]];
+  const s = 5;
+  /* Small square hatch around each ring node */
+  e(v(hx-s, 2, hz-s), v(hx+s, 2, hz-s));
+  e(v(hx+s, 2, hz-s), v(hx+s, 2, hz+s));
+  e(v(hx+s, 2, hz+s), v(hx-s, 2, hz+s));
+  e(v(hx-s, 2, hz+s), v(hx-s, 2, hz-s));
+}
+
+/* ── Per-frame parameters ────────────────────────────────────────────────── *
+ * Animation reversed vs v1: starts top-down (pitch≈0), tilts to angled.    *
+ * Lines reveal progressively — the architectural plan is drawn first flat,  *
+ * then the camera elevates to show 3-D depth.                               */
+const ECOUNT = E.length;
+const PARAMS = [
+  { pitch: 0.02, lines:  24 },   /* top-down — outer shell emerging       */
+  { pitch: 0.06, lines:  48 },
+  { pitch: 0.10, lines:  76 },
+  { pitch: 0.16, lines: 108 },
+  { pitch: 0.23, lines: 140 },
+  { pitch: 0.30, lines: 172 },
+  { pitch: 0.37, lines: 200 },
+  { pitch: 0.44, lines: 224 },
+  { pitch: 0.50, lines: 248 },
+  { pitch: 0.56, lines: 268 },
+  { pitch: 0.61, lines: 288 },
+  { pitch: 0.66, lines: 9999 },  /* angled — full cross-section visible   */
+];
+
+/* ── 3D → 2D projection (near-orthographic, fills screen at top-down) ───── */
+function project(pt, pitch, yaw) {
+  const [x, y, z] = pt;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const x1 =  x * cy + z * sy;
+  const z1 = -x * sy + z * cy;
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const y2 = y * cp - z1 * sp;
+  const z2 = y * sp + z1 * cp;
+  /* Large FOV → near-orthographic → fills screen without clipping at steep angles */
+  const fov = 2200;
+  const d   = fov / (fov + z2 + 280);
+  return [VW / 2 + x1 * d, VH / 2 + y2 * d];
+}
+
+/* ── CRT overlay effects ─────────────────────────────────────────────────── */
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.24)';
+  for (let y = 0; y < VH; y += 2) ctx.fillRect(0, y, VW, 1);
+}
+
+function drawVignette() {
+  const g = ctx.createRadialGradient(VW/2, VH/2, VH * 0.22, VW/2, VH/2, VH * 0.84);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.92)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, VW, VH);
+}
+
+function addGrain() {
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d   = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const g = ((Math.random() * 26) - 9) | 0;
+    d[i]   = Math.max(0, Math.min(255, d[i]   + g));
+    d[i+1] = Math.max(0, Math.min(255, d[i+1] + g));
+    d[i+2] = Math.max(0, Math.min(255, d[i+2] + g));
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/* ── Render ──────────────────────────────────────────────────────────────── */
+function render() {
+  const p   = PARAMS[Math.min(N, PARAMS.length - 1)];
+  const yaw = -0.05;   /* constant slight yaw for 3-D legibility */
+
+  ctx.setTransform(W / VW, 0, 0, H / VH, 0, 0);
+
+  /* Background */
+  ctx.fillStyle = '#010902';
+  ctx.fillRect(0, 0, VW, VH);
+
+  /* Blueprint alignment grid */
+  ctx.strokeStyle = 'rgba(20,70,28,0.10)';
+  ctx.lineWidth   = 0.5;
+  for (let x = 0; x <= VW; x += 24) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, VH); ctx.stroke();
+  }
+  for (let y = 0; y <= VH; y += 24) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VW, y); ctx.stroke();
+  }
+
+  /* Wireframe edges — progressive reveal */
+  const count = Math.min(p.lines, ECOUNT);
+  for (let i = 0; i < count; i++) {
+    const [a, b] = E[i];
+    const [ax, ay] = project(V[a], p.pitch, yaw);
+    const [bx, by] = project(V[b], p.pitch, yaw);
+    const fresh = (i >= count - 4);   /* last 4 edges are being actively drawn */
+
+    /* Phosphor glow halo */
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.strokeStyle = fresh
+      ? 'rgba(140,255,155,0.32)'
+      : 'rgba(65,185,78,0.11)';
+    ctx.lineWidth = fresh ? 5 : 2.8;
+    ctx.stroke();
+
+    /* Core emission line */
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.strokeStyle = fresh
+      ? 'rgba(210,255,218,0.96)'
+      : 'rgba(95,224,112,0.78)';
+    ctx.lineWidth = fresh ? 1.5 : 0.9;
+    ctx.stroke();
+  }
+
+  /* Scan-head cursor at leading edge endpoint */
+  if (count > 0) {
+    const [, b] = E[count - 1];
+    const [bx, by] = project(V[b], p.pitch, yaw);
+    ctx.fillStyle = '#d0ffd8';
+    ctx.fillRect(bx - 2, by - 2, 5, 5);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(bx - 1, by - 1, 3, 3);
+  }
+
+  drawScanlines();
+  drawVignette();
+  addGrain();
+}
+
+render();
+
+/* ── Dev preview (browser only — no vow_frame param) ──────────────────────  */
+if (frameParam === null) {
+  const FPS = 3;
+  let last = 0;
+  (function tick(ts) {
+    if (ts - last > 1000 / FPS) { last = ts; N = (N + 1) % FRAMES; render(); }
+    requestAnimationFrame(tick);
+  })(0);
+}
+</script>
+</body>
+</html>

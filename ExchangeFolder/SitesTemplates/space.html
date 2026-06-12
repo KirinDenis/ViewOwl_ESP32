@@ -1,0 +1,307 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Space Station — Houston</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; width: 480px; height: 320px; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="Space" data-vow-category="scifi" data-vow-description="Deep space environment display">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+function quantChannel(v, bits) {
+    const shift = 8 - bits;
+    const q = Math.min((1 << bits) - 1, v >> shift);
+    return (q << shift) | (q >> (bits - shift));
+}
+function snap565(r, g, b) {
+    return { r: quantChannel(r,5), g: quantChannel(g,6), b: quantChannel(b,5) };
+}
+function css(r, g, b) {
+    const q = snap565(r, g, b);
+    return `rgb(${q.r},${q.g},${q.b})`;
+}
+
+function dither() {
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const oR = d[i], oG = d[i+1], oB = d[i+2];
+            const q = snap565(oR, oG, oB);
+            d[i] = q.r; d[i+1] = q.g; d[i+2] = q.b;
+            const eR = oR-q.r, eG = oG-q.g, eB = oB-q.b;
+            if (x+1<W){const j=i+4;d[j]=clamp(d[j]+((eR*7)>>4));d[j+1]=clamp(d[j+1]+((eG*7)>>4));d[j+2]=clamp(d[j+2]+((eB*7)>>4));}
+            if (y+1<H){
+                if (x>0){const j=((y+1)*W+(x-1))*4;d[j]=clamp(d[j]+((eR*3)>>4));d[j+1]=clamp(d[j+1]+((eG*3)>>4));d[j+2]=clamp(d[j+2]+((eB*3)>>4));}
+                {const j=((y+1)*W+x)*4;d[j]=clamp(d[j]+((eR*5)>>4));d[j+1]=clamp(d[j+1]+((eG*5)>>4));d[j+2]=clamp(d[j+2]+((eB*5)>>4));}
+                if (x+1<W){const j=((y+1)*W+(x+1))*4;d[j]=clamp(d[j]+(eR>>4));d[j+1]=clamp(d[j+1]+(eG>>4));d[j+2]=clamp(d[j+2]+(eB>>4));}
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
+const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pad(n) { return String(n).padStart(2,'0'); }
+let clockStr = '00:00:00', dateStr = 'Mon 01 Jan';
+// Mission elapsed time: seconds since page load
+let metStart = Date.now();
+
+function tickClock() {
+    const now = new Date();
+    clockStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    dateStr = `${DAY[now.getDay()]} ${pad(now.getDate())} ${MON[now.getMonth()]}`;
+}
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
+function line(x1,y1,x2,y2,c,t){
+    ctx.strokeStyle=c;ctx.lineWidth=t||1;
+    const ox=(y1===y2)?0:0.5,oy=(x1===x2)?0:0.5;
+    ctx.beginPath();ctx.moveTo(x1+ox,y1+oy);ctx.lineTo(x2+ox,y2+oy);ctx.stroke();
+}
+function drawText(s,x,y,sz,c,align,bold){
+    ctx.fillStyle=c;
+    ctx.font=`${bold===false?'':'bold '}${sz}px Arial,Helvetica,sans-serif`;
+    ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';
+    ctx.fillText(String(s),x,y);
+}
+
+// --- Weather fetch for Houston ---
+const LAT = 29.76, LON = -95.37;
+let wx = { temp: null, humidity: null, wind: null, code: null };
+
+function wLabel(code) {
+    if (code === 0) return 'CLEAR';
+    if (code <= 2) return 'P.CLOUDY';
+    if (code <= 3) return 'CLOUDY';
+    if (code <= 48) return 'FOGGY';
+    if (code <= 67) return 'RAINY';
+    if (code <= 77) return 'SNOWY';
+    if (code <= 82) return 'SHOWERS';
+    return 'STORMY';
+}
+
+function fetchWeather() {
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,relativehumidity_2m,windspeed_10m,weathercode&timezone=America%2FChicago`)
+        .then(r => r.json())
+        .then(data => {
+            const c = data.current;
+            wx.temp     = c.temperature_2m;
+            wx.humidity = c.relativehumidity_2m;
+            wx.wind     = c.windspeed_10m;
+            wx.code     = c.weathercode;
+        })
+        .catch(() => {});
+}
+
+// --- Solar system layout ---
+// Left half: x in [0, 240], y in [0, 320]
+const SOL_CX = 120, SOL_CY = 160; // sun center
+
+// Planet definitions: name, orbit radius (px), period (s), size (px), r, g, b
+const PLANETS = [
+    { name: 'Mercury', orbitR: 35,  period:  4, size: 4, r: 160, g: 160, b: 160 },
+    { name: 'Venus',   orbitR: 55,  period:  8, size: 6, r: 220, g: 180, b: 100 },
+    { name: 'Earth',   orbitR: 80,  period: 15, size: 7, r:   0, g: 128, b: 248 },
+    { name: 'Mars',    orbitR: 108, period: 25, size: 5, r: 220, g:  80, b:   0 },
+];
+
+// Animation timestamp reference
+let animTime = 0; // accumulated seconds
+
+// Draw a dotted orbit ring using small arc segments
+function drawOrbitRing(cx, cy, r, col) {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1;
+    const segments = 48;
+    for (let i = 0; i < segments; i += 2) {
+        const a0 = (i / segments) * Math.PI * 2;
+        const a1 = ((i + 1) / segments) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, a0, a1);
+        ctx.stroke();
+    }
+}
+
+function drawSolarSystem(t) {
+    // Clip drawing to left half to avoid overlapping right panel
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, 240, H);
+    ctx.clip();
+
+    // Background for solar region
+    fillRect(0, 0, 240, H, css(2, 2, 12));
+
+    // Stars (fixed positions seeded deterministically)
+    ctx.fillStyle = css(180, 180, 220);
+    const starPositions = [
+        [12,18],[45,55],[67,10],[88,200],[110,280],[130,90],[155,310],[175,140],
+        [20,250],[35,130],[200,30],[220,180],[105,60],[60,300],[190,220],[15,170],
+    ];
+    for (const [sx, sy] of starPositions) {
+        ctx.fillRect(sx, sy, 1, 1);
+    }
+
+    // Orbit rings
+    for (const p of PLANETS) {
+        drawOrbitRing(SOL_CX, SOL_CY, p.orbitR, css(20, 20, 48));
+    }
+
+    // Sun (yellow, radius 18)
+    ctx.fillStyle = css(248, 220, 0);
+    ctx.beginPath();
+    ctx.arc(SOL_CX, SOL_CY, 18, 0, Math.PI * 2);
+    ctx.fill();
+    // Sun glow ring
+    ctx.strokeStyle = css(200, 140, 0);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(SOL_CX, SOL_CY, 21, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Planets
+    for (const p of PLANETS) {
+        const angle = (t / p.period) * Math.PI * 2;
+        const px = SOL_CX + Math.cos(angle) * p.orbitR;
+        const py = SOL_CY + Math.sin(angle) * p.orbitR;
+
+        // Planet body
+        ctx.fillStyle = css(p.r, p.g, p.b);
+        ctx.beginPath();
+        ctx.arc(Math.round(px), Math.round(py), p.size, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Earth gets a second color pass for continent suggestion
+        if (p.name === 'Earth') {
+            ctx.fillStyle = css(0, 180, 0);
+            ctx.beginPath();
+            ctx.arc(Math.round(px) - 1, Math.round(py) - 1, Math.max(1, p.size - 3), 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    ctx.restore();
+
+    // Divider line between solar and data panels
+    line(240, 0, 240, H, css(0, 40, 100));
+}
+
+// --- Right panel: mission data ---
+function metString() {
+    const elapsed = Math.floor((Date.now() - metStart) / 1000);
+    // Offset to simulate a mission already in progress (127 days)
+    const total = elapsed + 127 * 86400 + 14 * 3600 + 33 * 60;
+    const dd = Math.floor(total / 86400);
+    const hh = Math.floor((total % 86400) / 3600);
+    const mm = Math.floor((total % 3600) / 60);
+    const ss = total % 60;
+    return `${String(dd).padStart(3,'0')}:${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+}
+
+function drawDataPanel() {
+    const PX = 244; // panel left edge
+    const CY_col = css(0, 220, 248);
+    const WH     = css(248, 248, 248);
+    const DIM    = css(100, 130, 160);
+    const GN     = css(0, 200, 80);
+    const YL     = css(248, 220, 0);
+
+    fillRect(PX, 0, W - PX, H, css(2, 4, 16));
+
+    // Title
+    fillRect(PX, 0, W - PX, 28, css(0, 16, 48));
+    drawText('ISS MISSION DATA', PX + 4, 19, 12, CY_col, 'left', true);
+    line(PX, 28, W, 28, css(0, 64, 128));
+
+    // Station stats
+    const stats = [
+        { lbl: 'ORBITAL ALT', val: '408 km' },
+        { lbl: 'ORBITAL SPD', val: '27,600 km/h' },
+        { lbl: 'ORBIT PERIOD', val: '92 min' },
+        { lbl: 'CREW', val: '7' },
+    ];
+    let sy = 46;
+    for (const s of stats) {
+        drawText(s.lbl, PX + 4, sy, 9, DIM, 'left', false);
+        drawText(s.val, W - 4, sy, 11, WH, 'right', true);
+        sy += 18;
+    }
+
+    // Separator
+    line(PX, sy, W, sy, css(0, 40, 80));
+    sy += 10;
+
+    // Ground conditions header
+    drawText('GROUND CONDITIONS', PX + 4, sy, 9, DIM, 'left', false);
+    drawText('HOUSTON, TX', W - 4, sy, 9, GN, 'right', false);
+    sy += 14;
+
+    const ground = [
+        { lbl: 'TEMP',  val: wx.temp     === null ? '---' : wx.temp.toFixed(1) + '°C' },
+        { lbl: 'HMD',   val: wx.humidity === null ? '---' : wx.humidity.toFixed(0) + '%' },
+        { lbl: 'WIND',  val: wx.wind     === null ? '---' : wx.wind.toFixed(1) + ' km/h' },
+        { lbl: 'COND',  val: wx.code     === null ? '---' : wLabel(wx.code) },
+    ];
+    for (const g of ground) {
+        drawText(g.lbl + ':', PX + 4, sy, 10, DIM, 'left', false);
+        drawText(g.val, W - 4, sy, 11, WH, 'right', true);
+        sy += 17;
+    }
+
+    // Separator
+    line(PX, sy, W, sy, css(0, 40, 80));
+    sy += 10;
+
+    // MET clock
+    drawText('MET', PX + 4, sy, 9, DIM, 'left', false);
+    drawText(metString(), W - 4, sy, 10, YL, 'right', true);
+    sy += 16;
+
+    // Local clock
+    drawText('LOCAL', PX + 4, sy, 9, DIM, 'left', false);
+    drawText(clockStr, W - 4, sy, 10, CY_col, 'right', true);
+    sy += 16;
+
+    // Date
+    drawText('DATE', PX + 4, sy, 9, DIM, 'left', false);
+    drawText(dateStr, W - 4, sy, 10, WH, 'right', false);
+}
+
+let lastTs = null;
+function frame(ts) {
+    if (lastTs === null) lastTs = ts;
+    const dt = (ts - lastTs) / 1000;
+    lastTs = ts;
+    animTime += dt;
+
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.lineWidth = 1; ctx.lineCap = 'butt';
+
+    drawSolarSystem(animTime);
+    drawDataPanel();
+    dither();
+    requestAnimationFrame(frame);
+}
+
+fetchWeather();
+setInterval(fetchWeather, 600000);
+tickClock();
+setInterval(tickClock, 1000);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

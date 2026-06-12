@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body"
+  data-vow-name="Trench Run"
+  data-vow-category="scifi"
+  data-vow-description="Attack run down a battle-station trench — 77-style vector targeting computer, amber phosphor walls, green turbolaser fire, range countdown"
+  data-vow-class="C"
+  data-vow-frames="16"
+  data-vow-fps="4"
+  data-vow-refresh="0">
+<canvas id="screen"></canvas>
+<script>
+'use strict'
+/* Logical design space is 480x320; the canvas matches the real viewport and
+ * is scaled, so backend grabs at 320x240 render natively (no cropping). */
+const W=480,H=320
+const cv=document.getElementById('screen')
+const VW=window.innerWidth||W, VH=window.innerHeight||H
+cv.width=VW; cv.height=VH
+const cx=cv.getContext('2d')
+
+const FRAME_COUNT=16
+
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+
+/* Floyd-Steinberg dithering to the BGR565 grid — runs over real pixels. */
+function dither(){
+  const id=cx.getImageData(0,0,VW,VH),d=id.data
+  for(let y=0;y<VH;y++)for(let x=0;x<VW;x++){
+    const i=(y*VW+x)*4
+    for(let c=0;c<3;c++){
+      const bits=c===1?6:5,max=(1<<bits)-1,old=d[i+c]
+      const nv=Math.round(old/255*max)/max*255,err=old-nv
+      d[i+c]=nv
+      if(x+1<VW)d[i+4+c]+=err*7/16
+      if(y+1<VH){if(x>0)d[i+(VW-1)*4+c]+=err*3/16;d[i+VW*4+c]+=err*5/16;if(x+1<VW)d[i+(VW+1)*4+c]+=err/16}
+    }
+  }
+  cx.putImageData(id,0,0)
+}
+
+/* Amber-phosphor palette, 1977 vector-display style — yellow and green are
+ * the highest-luminance survivors on TN panels viewed off-axis. */
+const P={
+  sky:  css(2,4,10),
+  wall: css(11,8,2),  floor:css(7,5,2),  body:css(14,10,3),
+  far:  css(140,94,18),mid: css(212,148,30),near:css(255,198,64),
+  yel:  css(255,232,96),yelD:css(120,104,28),
+  gn:   css(72,255,120),gnD: css(24,110,48),
+  rd:   css(255,72,48),
+  tx:   css(252,244,214),tx2:css(208,178,110),tx3:css(132,110,62),
+  wh:   css(255,252,240),
+}
+
+function fill(x,y,w,h,c){cx.fillStyle=c;cx.fillRect(x,y,w,h)}
+function ln(x1,y1,x2,y2,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()}
+function box(x,y,w,h,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.strokeRect(x,y,w,h)}
+function dot(x,y,r,c){cx.beginPath();cx.arc(x,y,r,0,Math.PI*2);cx.fillStyle=c;cx.fill()}
+function poly(ps,fc,sc,lw=1){
+  cx.beginPath();cx.moveTo(ps[0][0],ps[0][1])
+  for(let i=1;i<ps.length;i++)cx.lineTo(ps[i][0],ps[i][1])
+  cx.closePath()
+  if(fc){cx.fillStyle=fc;cx.fill()}
+  if(sc){cx.strokeStyle=sc;cx.lineWidth=lw;cx.stroke()}
+}
+function txt(s,x,y,c,sz=9,al='left',bold=false){
+  cx.font=`${bold?'bold ':''}${sz}px monospace`;cx.fillStyle=c;cx.textAlign=al;cx.fillText(s,x,y);cx.textAlign='left'
+}
+
+/* ── World constants ─────────────────────────────────────────────────── */
+const CELL=60                 /* trench panel pitch (world units)          */
+const PERIOD=8                /* wall pattern repeats every 8 cells        */
+const STEP=30                 /* camera advance per frame — gentle pace    */
+/* One loop = 16 frames x 30 = 480 = exactly one pattern period
+ * (8 cells x 60), so frame 16 is pixel-identical to frame 0.             */
+const FOCAL=260
+const HOR=H*0.46              /* screen horizon / vanishing point          */
+const NEARZ=24, FARZ=1500
+const TRW=62                  /* trench half-width                         */
+const TRH=122                 /* trench wall height                        */
+
+/* Deterministic greeble hash — same cell always renders the same. */
+function gh(side,izw,row){
+  let s=(side*52361+izw*668265263+row*97561)>>>0
+  s=((s^(s>>>13))*1274126177)>>>0
+  return s
+}
+
+/* Fixed star field (index-derived) — visible in the far trench wedge. */
+const STARS=[]
+for(let i=0;i<18;i++)STARS.push([W/2-70+(i*43)%140,18+(i*29)%(~~HOR-30),i%3])
+
+function render(frame){
+  frame=((frame%FRAME_COUNT)+FRAME_COUNT)%FRAME_COUNT
+  cx.setTransform(VW/W,0,0,VH/H,0,0)
+  const bl=(frame%4)<2              /* slow 1 Hz indicator blink           */
+  const ph=frame/FRAME_COUNT
+  const th=ph*Math.PI*2
+
+  const camZ=frame*STEP
+  const camX=Math.sin(th)*3         /* slight evasive sway, loops cleanly  */
+  const camY=46+Math.sin(th)*1.2
+
+  const px=(wx,dz)=>W/2+(wx-camX)*FOCAL/dz
+  const py=(wy,dz)=>HOR+(camY-wy)*FOCAL/dz
+
+  /* ── Sky (visible as the far wedge above the trench) ── */
+  fill(0,0,W,H,P.sky)
+  for(const[sx,sy,m]of STARS){
+    cx.fillStyle=m===0?P.tx2:m===1?P.tx3:P.yelD
+    cx.fillRect(sx,sy,m===0?2:1,m===0?2:1)
+  }
+
+  const NZ=NEARZ+6
+  /* ── Floor ── */
+  poly([[px(-TRW,NZ),py(0,NZ)],[px(TRW,NZ),py(0,NZ)],
+        [px(TRW,FARZ),py(0,FARZ)],[px(-TRW,FARZ),py(0,FARZ)]],P.floor,null)
+  /* ── Walls (opaque — everything outside the trench is hidden) ── */
+  for(const s of[-1,1]){
+    const wx=s*TRW
+    poly([[px(wx,NZ),py(0,NZ)],[px(wx,NZ),py(TRH,NZ)],
+          [px(wx,FARZ),py(TRH,FARZ)],[px(wx,FARZ),py(0,FARZ)]],P.wall,null)
+  }
+  /* structural long lines: wall tops, wall bases, floor centre dashes    */
+  for(const s of[-1,1]){
+    ln(px(s*TRW,NZ),py(TRH,NZ),px(s*TRW,FARZ),py(TRH,FARZ),P.near,1.3)
+    ln(px(s*TRW,NZ),py(0,NZ),  px(s*TRW,FARZ),py(0,FARZ),  P.mid,1)
+    /* mid-wall rail */
+    ln(px(s*TRW,NZ),py(58,NZ), px(s*TRW,FARZ),py(58,FARZ), P.far,0.7)
+  }
+
+  /* ── Per-cell greebles, far → near (painter's order) ── */
+  const r0=Math.ceil((camZ+NEARZ)/CELL)
+  for(let iz=r0+24;iz>=r0-1;iz--){
+    const z0=iz*CELL,z1=z0+CELL
+    const dzA=z0-camZ,dzB=z1-camZ
+    if(dzB<NEARZ||dzA>FARZ)continue
+    const dzC=Math.max(dzA,NEARZ)
+    const izw=((iz%PERIOD)+PERIOD)%PERIOD
+    const tier=dzC>760?0:dzC>320?1:2
+    const col=tier===0?P.far:tier===1?P.mid:P.near
+    const lw=tier===2?1:0.7
+
+    /* floor cross-seam at each cell boundary                             */
+    if(dzA>=NEARZ){
+      const fy=py(0,dzA)
+      if(fy<=H)ln(px(-TRW,dzA),fy,px(TRW,dzA),fy,col,lw*0.9)
+    }
+    /* floor centre dash (broken guide line)                              */
+    const d0=z0+14-camZ,d1=z0+46-camZ
+    if(d0>NEARZ)ln(px(0,d0),py(0,d0),px(0,d1),py(0,d1),P.yelD,1)
+
+    for(const s of[-1,1]){
+      const wx=s*TRW
+      /* vertical wall seam                                               */
+      if(dzA>=NEARZ)
+        ln(px(wx,dzA),py(0,dzA),px(wx,dzA),py(TRH,dzA),col,lw*0.8)
+      if(tier===0)continue            /* far cells: seams only            */
+      /* two greeble rows per cell: y 10..50 and 66..106                  */
+      for(let row=0;row<2;row++){
+        const s0=gh(s,izw,row),kind=s0%5
+        if(kind===4)continue          /* empty bay                        */
+        const ya=row===0?12:68,yb=row===0?50:106
+        const za=z0+9-camZ,zb=z1-9-camZ
+        if(za<NEARZ)continue
+        const q=[[px(wx,za),py(ya,za)],[px(wx,zb),py(ya,zb)],
+                 [px(wx,zb),py(yb,zb)],[px(wx,za),py(yb,za)]]
+        if(kind===0){                 /* plain recessed panel             */
+          poly(q,null,col,lw*0.8)
+        }else if(kind===1){           /* vent — horizontal louvres        */
+          poly(q,null,col,lw*0.8)
+          for(let v=1;v<3;v++){
+            const yy=ya+(yb-ya)*v/3
+            ln(px(wx,za),py(yy,za),px(wx,zb),py(yy,zb),P.yelD,0.7)
+          }
+        }else if(kind===2){           /* conduit block + status light     */
+          poly(q,P.body,col,lw*0.8)
+          const zm=(za+zb)/2,ym=(ya+yb)/2
+          dot(px(wx,zm),py(ym,zm),tier===2?2:1.3,s0%3===0?P.gn:P.near)
+        }else{                        /* twin pipes along the wall        */
+          ln(px(wx,za),py(ya+8,za),px(wx,zb),py(ya+8,zb),col,lw)
+          ln(px(wx,za),py(yb-8,za),px(wx,zb),py(yb-8,zb),col,lw)
+        }
+      }
+    }
+
+    /* overhead cross-bridge every 4th cell — slides past above           */
+    if(izw%4===2&&dzA>=NEARZ){
+      const bz0=z0+18-camZ,bz1=z0+42-camZ
+      if(bz0>NEARZ){
+        poly([[px(-TRW,bz0),py(TRH-6,bz0)],[px(TRW,bz0),py(TRH-6,bz0)],
+              [px(TRW,bz1),py(TRH-6,bz1)],[px(-TRW,bz1),py(TRH-6,bz1)]],
+             P.body,col,lw)
+        ln(px(-TRW,bz0),py(TRH-18,bz0),px(TRW,bz0),py(TRH-18,bz0),col,lw*0.8)
+      }
+    }
+  }
+
+  /* ── Green turbolaser bolts — two volleys per loop, deterministic ── */
+  const burst=frame%8
+  if(burst===5||burst===6){
+    const zb=170+(burst-5)*420
+    for(const s of[-1,1]){
+      const bx0=px(s*20,zb),by0=py(34,zb)
+      const bx1=px(s*20,zb+110),by1=py(34,zb+110)
+      cx.globalAlpha=0.45;ln(bx0,by0,bx1,by1,P.gn,4);cx.globalAlpha=1
+      ln(bx0,by0,bx1,by1,P.gn,1.8)
+    }
+  }
+
+  /* ── Exhaust-port marker at the far end + pulse ── */
+  const ppx=W/2,ppy=HOR+8,pr=2.4+0.9*Math.sin(th)
+  cx.globalAlpha=0.5;dot(ppx,ppy,pr+2.5,P.yelD);cx.globalAlpha=1
+  dot(ppx,ppy,pr,P.yel)
+
+  /* ── 1977-style targeting computer overlay (yellow vector) ── */
+  cx.strokeStyle=P.yel;cx.lineWidth=1.2
+  /* converging guide chevrons                                            */
+  for(const s of[-1,1]){
+    cx.beginPath()
+    cx.moveTo(W/2+s*108,HOR-58);cx.lineTo(W/2+s*36,HOR-6)
+    cx.moveTo(W/2+s*108,HOR+74);cx.lineTo(W/2+s*36,HOR+22)
+    cx.stroke()
+  }
+  /* centre graticule                                                     */
+  box(W/2-26,HOR-18,52,36,P.yel,1.2)
+  ln(W/2-34,HOR,W/2-26,HOR,P.yel,1.2);ln(W/2+26,HOR,W/2+34,HOR,P.yel,1.2)
+  ln(W/2,HOR-26,W/2,HOR-18,P.yel,1.2);ln(W/2,HOR+18,W/2,HOR+26,P.yel,1.2)
+  /* range ticks inside graticule                                         */
+  for(let t=0;t<3;t++)ln(W/2-12+t*12,HOR+10,W/2-12+t*12,HOR+14,P.yelD,1)
+
+  /* ── Screen bezel ── */
+  box(2,2,W-4,H-4,P.mid,1.5)
+  box(6,6,W-12,H-12,P.yelD,0.8)
+
+  /* ── Header ── */
+  fill(7,7,W-14,15,css(16,12,3))
+  ln(7,22,W-7,22,P.yelD)
+  txt('ATTACK RUN — TRENCH MV-7',13,18,P.tx,10,'left',true)
+  txt('T-COMP ACTIVE',W/2+24,18,P.tx3,8)
+  txt(`SYS ${(31.4+ph).toFixed(2)}`,W-13,18,P.tx2,8,'right')
+
+  /* ── HUD: corner data ── */
+  const rng=PERIOD*CELL-frame*STEP
+  const vel=120+Math.round(3*Math.sin(th))
+  const hh=2*3600+9*60+frame*2
+  const hts=`${String(~~(hh/60)%60).padStart(2,'0')}:${String(hh%60).padStart(2,'0')}`
+
+  txt('THR',13,38,P.tx3,8)
+  txt(`${String(vel).padStart(4,'0')} m/s`,13,50,P.near,11,'left',true)
+  fill(13,54,70,4,css(22,16,4))
+  fill(13,54,~~(70*(vel-90)/60),4,P.mid)
+
+  txt('DEFL',W-13,38,P.tx3,8,'right')
+  txt(bl?'ANGLED':'DOUBLE',W-13,50,P.gn,10,'right',true)
+  for(let t=0;t<5;t++)ln(W-16,56+t*5,W-13,56+t*5,t===2?P.near:P.tx3,t===2?1.4:0.8)
+
+  txt('RANGE TO PORT',13,H-34,P.tx3,8)
+  txt(`${String(rng).padStart(4,'0')} m`,13,H-22,rng<=120?P.rd:P.yel,12,'left',true)
+  txt(`MET ${hts}`,13,H-11,P.tx3,8)
+
+  txt(`SYNC ${String(frame+1).padStart(2,'0')}/${FRAME_COUNT}`,W-13,H-34,P.tx2,9,'right')
+  txt(rng<=120?'LOCK':'TRACKING',W-13,H-22,rng<=120?(bl?P.rd:P.tx2):P.near,10,'right',true)
+  dot(W-72,H-14,3,bl?P.gn:P.gnD)
+  txt('T-CMP',W-13,H-11,bl?P.tx2:P.tx3,8,'right',true)
+
+  /* centre bottom — the line everyone knows                              */
+  txt(bl?'· STAY ON TARGET ·':'  STAY ON TARGET  ',W/2,H-12,bl?P.yel:P.yelD,9,'center',true)
+
+  dither()
+}
+
+/* ── Driver ───────────────────────────────────────────────────────────
+ * Grab path: server appends ?vow_frame=N → render exactly that frame.
+ * Preview path: self-animate so the dashboard thumbnail shows motion. */
+const vf=new URLSearchParams(location.search).get('vow_frame')
+if(vf!==null){
+  render(parseInt(vf,10)||0)
+}else{
+  let pf=0
+  render(pf)
+  setInterval(()=>{pf=(pf+1)%FRAME_COUNT;render(pf)},250)
+}
+</script></body></html>

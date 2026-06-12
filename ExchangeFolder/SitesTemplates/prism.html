@@ -1,0 +1,222 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Prism Weather</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #060c18; width: 480px; height: 320px; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body id="body"
+      data-vow-name="Prism"
+      data-vow-category="weather"
+      data-vow-description="Premium gradient weather display — Open-Meteo free API">
+  <canvas id="screen" width="480" height="320"></canvas>
+  <script>
+    'use strict';
+    const canvas = document.getElementById('screen');
+    const ctx    = canvas.getContext('2d', { alpha: false });
+    const W = 480, H = 320;
+
+    /* ── Weather data (updated from Open-Meteo) ──────────────────────── */
+    const CITY = { name: 'PARIS', lat: 48.8566, lon: 2.3522, tz: 'Europe/Paris' };
+
+    let wx = {
+      temp: 14, feels: 12, hum: 68, wind: 18, windDir: 230,
+      uv: 3, precip: 20, code: 3,
+      sunrise: '07:45', sunset: '19:30',
+      tempMax: 16, tempMin: 9,
+    };
+
+    /* ── WMO weather code → label + emoji ────────────────────────────── */
+    const WMO = {
+      0:'CLEAR SKY', 1:'MAINLY CLEAR', 2:'PARTLY CLOUDY', 3:'OVERCAST',
+      45:'FOG', 48:'RIME FOG', 51:'LIGHT DRIZZLE', 53:'DRIZZLE',
+      55:'HEAVY DRIZZLE', 61:'LIGHT RAIN', 63:'RAIN', 65:'HEAVY RAIN',
+      71:'LIGHT SNOW', 73:'SNOW', 75:'HEAVY SNOW', 77:'SNOW GRAINS',
+      80:'RAIN SHOWERS', 81:'RAIN SHOWERS', 82:'HEAVY SHOWERS',
+      85:'SNOW SHOWERS', 86:'HEAVY SNOW SHOWERS',
+      95:'THUNDERSTORM', 96:'THUNDERSTORM+HAIL', 99:'HEAVY THUNDERSTORM',
+    };
+    const ICON = {
+      0:'☀', 1:'🌤', 2:'⛅', 3:'☁', 45:'🌫', 48:'🌫',
+      51:'🌦', 53:'🌦', 55:'🌧', 61:'🌧', 63:'🌧', 65:'🌧',
+      71:'🌨', 73:'❄', 75:'❄', 77:'❄',
+      80:'🌦', 81:'🌧', 82:'⛈',  85:'🌨', 86:'❄',
+      95:'⛈', 96:'⛈', 99:'⛈',
+    };
+
+    function wmoLabel(c) { return WMO[c] ?? WMO[Math.floor(c/10)*10] ?? 'UNKNOWN'; }
+    function wmoIcon(c)  { return ICON[c] ?? ICON[Math.floor(c/10)*10] ?? '?'; }
+
+    /* ── Sky gradient based on local hour ────────────────────────────── */
+    function skyGrad(hour) {
+      if (hour < 5 || hour >= 22) return ['#050814', '#0c1538'];          // night
+      if (hour < 7)               return ['#1a0b28', '#e04020'];          // pre-dawn
+      if (hour < 9)               return ['#e06030', '#f0a020', '#4488ff']; // dawn
+      if (hour < 17)              return ['#1050c0', '#2070d8'];          // day
+      if (hour < 19)              return ['#e05010', '#f08020', '#1848a0']; // dusk
+      return ['#180820', '#0a1040'];                                       // evening
+    }
+
+    /* ── Wind direction → label ──────────────────────────────────────── */
+    function windLabel(deg) {
+      const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+      return dirs[Math.round(deg / 45) % 8];
+    }
+
+    /* ── API ─────────────────────────────────────────────────────────── */
+    async function fetchWx() {
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast`
+          + `?latitude=${CITY.lat}&longitude=${CITY.lon}`
+          + `&current=temperature_2m,apparent_temperature,relative_humidity_2m,`
+          + `weather_code,wind_speed_10m,wind_direction_10m,precipitation_probability,uv_index`
+          + `&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min`
+          + `&timezone=${encodeURIComponent(CITY.tz)}&forecast_days=1`;
+        const r  = await fetch(url);
+        if (!r.ok) return;
+        const d  = r.json ? await r.json() : await r.json();
+        const c  = d.current;
+        const dd = d.daily;
+        wx.temp     = Math.round(c.temperature_2m);
+        wx.feels    = Math.round(c.apparent_temperature);
+        wx.hum      = c.relative_humidity_2m;
+        wx.wind     = Math.round(c.wind_speed_10m);
+        wx.windDir  = c.wind_direction_10m;
+        wx.uv       = Math.round(c.uv_index ?? 0);
+        wx.precip   = c.precipitation_probability ?? wx.precip;
+        wx.code     = c.weather_code;
+        if (dd) {
+          wx.sunrise  = (dd.sunrise[0]  ?? '').slice(-5) || wx.sunrise;
+          wx.sunset   = (dd.sunset[0]   ?? '').slice(-5) || wx.sunset;
+          wx.tempMax  = Math.round(dd.temperature_2m_max[0] ?? wx.tempMax);
+          wx.tempMin  = Math.round(dd.temperature_2m_min[0] ?? wx.tempMin);
+        }
+      } catch (_) {}
+    }
+
+    /* ── Helpers ─────────────────────────────────────────────────────── */
+    function px(size, bold) {
+      ctx.font = `${bold ? 'bold ' : ''}${size}px "Arial","Helvetica",sans-serif`;
+    }
+
+    function metric(label, val, unit, x, y, color) {
+      /* Label */
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      px(8, false);
+      ctx.fillText(label, x, y);
+      /* Value */
+      ctx.fillStyle = color;
+      px(14, true);
+      ctx.fillText(val, x, y + 16);
+      /* Unit */
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      px(8, false);
+      ctx.fillText(unit, x, y + 28);
+    }
+
+    /* ── Render ──────────────────────────────────────────────────────── */
+    function render() {
+      const now  = new Date();
+      const hour = now.getHours() + now.getMinutes() / 60;
+      const stops = skyGrad(hour);
+
+      /* Sky gradient background */
+      const grd = ctx.createLinearGradient(0, 0, 0, H);
+      if (stops.length === 2) {
+        grd.addColorStop(0, stops[0]);
+        grd.addColorStop(1, stops[1]);
+      } else {
+        grd.addColorStop(0,   stops[0]);
+        grd.addColorStop(0.5, stops[1]);
+        grd.addColorStop(1,   stops[2]);
+      }
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, W, H);
+
+      /* Frosted-glass right panel */
+      ctx.fillStyle = 'rgba(0,0,0,0.32)';
+      ctx.fillRect(295, 0, W - 295, H);
+      ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      ctx.fillRect(295, 0, 1, H);
+
+      /* ── Left: main weather ─────────────────────────────────────────── */
+      /* City name */
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      px(11, false);
+      ctx.fillText(`◈ ${CITY.name}`, 14, 22);
+
+      /* Large temperature */
+      ctx.fillStyle = '#ffffff';
+      px(86, true);
+      ctx.fillText(`${wx.temp > 0 ? '' : ''}${wx.temp}°`, 10, 120);
+
+      /* Feels like */
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      px(11, false);
+      ctx.fillText(`FEELS ${wx.feels}°`, 14, 140);
+
+      /* Weather icon */
+      ctx.font = '40px serif';
+      ctx.fillText(wmoIcon(wx.code), 14, 190);
+
+      /* Condition label */
+      ctx.fillStyle = '#ffffff';
+      px(11, true);
+      ctx.fillText(wmoLabel(wx.code), 14, 212);
+
+      /* Min / Max */
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      px(10, false);
+      ctx.fillText(`↓${wx.tempMin}°  ↑${wx.tempMax}°`, 14, 230);
+
+      /* Sunrise / Sunset */
+      ctx.fillStyle = 'rgba(255,220,100,0.85)';
+      px(10, false);
+      ctx.fillText(`☀ ${wx.sunrise}  ☾ ${wx.sunset}`, 14, 252);
+
+      /* Clock */
+      const hh = String(now.getHours()).padStart(2,'0');
+      const mm = String(now.getMinutes()).padStart(2,'0');
+      const ss = String(now.getSeconds()).padStart(2,'0');
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      px(12, true);
+      ctx.fillText(`${hh}:${mm}:${ss}`, 14, 290);
+
+      /* Date */
+      const days   = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+      const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      px(9, false);
+      ctx.fillText(`${days[now.getDay()]} ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`, 14, 308);
+
+      /* ── Right panel: metrics ───────────────────────────────────────── */
+      const rx = 308;
+      metric('HUMIDITY',    `${wx.hum}`,          '%',      rx,  28, '#7ad4ff');
+      metric('WIND',        `${wx.wind}`,          `km/h ${windLabel(wx.windDir)}`, rx, 88,  '#aaffdd');
+      metric('UV INDEX',    `${wx.uv}`,            wx.uv <= 2 ? 'LOW' : wx.uv <= 5 ? 'MOD' : 'HIGH',
+                                                              rx, 148, wx.uv <= 2 ? '#88ee88' : wx.uv <= 5 ? '#ffdd44' : '#ff6644');
+      metric('PRECIP PROB', `${wx.precip}`,        '%',      rx, 208, '#88aaff');
+
+      /* Attribution */
+      ctx.fillStyle = 'rgba(255,255,255,0.20)';
+      px(7, false);
+      ctx.textAlign = 'right';
+      ctx.fillText('open-meteo.com', W - 4, H - 4);
+      ctx.textAlign = 'left';
+    }
+
+    function loop() {
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    fetchWx();
+    setInterval(fetchWx, 600_000);
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

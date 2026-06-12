@@ -1,0 +1,992 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   TemplateManagerModal — uses the global ISA-101 design system variables
+   but overrides them locally for higher brightness (dialogs ≠ dashboard).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Overlay ────────────────────────────────────────────────────────────── */
+.tmm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Modal shell — local brightness overrides ─────────────────────────────
+   The global palette is intentionally dim (ISA-101 "silent when healthy").
+   Inside dialogs we want the same language but clearly readable at a glance.  */
+.tmm-modal {
+  /* layout */
+  position: relative; /* contains absolutely-positioned overlays (drag, import preview) */
+  width: min(1480px, 96vw);
+  height: min(900px, 95vh);
+  display: flex;
+  flex-direction: column;
+  border-radius: 4px;
+  overflow: hidden;
+
+  /* inherit panel chrome from design system */
+  background: var(--bg-panel);
+  border: 1px solid var(--border-bright);
+  box-shadow: 0 4px 40px rgba(0, 0, 0, 0.60);
+
+  /* ── local brightness overrides ── */
+  --dl-text:        var(--text-bright);       /* #fff — primary body text    */
+  --dl-text-dim:    var(--neutral-text);      /* #b0b0d0 — secondary labels  */
+  --dl-accent:      var(--accent);            /* #00c8ff                     */
+  --dl-border:      var(--border);            /* #a0a0cc — panel borders     */
+  --dl-border-hi:   var(--border-bright);     /* #c8c8f0 — focused borders   */
+  --dl-bg-row:      rgba(255,255,255,0.03);   /* subtle row tint             */
+  --dl-bg-input:    rgba(0, 0, 0, 0.40);
+  --dl-bg-active:   rgba(0, 200, 255, 0.12);
+}
+
+/* ── Top bar ────────────────────────────────────────────────────────────── */
+.tmm-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-md);
+  border-bottom: 1px solid var(--dl-border);
+  background: var(--bg-header);
+  flex-shrink: 0;
+  height: 44px;
+}
+
+.tmm-tabs { display: flex; gap: 4px; }
+
+.tmm-tab {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--dl-text-dim);
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  letter-spacing: 1.5px;
+  padding: 6px 14px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.15s;
+  text-transform: uppercase;
+}
+.tmm-tab:hover {
+  color: var(--dl-accent);
+  border-color: rgba(0, 200, 255, 0.30);
+}
+.tmm-tab.active {
+  color: var(--dl-accent);
+  border-color: rgba(0, 200, 255, 0.55);
+  background: rgba(0, 200, 255, 0.08);
+}
+
+.tmm-close {
+  background: none;
+  border: 1px solid var(--dl-border);
+  color: var(--dl-text-dim);
+  font-size: 14px;
+  width: 28px; height: 28px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.tmm-close:hover {
+  color: var(--dl-text);
+  border-color: var(--dl-border-hi);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── New template row ───────────────────────────────────────────────────── */
+.tmm-new-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--dl-border);
+  background: var(--bg-header);
+  flex-shrink: 0;
+}
+
+.tmm-new-btn {
+  background: rgba(0, 200, 255, 0.12);
+  border: 1px solid var(--dl-accent);
+  color: var(--dl-accent);
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 5px 14px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.15s;
+  text-transform: uppercase;
+}
+.tmm-new-btn:hover { background: rgba(0, 200, 255, 0.22); }
+
+/* ── Export / Import buttons ────────────────────────────────────────────── */
+.tmm-io-btn {
+  background: transparent;
+  border: 1px solid var(--dl-border);
+  color: var(--dl-text-dim);
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  letter-spacing: 1px;
+  padding: 5px 12px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: border-color 0.15s, color 0.15s, opacity 0.15s;
+  text-transform: uppercase;
+}
+.tmm-io-btn:hover:not(:disabled) { border-color: var(--dl-accent); color: var(--dl-accent); }
+.tmm-io-btn:disabled,
+.tmm-io-btn.tmm-io-busy          { opacity: 0.45; cursor: not-allowed; }
+
+/* Done toast — shown inline in the toolbar after import completes */
+.tmm-import-result {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  color: var(--status-ok);
+  letter-spacing: 0.5px;
+}
+.tmm-import-result.tmm-import-err { color: var(--status-err); }
+
+.tmm-dirty-notice {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  color: var(--status-warn);
+  letter-spacing: 1px;
+}
+
+/* ── Drag-and-drop overlay ──────────────────────────────────────────────── */
+/* Shown while the user drags a ZIP over the modal */
+.tmm-modal-drag-over { outline: 2px dashed var(--dl-accent); outline-offset: -4px; }
+
+.tmm-drag-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 10, 24, 0.82);
+  backdrop-filter: blur(2px);
+  pointer-events: none; /* pass drops through to the modal's onDrop */
+}
+
+.tmm-drag-hint {
+  font-family: var(--font);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: var(--dl-accent);
+  border: 2px dashed var(--dl-accent);
+  padding: 28px 52px;
+  border-radius: 6px;
+  text-shadow: 0 0 20px rgba(0, 200, 255, 0.5);
+}
+
+/* ── Import preview overlay ─────────────────────────────────────────────── */
+/* Covers the three-column area during checking / preview / importing */
+.tmm-import-overlay {
+  position: absolute;
+  /* sit below the new-row toolbar; covers the columns area */
+  top: 44px; /* topbar height */
+  left: 0; right: 0; bottom: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 10, 22, 0.88);
+  backdrop-filter: blur(3px);
+}
+
+.tmm-import-card {
+  width: min(520px, 90%);
+  max-height: 75vh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--dl-accent);
+  border-radius: 6px;
+  padding: 28px 32px;
+  box-shadow: 0 0 40px rgba(0, 200, 255, 0.18);
+  overflow-y: auto;
+}
+
+.tmm-import-card-title {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--dl-accent);
+  text-transform: uppercase;
+}
+
+.tmm-import-card-file {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  color: var(--dl-text-dim);
+  letter-spacing: 0.5px;
+  word-break: break-all;
+}
+
+/* Preview sections — creates / updates / errors */
+.tmm-import-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tmm-import-section-head {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.tmm-import-head-create { color: var(--status-ok); }
+.tmm-import-head-update { color: var(--dl-accent); }
+.tmm-import-head-error  { color: var(--status-err); }
+
+.tmm-import-names {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+/* Plain error list items keep the old style */
+.tmm-import-names li:not(.tmm-import-item) {
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--dl-text-dim);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tmm-import-names li:not(.tmm-import-item)::before { content: '· '; opacity: 0.5; }
+
+/* Rich preview item: name + class badge + category */
+.tmm-import-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.tmm-import-item-name {
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--dl-text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tmm-import-item-class {
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 0 4px;
+  border-radius: 2px;
+  border: 1px solid;
+  flex-shrink: 0;
+}
+
+/* Reuse the same class colours used in the template list */
+.tmm-import-item-class.tmm-cls-a { color: #5be0a0; border-color: rgba(91,224,160,0.4); }
+.tmm-import-item-class.tmm-cls-b { color: #00c8ff; border-color: rgba(0,200,255,0.4); }
+.tmm-import-item-class.tmm-cls-c { color: #ffb74d; border-color: rgba(255,183,77,0.4); }
+
+.tmm-import-item-cat {
+  font-family: var(--font);
+  font-size: 10px;
+  color: var(--dl-text-dim);
+  opacity: 0.7;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.tmm-import-err-list li { color: var(--status-err); opacity: 0.85; }
+
+/* Confirm / cancel action row */
+.tmm-import-card-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding-top: 16px;
+}
+
+.tmm-import-action-cancel,
+.tmm-import-action-confirm {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 8px 18px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: filter 0.15s, opacity 0.15s;
+}
+
+.tmm-import-action-cancel {
+  background: transparent;
+  border: 1px solid var(--dl-border);
+  color: var(--dl-text-dim);
+}
+.tmm-import-action-cancel:hover { border-color: var(--dl-border-hi); color: var(--dl-text); }
+
+.tmm-import-action-confirm {
+  background: rgba(0, 200, 255, 0.14);
+  border: 1px solid var(--dl-accent);
+  color: var(--dl-accent);
+}
+.tmm-import-action-confirm:hover:not(:disabled) { filter: brightness(1.25); }
+.tmm-import-action-confirm:disabled             { opacity: 0.35; cursor: not-allowed; }
+
+/* ── Three-column body ──────────────────────────────────────────────────── */
+/* min-height: 0 lets flex:1 shrink below its content size (default is auto) */
+.tmm-body { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+
+.tmm-columns {
+  display: grid;
+  /* φ = 1.618 — filter : list ≈ 1 : φ  (190 × 1.618 ≈ 307 → 310) */
+  grid-template-columns: 190px 310px 1fr;
+  /* Without grid-template-rows the implicit row is "auto" (sized to content).
+     That means column cells never get a definite height → flex:1 children
+     inside them cannot resolve → CodeMirror height:100% = auto → no scroll.
+     1fr makes the single row stretch to fill the grid container's height. */
+  grid-template-rows: 1fr;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Column 1: Filters ──────────────────────────────────────────────────── */
+.tmm-col-filters {
+  border-right: 1px solid var(--dl-border);
+  overflow-y: auto;
+  padding: var(--space-md) var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  background: var(--bg-header);
+}
+
+.tmm-filter-section { display: flex; flex-direction: column; gap: 2px; }
+
+.tmm-filter-heading {
+  font-family: var(--font);
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  color: var(--dl-accent);
+  margin-bottom: var(--space-sm);
+  text-transform: uppercase;
+  opacity: 0.80;
+}
+
+.tmm-radio-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  padding: 5px 7px;
+  border-radius: 3px;
+  transition: background 0.12s;
+  /* system-ui for human-readable labels (not technical codes) */
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  color: var(--dl-text);
+}
+.tmm-radio-row:hover { background: var(--dl-bg-active); }
+.tmm-radio-row input[type=radio] { accent-color: var(--dl-accent); }
+
+.tmm-cat-count {
+  margin-left: auto;
+  font-family: var(--font);
+  font-size: 10px;
+  color: var(--dl-accent);
+  background: rgba(0, 200, 255, 0.12);
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+/* ── Column 2: List ─────────────────────────────────────────────────────── */
+.tmm-col-list {
+  border-right: 1px solid var(--dl-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  background: var(--bg-panel);
+}
+
+.tmm-search {
+  flex-shrink: 0;
+  margin: var(--space-sm);
+  padding: 7px 10px;
+  background: var(--dl-bg-input);
+  border: 1px solid var(--dl-border);
+  border-radius: 3px;
+  color: var(--dl-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.tmm-search:focus { border-color: var(--dl-border-hi); }
+.tmm-search::placeholder { color: var(--text-dim); }
+
+.tmm-list {
+  flex: 1;
+  overflow-y: auto;
+  outline: none;
+}
+.tmm-list-loading, .tmm-list-empty {
+  padding: 24px;
+  text-align: center;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.tmm-list-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  /* No per-row border — horizontal lines add noise without aiding hierarchy */
+  color: var(--dl-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+  gap: var(--space-sm);
+}
+.tmm-list-item:hover { background: var(--dl-bg-active); }
+.tmm-list-item.active {
+  background: rgba(0, 200, 255, 0.14);
+  color: var(--text-bright);
+  border-left: 2px solid var(--dl-accent);
+  padding-left: 12px; /* compensate for the left border */
+}
+
+.tmm-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tmm-item-dirty { color: var(--status-warn); font-size: 10px; }
+
+.tmm-item-class {
+  font-family: var(--font);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+.tmm-class-a { color: #4ec9b0; border-color: rgba(78,201,176,0.50);  background: rgba(78,201,176,0.10); }
+.tmm-class-b { color: #9cdcfe; border-color: rgba(156,220,254,0.50); background: rgba(156,220,254,0.10); }
+.tmm-class-c { color: #ce9178; border-color: rgba(206,145,120,0.50); background: rgba(206,145,120,0.10); }
+
+/* ── Column 3: Editor ───────────────────────────────────────────────────── */
+.tmm-col-editor {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;  /* grid items default to min-height:auto; override so flex children shrink */
+  padding: var(--space-sm) var(--space-md);
+  gap: 8px;  /* Fibonacci spacing (8 / 13 / 21) — matches --space-sm */
+  background: var(--bg-panel);
+}
+
+.tmm-editor-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+}
+
+.tmm-field-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.tmm-field-label {
+  font-family: var(--font);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--dl-accent);
+  width: 44px;
+  flex-shrink: 0;
+  opacity: 0.80;
+  text-transform: uppercase;
+}
+
+.tmm-name-input {
+  flex: 1;
+  background: var(--dl-bg-input);
+  border: 1px solid var(--dl-border);
+  border-radius: 3px;
+  color: var(--dl-text);
+  /* system-ui for form field text — monospace in a name field is jarring */
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  padding: 5px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.tmm-name-input:focus { border-color: var(--dl-border-hi); }
+
+/* ── Metadata bar ───────────────────────────────────────────────────────── */
+/* No box border — background tint provides separation without visual noise */
+.tmm-meta-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  /* Accent left stripe signals "these controls affect the template metadata" */
+  border-left: 2px solid rgba(0, 200, 255, 0.30);
+  padding: 8px 13px;
+  flex-wrap: wrap;
+}
+
+.tmm-meta-group { display: flex; align-items: center; gap: 7px; }
+
+.tmm-meta-key {
+  font-family: var(--font);
+  /* 8px was below comfortable reading threshold — 11px is the minimum for labels */
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  color: var(--dl-accent);
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0.80;
+}
+
+.tmm-meta-unit {
+  /* "min" is a human word, not a code token — use proportional font */
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.tmm-meta-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--dl-border);
+  flex-shrink: 0;
+  margin: 0 4px;
+}
+
+/* Class selector buttons inside meta bar */
+.tmm-meta-cls-btn {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--dl-border);
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 700;
+  width: 26px; height: 26px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s;
+  display: flex; align-items: center; justify-content: center;
+}
+.tmm-meta-cls-btn:hover { color: var(--dl-text); border-color: var(--dl-border-hi); }
+.tmm-meta-cls-btn.tmm-cls-a.active { background: rgba(78,201,176,0.20);  border-color: #4ec9b0; color: #4ec9b0; }
+.tmm-meta-cls-btn.tmm-cls-b.active { background: rgba(156,220,254,0.16); border-color: #9cdcfe; color: #9cdcfe; }
+.tmm-meta-cls-btn.tmm-cls-c.active { background: rgba(206,145,120,0.20); border-color: #ce9178; color: #ce9178; }
+
+/* Category dropdown */
+.tmm-meta-select {
+  background: var(--dl-bg-input);
+  border: 1px solid var(--dl-border);
+  border-radius: 3px;
+  color: var(--dl-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  padding: 3px 8px;
+  outline: none;
+  cursor: pointer;
+  max-width: 140px;
+  transition: border-color 0.15s;
+}
+.tmm-meta-select:focus { border-color: var(--dl-border-hi); }
+
+/* Number inputs in meta bar */
+.tmm-meta-num {
+  background: var(--dl-bg-input);
+  border: 1px solid var(--dl-border);
+  border-radius: 3px;
+  color: var(--dl-text);
+  font-family: var(--font);
+  font-size: 12px;
+  padding: 3px 5px;
+  width: 50px;
+  outline: none;
+  text-align: center;
+  transition: border-color 0.15s;
+}
+.tmm-meta-num:focus { border-color: var(--dl-border-hi); }
+.tmm-meta-num::-webkit-inner-spin-button { opacity: 0.6; }
+
+/* Public visibility toggle */
+.tmm-public-btn {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--dl-border);
+  color: var(--dl-text-dim);
+  font-family: var(--font);
+  font-size: 0.75rem;
+  width: 24px; height: 24px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.tmm-public-btn:hover:not(:disabled) {
+  border-color: var(--dl-border-hi);
+  color: var(--dl-text);
+}
+.tmm-public-btn.active {
+  background: rgba(91,224,160,0.15);
+  border-color: #5be0a0;
+  color: #5be0a0;
+}
+.tmm-public-btn.err {
+  border-color: rgba(204,51,51,0.7);
+  color: #cc4444;
+}
+.tmm-public-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── CodeMirror wrapper ─────────────────────────────────────────────────── */
+/* Must be a flex column so that cm-editor can use flex:1 to fill it.
+   height:100% on cm-editor does NOT work when the parent is display:block
+   inside a flex layout — the editor grows to content size (12 000+ px)
+   and overflow:hidden just clips it visually; the scroller never sees a
+   bounded height and shows no scrollbar. */
+.tmm-editor-wrap {
+  flex: 1;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dl-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+/* flex:1 + min-height:0 lets the flex algorithm bound cm-editor to the
+   wrap's computed height instead of letting it grow to content size */
+/* cm-theme is a wrapper div CodeMirror injects between the wrap and cm-editor;
+   it must also be a bounded flex item or it expands to content height */
+.tmm-editor-wrap .cm-theme     { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tmm-editor-wrap .cm-editor    { flex: 1; min-height: 0; overflow: hidden; }
+.tmm-editor-wrap .cm-scroller  { overflow: auto !important; }
+
+/* Dark-themed scrollbar inside the code editor */
+.tmm-editor-wrap .cm-scroller::-webkit-scrollbar        { width: 6px; height: 6px; }
+.tmm-editor-wrap .cm-scroller::-webkit-scrollbar-track  { background: rgba(0,0,0,0.30); }
+.tmm-editor-wrap .cm-scroller::-webkit-scrollbar-thumb  { background: rgba(0,200,255,0.35); border-radius: 3px; }
+.tmm-editor-wrap .cm-scroller::-webkit-scrollbar-thumb:hover { background: rgba(0,200,255,0.65); }
+/* Slightly smaller than CodeMirror's default (~14px) so the code block
+   doesn't visually outweigh the surrounding 12-14px UI text */
+.tmm-editor-wrap .cm-content,
+.tmm-editor-wrap .cm-gutters   { font-size: 12px; }
+
+/* ── Preview ────────────────────────────────────────────────────────────── */
+.tmm-preview-label {
+  font-family: var(--font);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--dl-accent);
+  flex-shrink: 0;
+  opacity: 0.75;
+  text-transform: uppercase;
+}
+
+.tmm-preview-wrap {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.50);
+  border: 1px solid var(--dl-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tmm-preview-iframe {
+  border: none;
+  display: block;
+  transform-origin: top left;
+  /* 0.75 gives 360×240 px visible — 10% larger than 0.72, better visual weight */
+  transform: scale(0.75);
+  width: 480px !important;
+  height: 320px !important;
+  margin-bottom: calc(-320px * 0.25);
+}
+
+/* ── Frame navigator ────────────────────────────────────────────────────── */
+.tmm-frame-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.tmm-fnav-btn {
+  background: rgba(0, 200, 255, 0.10);
+  border: 1px solid var(--dl-border);
+  color: var(--dl-accent);
+  width: 28px; height: 26px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+}
+.tmm-fnav-btn:hover:not(:disabled) {
+  background: rgba(0, 200, 255, 0.20);
+  border-color: var(--dl-border-hi);
+}
+.tmm-fnav-btn:disabled { opacity: 0.25; cursor: default; }
+
+.tmm-fnav-play { width: 34px; font-size: 12px; }
+.tmm-fnav-play.playing {
+  background: rgba(78, 201, 176, 0.18);
+  border-color: #4ec9b0;
+  color: #4ec9b0;
+}
+
+.tmm-fnav-info {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  color: var(--dl-text);
+  letter-spacing: 1px;
+  min-width: 64px;
+}
+
+/* ── Action buttons — solid fills, clearly readable ─────────────────────── */
+.tmm-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  align-items: center;
+}
+.tmm-actions-spacer { flex: 1; }
+
+.tmm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  padding: 6px 14px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: filter 0.12s, transform 0.08s;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+.tmm-btn:active:not(:disabled) { transform: translateY(1px); }
+.tmm-btn:disabled { opacity: 0.40; cursor: default; }
+
+/* ▶ RUN — teal */
+.tmm-btn-run {
+  background: #1d6b58;
+  border-color: #4ec9b0;
+  color: #b2fff0;
+}
+.tmm-btn-run:hover:not(:disabled) { filter: brightness(1.22); }
+
+/* 💾 SAVE — blue */
+.tmm-btn-save {
+  background: #1a3f62;
+  border-color: var(--status-active);
+  color: #aadeff;
+}
+.tmm-btn-save:hover:not(:disabled) { filter: brightness(1.22); }
+.tmm-btn-save.status-ok  { background: #1a5c3a; border-color: #4ec9b0; color: #b2fff0; }
+.tmm-btn-save.status-err { background: #5c1a1a; border-color: var(--status-error); color: #ffaaaa; }
+
+/* 📷 SAVE & GRAB — green */
+.tmm-btn-grab {
+  background: #1e5820;
+  border-color: #4a9e4c;
+  color: #b8ffba;
+}
+.tmm-btn-grab:hover:not(:disabled) { filter: brightness(1.22); }
+
+/* ⊞ TO CANVAS — purple, "send to pipeline" */
+.tmm-btn-pin {
+  background: #2a1f62;
+  border-color: #8b7fff;
+  color: #d4c4ff;
+}
+.tmm-btn-pin:hover:not(:disabled) { filter: brightness(1.22); }
+.tmm-btn-pin.status-ok { background: #1a5c3a; border-color: #4ec9b0; color: #b2fff0; }
+
+/* 🗑 DELETE — solid red, unmissable */
+.tmm-btn-delete {
+  background: #6b1f1f;
+  border-color: var(--status-error);
+  color: #ffb8b8;
+}
+.tmm-btn-delete:hover:not(:disabled) { background: #8a2424; filter: brightness(1.18); }
+
+/* ── Shortcuts hint ─────────────────────────────────────────────────────── */
+.tmm-shortcuts {
+  font-family: var(--font);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+/* ── Categories tab body ────────────────────────────────────────────────── */
+.tmm-cat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-md) var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.tmm-cat-add-row { display: flex; gap: var(--space-sm); align-items: center; }
+
+.tmm-cat-add-input {
+  flex: 1;
+  max-width: 320px;
+  background: var(--dl-bg-input);
+  border: 1px solid var(--dl-border);
+  border-radius: 3px;
+  color: var(--dl-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.tmm-cat-add-input:focus { border-color: var(--dl-border-hi); }
+.tmm-cat-add-input::placeholder { color: var(--text-dim); }
+
+.tmm-cat-add-btn {
+  background: rgba(0, 200, 255, 0.12);
+  border: 1px solid var(--dl-accent);
+  color: var(--dl-accent);
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 7px 16px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+}
+.tmm-cat-add-btn:disabled { opacity: 0.35; cursor: default; }
+.tmm-cat-add-btn:not(:disabled):hover { background: rgba(0, 200, 255, 0.24); }
+
+.tmm-cat-add-error {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  color: var(--status-error);
+  background: rgba(204, 51, 51, 0.10);
+  border: 1px solid rgba(204, 51, 51, 0.35);
+  border-radius: 3px;
+  padding: 5px 10px;
+  max-width: 480px;
+  letter-spacing: 0.3px;
+}
+
+.tmm-cat-table { display: flex; flex-direction: column; gap: 3px; max-width: 760px; }
+
+.tmm-cat-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 10px 14px;
+  background: var(--dl-bg-row);
+  border: 1px solid var(--dl-border);
+  border-radius: 3px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  transition: border-color 0.12s;
+}
+.tmm-cat-row:hover { border-color: var(--dl-border-hi); }
+
+.tmm-cat-label  { flex: 1; color: var(--dl-text); }
+/* slug is a technical token — keep monospace */
+.tmm-cat-slug   { font-family: var(--font); color: var(--dl-accent); font-size: 11px; min-width: 80px; opacity: 0.80; }
+.tmm-cat-count-cell { color: var(--text-dim); font-size: 12px; min-width: 90px; }
+
+.tmm-cat-actions { display: flex; gap: 4px; align-items: center; }
+
+.tmm-cat-btn {
+  background: rgba(0, 200, 255, 0.06);
+  border: 1px solid var(--dl-border);
+  color: var(--dl-text-dim);
+  width: 28px; height: 28px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+}
+.tmm-cat-btn:hover { color: var(--dl-text); border-color: var(--dl-border-hi); background: rgba(0,200,255,0.14); }
+.tmm-cat-btn.tmm-cat-confirm { color: #4ec9b0; border-color: rgba(78,201,176,0.60); }
+.tmm-cat-btn.tmm-cat-confirm:hover { background: rgba(78,201,176,0.18); }
+.tmm-cat-btn.tmm-cat-delete  { color: rgba(220, 80, 80, 0.85); border-color: rgba(200,60,60,0.45); }
+.tmm-cat-btn.tmm-cat-delete:hover { color: #ff6868; border-color: var(--status-error); background: rgba(200,40,40,0.16); }
+
+.tmm-cat-lock { font-size: 14px; opacity: 0.50; }
+
+.tmm-cat-edit-input {
+  flex: 1;
+  background: var(--dl-bg-input);
+  border: 1px solid var(--dl-accent);
+  border-radius: 3px;
+  color: var(--dl-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  padding: 4px 9px;
+  outline: none;
+}

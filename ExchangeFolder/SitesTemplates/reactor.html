@@ -1,0 +1,192 @@
+﻿<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body" data-vow-name="Reactor" data-vow-category="scifi" data-vow-description="Sci-fi reactor status monitor">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict'
+const W=480,H=320,cv=document.getElementById('screen'),cx=cv.getContext('2d')
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+function dither(){
+  const id=cx.getImageData(0,0,W,H),d=id.data
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=(y*W+x)*4
+    for(let c=0;c<3;c++){
+      const bits=c===1?6:5,max=(1<<bits)-1,old=d[i+c]
+      const nv=Math.round(old/255*max)/max*255,err=old-nv
+      d[i+c]=nv
+      if(x+1<W)d[i+4+c]+=err*7/16
+      if(y+1<H){if(x>0)d[i+(W-1)*4+c]+=err*3/16;d[i+W*4+c]+=err*5/16;if(x+1<W)d[i+(W+1)*4+c]+=err/16}
+    }
+  }
+  cx.putImageData(id,0,0)
+}
+const P={
+  bg:css(0,8,16),pan:css(0,20,36),bdr:css(0,80,108),bdrd:css(0,36,52),
+  cy:css(0,220,248),cy2:css(0,148,184),cy3:css(0,48,72),
+  gn:css(0,212,72),gnd:css(0,72,28),
+  am:css(240,152,0),amd:css(80,48,0),
+  rd:css(240,32,32),rdd:css(72,8,8),
+  tx:css(120,196,216),tx2:css(52,108,132),
+  wh:css(216,240,248)
+}
+function fill(x,y,w,h,col){cx.fillStyle=col;cx.fillRect(x,y,w,h)}
+function line(x1,y1,x2,y2,col,lw=1){cx.strokeStyle=col;cx.lineWidth=lw;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()}
+function txt(s,x,y,col,sz=9,al='left'){cx.font=`${sz}px monospace`;cx.fillStyle=col;cx.textAlign=al;cx.fillText(s,x,y);cx.textAlign='left'}
+function arc(x,y,r,a0,a1,col,lw=1.5){cx.strokeStyle=col;cx.lineWidth=lw;cx.beginPath();cx.arc(x,y,r,a0,a1);cx.stroke()}
+function hbar(x,y,w,h,pct,fg,bg){fill(x,y,w,h,bg);const pw=~~(w*Math.min(pct,1));fill(x,y,pw,h,fg);cx.strokeStyle=P.bdr;cx.lineWidth=0.5;cx.strokeRect(x,y,w,h)}
+
+// Per-frame state: power%, coreTemp, coolantTemp, pressure, stability
+const FRAMES=[
+  {st:'IDLE',     stcol:P.cy2, pw:15, ct:280, cl:180, pr:0.8,  stab:0.98, warn:false},
+  {st:'STARTUP',  stcol:P.cy,  pw:42, ct:480, cl:240, pr:1.2,  stab:0.96, warn:false},
+  {st:'NOMINAL',  stcol:P.gn,  pw:78, ct:640, cl:340, pr:2.1,  stab:0.99, warn:false},
+  {st:'PEAK LOAD',stcol:P.gn,  pw:96, ct:820, cl:440, pr:2.6,  stab:0.97, warn:false},
+  {st:'CAUTION',  stcol:P.am,  pw:108,ct:980, cl:580, pr:2.9,  stab:0.91, warn:true},
+  {st:'COOLDOWN', stcol:P.cy2, pw:62, ct:580, cl:300, pr:1.8,  stab:0.98, warn:false},
+]
+// Waveform seed
+const WAVE=Array.from({length:80},(_,i)=>Math.sin(i*0.4)*0.4+Math.sin(i*0.9)*0.2+0.5)
+let fi=0,tk=0
+
+function coreColor(pw){
+  if(pw>100)return P.rd
+  if(pw>90)return P.am
+  if(pw>30)return P.gn
+  return P.cy2
+}
+
+function tick(){
+  const f=FRAMES[fi],bl=(tk++%2)===0
+  const nw=new Date(),ts=`${String(nw.getHours()).padStart(2,'0')}:${String(nw.getMinutes()).padStart(2,'0')}:${String(nw.getSeconds()).padStart(2,'0')}`
+  const cc=coreColor(f.pw)
+
+  fill(0,0,W,H,P.bg)
+  cx.strokeStyle=P.cy3;cx.lineWidth=0.5
+  for(let x=0;x<W;x+=40)line(x,0,x,H,P.cy3,0.5)
+  for(let y=0;y<H;y+=40)line(0,y,W,y,P.cy3,0.5)
+
+  // Header
+  fill(0,0,W,24,P.pan);line(0,24,W,24,P.bdrd)
+  cx.fillStyle=f.warn&&bl?P.am:P.cy;cx.font='bold 11px monospace';cx.fillText('⬡ REACTOR CORE — DRIVE UNIT MK-IV',8,16)
+  txt(ts,W-8,16,P.tx2,9,'right')
+
+  // === CENTER: Reactor core visualization ===
+  const CX=240,CY=155,CR=70
+
+  // Outer housing hex background
+  cx.beginPath()
+  for(let i=0;i<6;i++){const a=i*Math.PI/3-Math.PI/6;cx.lineTo(CX+Math.cos(a)*(CR+40),CY+Math.sin(a)*(CR+40))}
+  cx.closePath();cx.fillStyle=css(0,14,24);cx.fill()
+  cx.strokeStyle=P.bdr;cx.lineWidth=1;cx.stroke()
+
+  // Rotating containment rings
+  const rot=fi*Math.PI/3
+  for(let r=0;r<3;r++){
+    const rad=CR-8-r*10,a0=rot+r*0.3,a1=a0+Math.PI*1.6
+    arc(CX,CY,rad,a0,a1,r===0?cc:r===1?P.cy2:P.bdr,r===0?2:1)
+    // Tick marks on ring
+    for(let t=0;t<6;t++){
+      const ta=rot+t*Math.PI/3
+      const rx=CX+Math.cos(ta)*rad,ry=CY+Math.sin(ta)*rad
+      fill(rx-2,ry-2,4,4,r===0?cc:P.bdr)
+    }
+  }
+
+  // Core glow
+  const grad=cx.createRadialGradient(CX,CY,0,CX,CY,CR-30)
+  const alpha=f.pw/110
+  if(f.pw>100){grad.addColorStop(0,`rgba(240,80,0,${alpha})`);grad.addColorStop(1,`rgba(240,32,0,0)`)}
+  else if(f.pw>30){grad.addColorStop(0,`rgba(0,220,80,${alpha})`);grad.addColorStop(1,`rgba(0,180,60,0)`)}
+  else{grad.addColorStop(0,`rgba(0,180,240,${alpha*0.6})`);grad.addColorStop(1,`rgba(0,80,160,0)`)}
+  cx.fillStyle=grad;cx.beginPath();cx.arc(CX,CY,CR-30,0,Math.PI*2);cx.fill()
+
+  // Core inner circle
+  arc(CX,CY,20,0,Math.PI*2,cc,2)
+  arc(CX,CY,10,0,Math.PI*2,f.pw>30?cc:P.bdr,3)
+
+  // Power sector bars (6 around core, like clock positions)
+  const sects=['A','B','C','D','E','F']
+  const spw=[f.pw,f.pw-3,f.pw+2,f.pw-1,f.pw+1,f.pw-2]
+  for(let s=0;s<6;s++){
+    const sa=s*Math.PI/3-Math.PI/2
+    const bx=CX+Math.cos(sa)*(CR+20),by=CY+Math.sin(sa)*(CR+20)
+    const pct=Math.max(0,Math.min(1,spw[s]/110))
+    const bw=18,bh=28
+    fill(bx-bw/2,by-bh/2,bw,bh,P.pan)
+    fill(bx-bw/2,by+bh/2-~~(bh*pct),bw,~~(bh*pct),f.pw>100?P.rd:f.pw>85?P.am:P.gn)
+    cx.strokeStyle=P.bdr;cx.lineWidth=0.5;cx.strokeRect(bx-bw/2,by-bh/2,bw,bh)
+    txt(sects[s],bx,by+bh/2+8,P.tx2,7,'center')
+  }
+
+  // Status label in core
+  txt(f.pw+'%',CX,CY+5,cc,14,'center')
+  txt('OUTPUT',CX,CY+16,P.tx2,7,'center')
+
+  // === LEFT: Telemetry panel ===
+  fill(4,28,100,256,P.pan);cx.strokeStyle=P.bdrd;cx.lineWidth=1;cx.strokeRect(4,28,100,256)
+  txt('TELEMETRY',8,40,P.tx2,8)
+
+  const metrics=[
+    ['CORE TEMP',f.ct+'K',f.ct>900?P.rd:f.ct>700?P.am:P.cy],
+    ['COOLANT',f.cl+'K',f.cl>500?P.am:P.cy2],
+    ['PRESSURE',f.pr.toFixed(1)+' MPa',f.pr>2.8?P.rd:f.pr>2.0?P.am:P.gn],
+    ['STABILITY',(f.stab*100).toFixed(1)+'%',f.stab>0.95?P.gn:f.stab>0.90?P.am:P.rd],
+    ['EFFICIENCY',~~(f.pw*f.stab)+'%',f.pw>30?P.cy:P.tx2],
+    ['FUEL CELL',~~(100-fi*4)+'%',P.cy],
+  ]
+  for(let i=0;i<metrics.length;i++){
+    const[lab,val,col]=metrics[i],ty=54+i*34
+    line(8,ty+4,100,ty+4,P.bdrd,0.5)
+    txt(lab,8,ty+16,P.tx2,7)
+    txt(val,8,ty+28,col,10)
+  }
+
+  // === RIGHT: System status ===
+  fill(376,28,100,256,P.pan);cx.strokeStyle=P.bdrd;cx.lineWidth=1;cx.strokeRect(376,28,100,256)
+  txt('REACTOR STATUS',380,40,P.tx2,7)
+
+  // Big status badge
+  fill(380,44,92,22,f.warn&&bl?P.amd:P.bld)
+  txt(f.st,426,59,f.warn&&bl?P.am:f.stcol,10,'center')
+
+  // Power output bar
+  txt('POWER OUT',380,78,P.tx2,7)
+  const pw_pct=Math.min(f.pw/110,1)
+  fill(380,84,92,12,P.cy3)
+  fill(380,84,~~(92*pw_pct),12,f.pw>100?P.rd:f.pw>85?P.am:P.gn)
+  cx.strokeStyle=P.bdr;cx.lineWidth=0.5;cx.strokeRect(380,84,92,12)
+  txt(f.pw+'% (MAX:110)',380,104,f.pw>100?P.rd:P.tx,8)
+
+  // System indicators
+  const sys=[
+    ['PLASMA CORE',f.pw>0],['SHIELD COIL',f.pw>10],['COOLANT PMP',true],
+    ['FUEL INJECT',f.pw>5],['CONTAINMENT',f.stab>0.9],['GRID SYNC',f.pw>30]
+  ]
+  for(let i=0;i<sys.length;i++){
+    const[lab,ok]=sys[i],ty=112+i*22
+    txt(ok?'●':'○',380,ty,ok?P.gn:P.rdd,9)
+    txt(lab,390,ty,ok?P.tx:P.tx2,7)
+  }
+
+  txt('UPTIME:',380,244,P.tx2,7);txt('00847:14:32',380,256,P.cy,8)
+  txt('UNIT: MK-IV-C',380,272,P.tx2,7)
+
+  // === BOTTOM: Stability waveform ===
+  fill(4,288,472,28,P.pan);cx.strokeStyle=P.bdrd;cx.lineWidth=1;cx.strokeRect(4,288,472,28)
+  txt('CORE STABILITY',8,300,P.tx2,7)
+  cx.beginPath();cx.strokeStyle=f.warn&&bl?P.am:P.gn;cx.lineWidth=1
+  for(let i=0;i<72;i++){
+    const wx=90+i*5,wy=300+~~((WAVE[(i+fi*8)%80]-0.5)*18*(1+(1-f.stab)*3))
+    i===0?cx.moveTo(wx,wy):cx.lineTo(wx,wy)
+  }
+  cx.stroke()
+  txt(`${fi+1}/${FRAMES.length}`,W-8,300,P.tx2,8,'right')
+
+  dither()
+  fi=(fi+1)%FRAMES.length
+}
+tick();setInterval(tick,1000)
+</script></body></html>

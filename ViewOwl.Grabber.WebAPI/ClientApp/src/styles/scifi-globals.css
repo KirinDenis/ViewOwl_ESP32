@@ -1,0 +1,189 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   ViewOwl Calm Dashboard — ISA-101 High-Performance HMI Design System
+   ─────────────────────────────────────────────────────────────────────────────
+   Philosophy: the interface is SILENT AND NEUTRAL when the system is healthy.
+   Color and motion appear EXCLUSIVELY to signal problems.
+   Follows ISA-101 / EEMUA-191 industrial HMI standard.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Backgrounds ─────────────────────────────────────────────────────────── */
+  --bg:          #12121f;   /* main background — very dark navy */
+  --bg-panel:    #22223a;   /* panel / card background — clearly lighter than bg */
+  --bg-hover:    #2c2c48;   /* panel hover */
+  --bg-header:   #1a1a2e;   /* header / sidebar */
+
+  /* ── Neutral (healthy state — NO color) ──────────────────────────────────── */
+  --neutral-idle:  #7070a0;   /* inactive node border */
+  --neutral-text:  #b0b0d0;   /* secondary labels */
+  --neutral-line:  #5a5a80;   /* edge / divider */
+
+  /* ── Typography ──────────────────────────────────────────────────────────── */
+  --text:          #e8e8ff;   /* primary text — bright white-lavender */
+  --text-dim:      #9898b8;   /* timestamps, secondary metrics */
+  --text-bright:   #ffffff;   /* selected / focused text — pure white */
+
+  /* ── Status — ONLY for abnormal states ───────────────────────────────────── */
+  --status-ok:      #ffffff;   /* running normally — WHITE, not green */
+  --status-warn:    #d4a017;   /* warning / overdue — amber */
+  --status-error:   #cc3333;   /* fault / alarm — red */
+  --status-unknown: #8833cc;   /* no data / unknown — purple */
+  --status-offline: #444466;   /* offline / not assigned — dark, faded */
+  --status-active:  #3399ff;   /* selected / in maintenance — blue */
+
+  /* ── Accent (interactive elements only) ─────────────────────────────────── */
+  --primary:        #00c8ff;   /* primary action buttons (mapped from legacy --primary) */
+  --secondary:      #0099cc;   /* secondary actions */
+  --accent:         #00c8ff;   /* accent (alias) */
+  --accent-success: #00cc66;   /* confirmed success state */
+
+  /* ── Borders & dividers ──────────────────────────────────────────────────── */
+  --border:        #a0a0cc;   /* panel border — clearly visible */
+  --border-bright: #c8c8f0;   /* focused / selected panel border */
+  --glow:          transparent; /* no ambient glow in ISA-101 */
+
+  /* ── Severity (alert board) ──────────────────────────────────────────────── */
+  --p1-color: #cc3333;   /* P1 Critical — red */
+  --p2-color: #d4a017;   /* P2 High — amber */
+  --p3-color: #c8b800;   /* P3 Warning — yellow */
+  --p4-color: #3399ff;   /* P4 Info — blue */
+
+  /* ── Legacy aliases (prevent breakage in existing components) ─────────────── */
+  --danger:        #cc3333;
+  --danger-glow:   transparent;
+  --warning:       #d4a017;
+  --warning-glow:  transparent;
+
+  /* ── Font ────────────────────────────────────────────────────────────────── */
+  --font: 'IBM Plex Mono', 'Courier New', Consolas, monospace;
+
+  /* ── Golden ratio spacing scale (base 8px) ───────────────────────────────── */
+  --space-xs:  5px;    /* 8 / φ ≈ 5 */
+  --space-sm:  8px;    /* base unit */
+  --space-md:  13px;   /* 8 × φ ≈ 13 */
+  --space-lg:  21px;   /* 13 × φ ≈ 21 */
+  --space-xl:  34px;   /* 21 × φ ≈ 34 */
+  --space-2xl: 55px;   /* 34 × φ ≈ 55 */
+
+  /* ── Legacy scale aliases (prevent breakage in existing components) ────────── */
+  --gs-1:   8px;
+  --gs-2:  13px;
+  --gs-3:  21px;
+  --gs-4:  34px;
+  --gs-5:  55px;
+  --gs-6:  89px;
+  --gs-7: 144px;
+  --gs-8: 233px;
+  --gs-9: 377px;
+
+  /* ── Typography scale ────────────────────────────────────────────────────── */
+  --text-xs:   11px;
+  --text-sm:   12px;
+  --text-base: 14px;
+  --text-md:   16px;
+  --text-lg:   20px;
+  --text-xl:   24px;
+}
+
+/* ── Base: tabular numbers everywhere (columns must align) ────────────────── */
+* { font-variant-numeric: tabular-nums; }
+
+/* ── Static background — NO animation (ISA-101: motion only for alarms) ───── */
+.grid-bg {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(var(--neutral-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--neutral-line) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.18;
+  pointer-events: none;
+  /* No animation — grid is static */
+}
+
+/* ── HUD panel — clean border, no glow ────────────────────────────────────── */
+.hud-panel {
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  position: relative;
+  overflow: hidden;
+}
+/* Remove corner bracket decorations — ISA-101 uses clean lines */
+.hud-panel::before,
+.hud-panel::after {
+  display: none;
+}
+
+/* ── Panel title bar ─────────────────────────────────────────────────────── */
+.panel-title {
+  font-family: var(--font);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--neutral-text);   /* dim, not eye-catching when healthy */
+  padding: var(--space-sm) var(--space-md) 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-header);
+}
+
+/* ── Status dot (replaces LED) — 12px primary, 8px secondary ─────────────── */
+.led {
+  display: inline-block;
+  width:  10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Healthy state is WHITE (not green) — ISA-101 */
+.led-green  { background: var(--status-ok);      /* white */ }
+
+/* Warning — amber, NO pulse in steady state */
+.led-yellow { background: var(--status-warn);    /* amber */ }
+
+/* Error / alarm — red */
+.led-red    { background: var(--status-error);   /* red */ }
+
+/* Offline / unknown */
+.led-dim    { background: var(--status-offline); /* dark faded */ }
+
+/* ── ALARM PULSE — only for unacknowledged P1 alarms (≤1 Hz) ──────────────
+   Apply .led-alarm on top of .led-red to trigger the pulse.
+   Stops automatically when the alarm is acknowledged (remove class). */
+.led-alarm {
+  animation: alarmPulse 1s ease-in-out infinite;
+}
+@keyframes alarmPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+/* ── Glow text — subtle only for interactive labels (not ambient) ─────────── */
+.glow-text {
+  color: var(--primary);
+}
+
+/* ── Light mode overrides ──────────────────────────────────────────────────── */
+[data-bs-theme="light"] {
+  --bg:          #f0f2f5;
+  --bg-panel:    #ffffff;
+  --bg-header:   #e8eaed;
+  --border:      #d0d0e0;
+  --border-bright: #a0a0c0;
+  --glow:        transparent;
+  --text:        #1a1a2e;
+  --text-dim:    #666680;
+  --text-bright: #0a0a1a;
+  --neutral-text: #555570;
+  --neutral-line: #d0d0e0;
+  --primary:     #0077aa;
+  --secondary:   #005588;
+  --accent:      #0077aa;
+}
+
+[data-bs-theme="light"] .grid-bg {
+  background-image:
+    linear-gradient(rgba(0, 0, 80, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 80, 0.06) 1px, transparent 1px);
+  opacity: 1;
+}

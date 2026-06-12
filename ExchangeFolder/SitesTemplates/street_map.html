@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OwlView Places</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+        }
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #app-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-width: 100vw;
+            max-height: 100vh;
+            background: #0000AA;
+            font-family: 'Courier New', monospace;
+            color: #FFFF55;
+            overflow: hidden;
+        }
+        .grid-bg {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(rgba(85, 255, 255, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(85, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            opacity: 0.3;
+        }
+        .container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            padding: 1%;
+            display: flex;
+            flex-direction: column;
+        }
+        .main-content {
+            border: 2px solid #55FFFF;
+            background: #000055;
+            padding: 2%;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+        .content-title {
+            font-size: clamp(10px, 2.2vmin, 16px);
+            color: #FFFF55;
+            font-weight: bold;
+            margin-bottom: 2%;
+            padding-bottom: 1.5%;
+            border-bottom: 2px solid #55FFFF;
+            letter-spacing: 0.05em;
+            text-align: center;
+        }
+        .places-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: repeat(3, 1fr);
+            gap: 2%;
+            flex: 1;
+        }
+        .place-card {
+            border: 2px solid #55FFFF;
+            background: #000080;
+            padding: 3%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+        }
+        .place-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #55FFFF;
+        }
+        .place-header {
+            display: flex;
+            align-items: center;
+            gap: 3%;
+            margin-bottom: 3%;
+        }
+        .place-icon {
+            font-size: clamp(18px, 4vmin, 28px);
+            min-width: clamp(18px, 4vmin, 28px);
+        }
+        .place-name {
+            font-size: clamp(10px, 2.3vmin, 16px);
+            color: #FFFFFF;
+            font-weight: bold;
+            line-height: 1.2;
+            flex: 1;
+        }
+        .place-hours {
+            font-size: clamp(8px, 1.7vmin, 12px);
+            color: #55FFFF;
+            margin-bottom: 4%;
+            padding: 2%;
+            background: rgba(0, 0, 100, 0.5);
+            border-left: 2px solid #55FFFF;
+        }
+        .place-status {
+            font-size: clamp(11px, 2.5vmin, 18px);
+            font-weight: bold;
+            text-align: center;
+            padding: 3%;
+            border: 2px solid;
+            background: #000055;
+        }
+        .status-open {
+            color: #55FF55;
+            border-color: #55FF55;
+        }
+        .status-closed {
+            color: #FF5555;
+            border-color: #FF5555;
+        }
+        .status-soon-close {
+            color: #FFFF55;
+            border-color: #FFFF55;
+        }
+        .status-soon-open {
+            color: #FFFF55;
+            border-color: #FFFF55;
+        }
+        .status-unknown {
+            color: #AAAAAA;
+            border-color: #AAAAAA;
+        }
+        .page-indicator {
+            text-align: center;
+            margin-top: 1%;
+            font-size: clamp(9px, 2vmin, 14px);
+            color: #FFFF55;
+            font-weight: bold;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: clamp(12px, 3vmin, 20px);
+            text-align: center;
+            z-index: 10;
+            color: #FFFF55;
+            font-weight: bold;
+        }
+        .spinner {
+            width: clamp(30px, 6vmin, 50px);
+            height: clamp(30px, 6vmin, 50px);
+            border: 4px solid rgba(85, 255, 255, 0.3);
+            border-top: 4px solid #55FFFF;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body id='body'>
+    <div id="app-container">
+        <div class="grid-bg"></div>
+        
+        <div class="container">
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div>SCANNING AREA...</div>
+            </div>
+            
+            <div class="main-content hidden" id="mainContent">
+                <div class="content-title" id="pageTitle">◆ PAGE 1 OF 4 ◆</div>
+                <div class="places-grid" id="placesGrid"></div>
+                <div class="page-indicator" id="pageIndicator">● ○ ○ ○</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Resize function
+        function resizeApp() {
+            const container = document.getElementById('app-container');
+            const targetRatio = 480 / 320;
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+            const windowRatio = windowWidth / windowHeight;
+            
+            if (windowRatio > targetRatio) {
+                container.style.height = '100vh';
+                container.style.width = `${windowHeight * targetRatio}px`;
+            } else {
+                container.style.width = '100vw';
+                container.style.height = `${windowWidth / targetRatio}px`;
+            }
+        }
+        
+        window.addEventListener('resize', resizeApp);
+        window.addEventListener('load', resizeApp);
+        resizeApp();
+        
+        // Icon mapping
+        const iconMap = {
+            cafe: '☕',
+            restaurant: '🍽️',
+            pharmacy: '💊',
+            bank: '🏦',
+            bar: '🍺',
+            pub: '🍺',
+            shop: '🛒',
+            supermarket: '🛒',
+            convenience: '🛒',
+            bakery: '🍞',
+            fast_food: '🍔',
+            internet_cafe: '💻'
+        };
+        
+        function getPlaceIcon(tags) {
+            if (tags.amenity && iconMap[tags.amenity]) return iconMap[tags.amenity];
+            if (tags.shop) return iconMap[tags.shop] || iconMap.shop;
+            return '📍';
+        }
+        
+        // Parse opening hours
+        function parseOpeningHours(hours) {
+            if (!hours) return null;
+            
+            const now = new Date();
+            const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+            const currentDay = dayNames[now.getDay()];
+            const currentHour = now.getHours();
+            const currentMinute = now.getMinutes();
+            const currentTime = currentHour * 60 + currentMinute;
+            
+            // Handle 24/7
+            if (hours === '24/7' || hours.toLowerCase() === 'open') {
+                return { isOpen: true, status: 'OPEN' };
+            }
+            
+            // Handle "closed" status
+            if (hours.toLowerCase().includes('closed')) {
+                return { isOpen: false, status: 'CLOSED' };
+            }
+            
+            // Split by semicolon for multiple periods (Mo-Th 08:00-22:00; Fr 08:00-24:00)
+            const periods = hours.split(';').map(p => p.trim());
+            
+            for (const period of periods) {
+                // Try different patterns
+                let match;
+                
+                // Pattern 1: Mo-Fr 08:00-18:00 (day range with time)
+                match = period.match(/(\w+)-(\w+)\s+(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
+                if (match) {
+                    const startDay = match[1];
+                    const endDay = match[2];
+                    const openHour = parseInt(match[3]);
+                    const openMin = parseInt(match[4]);
+                    let closeHour = parseInt(match[5]);
+                    const closeMin = parseInt(match[6]);
+                    
+                    // Handle 24:00 as end of day
+                    if (closeHour === 24) closeHour = 23, closeMin = 59;
+                    
+                    const startIdx = dayNames.indexOf(startDay);
+                    const endIdx = dayNames.indexOf(endDay);
+                    const currentIdx = now.getDay();
+                    
+                    // Check if current day is in range
+                    let inRange = false;
+                    if (startIdx !== -1 && endIdx !== -1) {
+                        if (startIdx <= endIdx) {
+                            inRange = currentIdx >= startIdx && currentIdx <= endIdx;
+                        } else {
+                            inRange = currentIdx >= startIdx || currentIdx <= endIdx;
+                        }
+                    }
+                    
+                    if (inRange) {
+                        const openTime = openHour * 60 + openMin;
+                        const closeTime = closeHour * 60 + closeMin;
+                        
+                        if (currentTime >= openTime && currentTime <= closeTime) {
+                            if (closeTime - currentTime <= 60) {
+                                return { isOpen: true, status: 'CLOSING SOON' };
+                            }
+                            return { isOpen: true, status: 'OPEN' };
+                        } else if (currentTime < openTime && openTime - currentTime <= 60) {
+                            return { isOpen: false, status: 'OPENING SOON' };
+                        } else if (currentTime < openTime) {
+                            return { isOpen: false, status: 'CLOSED' };
+                        } else {
+                            return { isOpen: false, status: 'CLOSED' };
+                        }
+                    }
+                    continue;
+                }
+                
+                // Pattern 2: Mo 08:00-18:00 (single day with time)
+                match = period.match(/(\w+)\s+(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
+                if (match) {
+                    const day = match[1];
+                    const openHour = parseInt(match[2]);
+                    const openMin = parseInt(match[3]);
+                    let closeHour = parseInt(match[4]);
+                    const closeMin = parseInt(match[5]);
+                    
+                    if (closeHour === 24) closeHour = 23, closeMin = 59;
+                    
+                    if (day === currentDay) {
+                        const openTime = openHour * 60 + openMin;
+                        const closeTime = closeHour * 60 + closeMin;
+                        
+                        if (currentTime >= openTime && currentTime <= closeTime) {
+                            if (closeTime - currentTime <= 60) {
+                                return { isOpen: true, status: 'CLOSING SOON' };
+                            }
+                            return { isOpen: true, status: 'OPEN' };
+                        } else if (currentTime < openTime && openTime - currentTime <= 60) {
+                            return { isOpen: false, status: 'OPENING SOON' };
+                        } else if (currentTime < openTime) {
+                            return { isOpen: false, status: 'CLOSED' };
+                        } else {
+                            return { isOpen: false, status: 'CLOSED' };
+                        }
+                    }
+                    continue;
+                }
+                
+                // Pattern 3: Just time 08:00-18:00 (assume every day)
+                match = period.match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
+                if (match) {
+                    const openHour = parseInt(match[1]);
+                    const openMin = parseInt(match[2]);
+                    let closeHour = parseInt(match[3]);
+                    const closeMin = parseInt(match[4]);
+                    
+                    if (closeHour === 24) closeHour = 23, closeMin = 59;
+                    
+                    const openTime = openHour * 60 + openMin;
+                    const closeTime = closeHour * 60 + closeMin;
+                    
+                    if (currentTime >= openTime && currentTime <= closeTime) {
+                        if (closeTime - currentTime <= 60) {
+                            return { isOpen: true, status: 'CLOSING SOON' };
+                        }
+                        return { isOpen: true, status: 'OPEN' };
+                    } else if (currentTime < openTime && openTime - currentTime <= 60) {
+                        return { isOpen: false, status: 'OPENING SOON' };
+                    } else if (currentTime < openTime) {
+                        return { isOpen: false, status: 'CLOSED' };
+                    } else {
+                        return { isOpen: false, status: 'CLOSED' };
+                    }
+                }
+            }
+            
+            return null;
+        }
+        
+        // Places storage
+        let allPlaces = [];
+        let currentPage = 0;
+        const PLACES_PER_PAGE = 6;
+        
+        function updatePageIndicator() {
+            const totalPages = Math.ceil(allPlaces.length / PLACES_PER_PAGE);
+            let dots = '';
+            for (let i = 0; i < totalPages; i++) {
+                dots += (i === currentPage) ? '● ' : '○ ';
+            }
+            document.getElementById('pageIndicator').textContent = dots.trim();
+            document.getElementById('pageTitle').textContent = 
+                `◆ PAGE ${currentPage + 1} OF ${totalPages} ◆`;
+        }
+        
+        function showPage() {
+            const startIdx = currentPage * PLACES_PER_PAGE;
+            const endIdx = startIdx + PLACES_PER_PAGE;
+            const pagePlaces = allPlaces.slice(startIdx, endIdx);
+            
+            const grid = document.getElementById('placesGrid');
+            grid.innerHTML = '';
+            
+            pagePlaces.forEach(place => {
+                const name = place.tags.name || 'UNNAMED';
+                const icon = getPlaceIcon(place.tags);
+                const hours = place.tags.opening_hours;
+                
+                // We know it parses because we filtered
+                const parsed = parseOpeningHours(hours);
+                const status = parsed.status;
+                
+                let statusClass = 'status-unknown';
+                if (status === 'OPEN') statusClass = 'status-open';
+                else if (status === 'CLOSED') statusClass = 'status-closed';
+                else if (status === 'CLOSING SOON') statusClass = 'status-soon-close';
+                else if (status === 'OPENING SOON') statusClass = 'status-soon-open';
+                
+                const card = document.createElement('div');
+                card.className = 'place-card';
+                card.innerHTML = `
+                    <div>
+                        <div class="place-header">
+                            <div class="place-icon">${icon}</div>
+                            <div class="place-name">${name}</div>
+                        </div>
+                        <div class="place-hours">${hours}</div>
+                    </div>
+                    <div class="place-status ${statusClass}">${status}</div>
+                `;
+                grid.appendChild(card);
+            });
+            
+            updatePageIndicator();
+        }
+        
+        function rotatePage() {
+            const totalPages = Math.ceil(allPlaces.length / PLACES_PER_PAGE);
+            currentPage = (currentPage + 1) % totalPages;
+            showPage();
+        }
+        
+        async function fetchPlaces() {
+            console.log('Fetching places...');
+            const lat = 48.8946;
+            const lon = 18.0444;
+            
+            const query = `
+                [out:json][timeout:25];
+                (
+                    node["amenity"~"cafe|restaurant|pharmacy|bank|bar|pub|fast_food|internet_cafe"](around:800,${lat},${lon});
+                    node["shop"~"supermarket|convenience|bakery"](around:800,${lat},${lon});
+                );
+                out body;
+            `;
+            
+            try {
+                console.log('Sending request to Overpass API...');
+                const response = await fetch('https://overpass-api.de/api/interpreter', {
+                    method: 'POST',
+                    body: query
+                });
+                console.log('Response received:', response.status);
+                const data = await response.json();
+                console.log('Data parsed:', data);
+                processPlaces(data.elements);
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('loading').innerHTML = 
+                    '<div style="color: #cc0000;">ERROR: UNABLE TO SCAN</div>';
+            }
+        }
+        
+        function processPlaces(elements) {
+            console.log('Processing places, total:', elements.length);
+            
+            // Filter places with names AND valid opening hours
+            allPlaces = elements.filter(p => {
+                if (!p.tags || !p.tags.name) return false;
+                if (!p.tags.opening_hours) return false;
+                
+                // Test if we can parse the opening hours
+                const parsed = parseOpeningHours(p.tags.opening_hours);
+                return parsed !== null;
+            });
+            
+            console.log('Places with parseable hours:', allPlaces.length);
+            
+            if (allPlaces.length === 0) {
+                document.getElementById('loading').innerHTML = 
+                    '<div style="color: #cccc00;">NO PLACES WITH VALID HOURS</div>';
+                return;
+            }
+            
+            currentPage = 0;
+            showPage();
+            
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+            
+            setInterval(rotatePage, 60000);
+        }
+        
+        // Initialize
+        setTimeout(() => {
+            console.log('Starting initialization...');
+            fetchPlaces();
+        }, 1000);
+    </script>
+</body>
+</html>

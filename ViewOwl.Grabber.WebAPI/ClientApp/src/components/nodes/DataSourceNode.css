@@ -1,0 +1,62 @@
+/* ── DataSource node — ISA-101 calm ─────────────────────────────────────── */
+
+.datasource-node {
+  background: var(--bg-panel);
+  border: 4px solid var(--border);
+  border-radius: 2px;
+  padding: 0;
+  min-width: 220px;
+  color: var(--text);
+  font-family: var(--font);
+  transition: border-color 0.15s;
+}
+
+.datasource-node:hover {
+  border-color: var(--border-bright);
+}
+
+/* Selected — white border */
+.react-flow__node.selected .datasource-node {
+  border-color: var(--text-bright);
+}
+
+.datasource-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--bg-header);
+  border-bottom: 2px solid var(--border);
+}
+
+.node-footer {
+  padding: 0.4rem 0.8rem;
+  background: var(--bg-header);
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.node-type {
+  font-family: var(--font);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--neutral-text);
+  font-weight: bold;
+}
+
+.url-value {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.65rem;
+  color: var(--text);
+}
+
+.handle-output {
+  background: var(--border-bright);
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--bg);
+}

@@ -1,0 +1,27 @@
+.data-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-family: var(--font);
+}
+.dr-label {
+  font-size: var(--text-sm);
+  color: var(--neutral-text);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.dr-value {
+  font-size: var(--text-sm);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.dr-accent { color: var(--text); }
+
+/* ISA-101: healthy row — no special color (status-ok is white) */
+.dr-row-success .dr-label { color: var(--neutral-text); }
+.dr-success { color: var(--status-ok); font-weight: 600; }
+
+/* Error/danger row */
+.dr-row-danger .dr-label { color: var(--neutral-text); }
+.dr-danger { color: var(--status-error); font-weight: 600; }

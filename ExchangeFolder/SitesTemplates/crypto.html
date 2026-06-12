@@ -1,0 +1,274 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Crypto Live</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 480px; height: 320px; overflow: hidden; background: #000; }
+canvas { display: block; }
+</style>
+</head>
+<body id="body" data-vow-name="Crypto" data-vow-category="rates" data-vow-description="Cryptocurrency price ticker">
+<canvas id="screen" width="480" height="320"></canvas>
+<script>
+'use strict';
+const W = 480, H = 320;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+function quantChannel(v, bits) {
+    const shift = 8 - bits;
+    const q = Math.min((1 << bits) - 1, v >> shift);
+    return (q << shift) | (q >> (bits - shift));
+}
+function snap565(r, g, b) {
+    return { r: quantChannel(r,5), g: quantChannel(g,6), b: quantChannel(b,5) };
+}
+function css(r, g, b) {
+    const q = snap565(r, g, b);
+    return `rgb(${q.r},${q.g},${q.b})`;
+}
+
+function dither() {
+    const img = ctx.getImageData(0, 0, W, H);
+    const d = img.data;
+    function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const oR = d[i], oG = d[i+1], oB = d[i+2];
+            const q = snap565(oR, oG, oB);
+            d[i] = q.r; d[i+1] = q.g; d[i+2] = q.b;
+            const eR = oR-q.r, eG = oG-q.g, eB = oB-q.b;
+            if (x+1<W){const j=i+4;d[j]=clamp(d[j]+((eR*7)>>4));d[j+1]=clamp(d[j+1]+((eG*7)>>4));d[j+2]=clamp(d[j+2]+((eB*7)>>4));}
+            if (y+1<H){
+                if (x>0){const j=((y+1)*W+(x-1))*4;d[j]=clamp(d[j]+((eR*3)>>4));d[j+1]=clamp(d[j+1]+((eG*3)>>4));d[j+2]=clamp(d[j+2]+((eB*3)>>4));}
+                {const j=((y+1)*W+x)*4;d[j]=clamp(d[j]+((eR*5)>>4));d[j+1]=clamp(d[j+1]+((eG*5)>>4));d[j+2]=clamp(d[j+2]+((eB*5)>>4));}
+                if (x+1<W){const j=((y+1)*W+(x+1))*4;d[j]=clamp(d[j]+(eR>>4));d[j+1]=clamp(d[j+1]+(eG>>4));d[j+2]=clamp(d[j+2]+(eB>>4));}
+            }
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
+const HEADER_H = 36, FOOTER_H = 24;
+const CONTENT_Y = HEADER_H, CONTENT_H = H - HEADER_H - FOOTER_H;
+const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pad(n) { return String(n).padStart(2,'0'); }
+let clockStr = '00:00:00', dateStr = 'Mon 01 Jan';
+function tickClock() {
+    const now = new Date();
+    clockStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    dateStr = `${DAY[now.getDay()]} ${pad(now.getDate())} ${MON[now.getMonth()]}`;
+}
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h);}
+function line(x1,y1,x2,y2,c,t){
+    ctx.strokeStyle=c;ctx.lineWidth=t||1;
+    const ox=(y1===y2)?0:0.5,oy=(x1===x2)?0:0.5;
+    ctx.beginPath();ctx.moveTo(x1+ox,y1+oy);ctx.lineTo(x2+ox,y2+oy);ctx.stroke();
+}
+function drawText(s,x,y,sz,c,align,bold){
+    ctx.fillStyle=c;
+    ctx.font=`${bold===false?'':'bold '}${sz}px Arial,Helvetica,sans-serif`;
+    ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';
+    ctx.fillText(String(s),x,y);
+}
+
+function redraw() {
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.lineWidth=1;ctx.lineCap='butt';
+    render();
+    dither();
+}
+function tick() { tickClock(); redraw(); }
+
+// ---- Palette ----
+const C = {
+    bg:       css(  4,   6,  12),
+    panel:    css(  8,  12,  24),
+    border:   css( 24,  32,  64),
+    rowEven:  css(  6,  10,  20),
+    rowOdd:   css( 10,  16,  30),
+    yellow:   css(255, 210,   0),
+    white:    css(255, 255, 255),
+    gray:     css(140, 140, 150),
+    dimGray:  css( 70,  70,  80),
+    green:    css( 40, 220,  80),
+    red:      css(255,  60,  60),
+    barGray:  css( 50,  60,  80),
+    barUp:    css( 40, 180,  80),
+    barDown:  css(200,  50,  50),
+    cyan:     css(  0, 200, 220),
+};
+
+// ---- Coin definitions ----
+const COINS = [
+    { id: 'bitcoin',   sym: 'BTC', name: 'Bitcoin'  },
+    { id: 'ethereum',  sym: 'ETH', name: 'Ethereum' },
+    { id: 'solana',    sym: 'SOL', name: 'Solana'   },
+    { id: 'dogecoin',  sym: 'DOGE', name: 'Dogecoin' },
+];
+
+// State per coin: price, 24h change %, simulated mini-chart bars
+const coinData = COINS.map(() => ({
+    price: null,
+    change: null,
+    bars: Array(8).fill(0.5),  // normalised 0..1
+}));
+
+let lastUpdateStr = '--:--:--';
+
+// Build plausible 8-bar history from current price and 24h change
+function buildBars(price, changePct) {
+    if (price === null) return Array(8).fill(0.5);
+    // Reconstruct approximate starting price 24h ago
+    const startPrice = price / (1 + changePct / 100);
+    const bars = [];
+    // Simple linear interpolation with deterministic noise
+    for (let i = 0; i < 8; i++) {
+        const t = i / 7;
+        const base = startPrice + (price - startPrice) * t;
+        // Small seeded variation (deterministic based on index and price)
+        const noise = ((Math.sin(i * 2.7 + price * 0.0001) * 0.5 + 0.5) - 0.5) * 0.04;
+        bars.push(base * (1 + noise));
+    }
+    // Normalise to 0..1 range
+    const lo = Math.min(...bars), hi = Math.max(...bars);
+    const span = hi - lo || 1;
+    return bars.map(v => (v - lo) / span);
+}
+
+function fetchCrypto() {
+    const ids = COINS.map(c => c.id).join(',');
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`;
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            COINS.forEach((coin, i) => {
+                const entry = data[coin.id];
+                if (!entry) return;
+                coinData[i].price  = entry.usd;
+                coinData[i].change = entry.usd_24h_change;
+                coinData[i].bars   = buildBars(entry.usd, entry.usd_24h_change);
+            });
+            const now = new Date();
+            lastUpdateStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        })
+        .catch(() => {});
+}
+
+fetchCrypto();
+// Refresh every 30 seconds
+setInterval(fetchCrypto, 30000);
+
+// ---- Format price: abbreviate large numbers ----
+function fmtPrice(p) {
+    if (p === null) return '---';
+    if (p >= 1000) return '$' + p.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    if (p >= 1)    return '$' + p.toFixed(2);
+    return '$' + p.toFixed(4);
+}
+
+// ---- Draw mini 8-bar chart ----
+function drawMiniChart(x, y, w, h, bars, positive) {
+    // Background
+    fillRect(x, y, w, h, C.barGray);
+    const barW = Math.floor(w / 8);
+    const colUp   = positive ? C.barUp : C.barDown;
+    const colDown = positive ? C.barDown : C.barUp;
+    bars.forEach((v, i) => {
+        const bh = Math.max(2, Math.round(v * h));
+        const isLast = (i === 7);
+        const col = isLast ? (positive ? C.green : C.red) : colUp;
+        fillRect(x + i * barW + 1, y + h - bh, barW - 1, bh, col);
+    });
+}
+
+function render() {
+    fillRect(0, 0, W, H, C.bg);
+
+    // ---- HEADER ----
+    fillRect(0, 0, W, HEADER_H, C.panel);
+    line(0, HEADER_H, W, HEADER_H, C.border, 1);
+
+    drawText('CRYPTO LIVE', 10, 23, 15, C.yellow, 'left', true);
+    drawText(clockStr, W - 8, 23, 13, C.white, 'right', true);
+
+    // ---- Column headers ----
+    const hdrY = HEADER_H + 14;
+    ctx.fillStyle = C.dimGray;
+    ctx.font = '10px Arial, sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('COIN', 10, hdrY);
+    ctx.textAlign = 'right';
+    ctx.fillText('PRICE', 280, hdrY);
+    ctx.fillText('24H %', 360, hdrY);
+    ctx.fillText('CHART', W - 8, hdrY);
+
+    line(0, HEADER_H + 18, W, HEADER_H + 18, C.border, 1);
+
+    // ---- Coin rows ----
+    const rowH = Math.floor(CONTENT_H / 4);
+    const chartW = 64, chartH = 32;
+
+    COINS.forEach((coin, i) => {
+        const ry = HEADER_H + 18 + i * rowH;
+        const rowBg = i % 2 === 0 ? C.rowEven : C.rowOdd;
+        fillRect(0, ry, W, rowH, rowBg);
+
+        const midY = ry + rowH / 2;
+
+        // Symbol (large)
+        ctx.fillStyle = C.cyan;
+        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillText(coin.sym, 10, midY - 4);
+
+        // Full name (small, below symbol)
+        ctx.fillStyle = C.gray;
+        ctx.font = '10px Arial, sans-serif';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillText(coin.name, 10, midY + 10);
+
+        // Price
+        ctx.fillStyle = C.white;
+        ctx.font = 'bold 16px Arial, sans-serif';
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.fillText(fmtPrice(coinData[i].price), 280, midY);
+
+        // 24h change
+        const ch = coinData[i].change;
+        const chStr = ch === null ? '---' : (ch >= 0 ? '+' : '') + ch.toFixed(2) + '%';
+        ctx.fillStyle = ch === null ? C.gray : (ch >= 0 ? C.green : C.red);
+        ctx.font = 'bold 13px Arial, sans-serif';
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.fillText(chStr, 360, midY);
+
+        // Mini bar chart
+        const cx = W - chartW - 8;
+        const cy = ry + Math.floor((rowH - chartH) / 2);
+        drawMiniChart(cx, cy, chartW, chartH, coinData[i].bars, ch === null || ch >= 0);
+
+        // Row separator
+        if (i < 3) line(0, ry + rowH, W, ry + rowH, C.border, 1);
+    });
+
+    // ---- FOOTER ----
+    const footerY = H - FOOTER_H;
+    fillRect(0, footerY, W, FOOTER_H, C.panel);
+    line(0, footerY, W, footerY, C.border, 1);
+
+    drawText('Last update: ' + lastUpdateStr, 10, footerY + 15, 10, C.dimGray, 'left', false);
+    drawText('CoinGecko API  \u2022  refresh 30s', W - 8, footerY + 15, 10, C.dimGray, 'right', false);
+}
+
+// Start
+tickClock();
+redraw();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,338 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-name="Motion Tracker M314"
+  data-vow-description="16-frame seamless Aliens-style motion tracker — blue CRT, expanding pulse rings, glowing contacts, red distance readout"
+  data-vow-category="scifi"
+  data-vow-tags="animation,radar,scifi,aliens,crt,80s"
+  data-vow-frames="16"
+  data-vow-fps="12"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+
+const frame  = parseInt(new URLSearchParams(location.search).get('vow_frame') ?? '0', 10);
+const FRAMES = 16;
+let   N      = ((frame % FRAMES) + FRAMES) % FRAMES;
+let   T      = N / FRAMES;                       /* 0..1 around the loop    */
+
+const canvas = document.getElementById('c');
+canvas.width  = W;
+canvas.height = H;
+const ctx = canvas.getContext('2d', { alpha: false });
+
+/* ── Palette — blue CRT (Aliens 1986 motion tracker) ───────────────────── */
+const C = {
+  bgDeep:  '#020618',     /* near-black blue                                */
+  bgGlow:  '#0A1838',     /* slightly lifted central glow                   */
+  grid:    '#0E2A55',     /* faint scaffolding                              */
+  blue0:   '#E8F4FF',     /* phosphor highlight                             */
+  blue1:   '#9FD8FF',     /* bright glow                                    */
+  blue2:   '#3FA8FF',     /* primary                                        */
+  blue3:   '#1F70C8',     /* mid                                            */
+  blue4:   '#103E78',     /* dim                                            */
+  red0:    '#FFB0B0',
+  red1:    '#FF3030',     /* alarm digits                                   */
+  amber:   '#FFB000',
+};
+
+/* Operator (sensor head) position — vertex of all radiating pulses */
+const OX = W / 2;
+const OY = H - 30;
+const RANGE_PX = OY - 14;        /* pixels = 30 metres                     */
+const M_PER_PX = 30 / RANGE_PX;
+
+/* Static distance ring labels */
+const RINGS = [10, 20, 30];
+
+/* ── Helpers ───────────────────────────────────────────────────────────── */
+function fill(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+}
+function line(x1, y1, x2, y2, color, lw) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = lw ?? 1;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+function txt(s, x, y, color, size, bold) {
+  ctx.fillStyle = color;
+  ctx.font      = `${bold ? 'bold ' : ''}${size}px "Courier New", monospace`;
+  ctx.fillText(s, x, y);
+}
+function polar(angleDeg, meters) {
+  const a = (angleDeg - 90) * Math.PI / 180;
+  const r = meters / M_PER_PX;
+  return { x: OX + r * Math.cos(a), y: OY + r * Math.sin(a) };
+}
+
+/* ── Background ────────────────────────────────────────────────────────── */
+function drawBackground() {
+  fill(0, 0, W, H, C.bgDeep);
+
+  /* Soft central glow — lifts the dial area out of pure black */
+  const g = ctx.createRadialGradient(OX, OY, 10, OX, OY, RANGE_PX * 1.1);
+  g.addColorStop(0, 'rgba(20,60,140,0.45)');
+  g.addColorStop(1, 'rgba(2,6,24,0.00)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  /* Cross-hair datum */
+  line(0, OY, W, OY, C.grid);
+  line(OX, 0, OX, H, C.grid);
+}
+
+/* ── Static fan: angular ticks every 30° across forward hemisphere ─────── */
+function drawFanTicks() {
+  ctx.strokeStyle = C.blue4;
+  ctx.lineWidth   = 1;
+  for (let deg = -90; deg <= 90; deg += 30) {
+    const inner = polar(deg, 1);
+    const outer = polar(deg, 30);
+    ctx.beginPath();
+    ctx.moveTo(inner.x, inner.y);
+    ctx.lineTo(outer.x, outer.y);
+    ctx.stroke();
+  }
+  /* Faint reference rings, just so the dial reads as a radar */
+  for (const m of RINGS) {
+    const r = m / M_PER_PX;
+    ctx.strokeStyle = C.blue4;
+    ctx.beginPath();
+    ctx.arc(OX, OY, r, Math.PI, Math.PI * 2);
+    ctx.stroke();
+    txt(m + 'M', OX + r - 22, OY - 4, C.blue3, 9, false);
+  }
+}
+
+/* ── Expanding pulse rings — the "signal radiating outward" effect ─────── *
+ * Several rings continuously expand from the operator point. Each ring
+ * has its own phase offset; together they look like a heartbeat radar.
+ * Because the phase progresses by exactly 1/FRAMES per frame, the pattern
+ * loops perfectly at frame 16. */
+const PULSES = [
+  { phase: 0.00, weight: 2.0 },
+  { phase: 0.25, weight: 1.5 },
+  { phase: 0.50, weight: 2.0 },
+  { phase: 0.75, weight: 1.5 },
+];
+
+function drawPulses() {
+  for (const p of PULSES) {
+    /* Progress 0..1 — ring grows from centre outward */
+    const prog = (T + p.phase) % 1;
+    const r    = prog * RANGE_PX;
+
+    /* Opacity peaks near birth, fades as the ring grows */
+    const alpha = Math.max(0, 0.85 - prog * 0.95);
+    if (alpha <= 0.02) continue;
+
+    /* Outer ring — soft */
+    ctx.strokeStyle = `rgba(159,216,255,${alpha * 0.55})`;
+    ctx.lineWidth   = p.weight + 2;
+    ctx.beginPath();
+    ctx.arc(OX, OY, r, Math.PI, Math.PI * 2);
+    ctx.stroke();
+
+    /* Inner crisp ring */
+    ctx.strokeStyle = `rgba(232,244,255,${alpha})`;
+    ctx.lineWidth   = p.weight;
+    ctx.beginPath();
+    ctx.arc(OX, OY, r, Math.PI, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+/* ── Contacts — aliens shown as glowing cyan circles ───────────────────── */
+const CONTACTS = [
+  { baseDeg: -34, baseM: 11.5, dDeg: 5,  dM: 1.4, phase: 0.00 },
+  { baseDeg:  10, baseM: 17.0, dDeg: 4,  dM: 1.8, phase: 0.33 },
+  { baseDeg:  40, baseM: 22.5, dDeg: 6,  dM: 2.2, phase: 0.66 },
+];
+function contactAt(N_, c) {
+  const t = 2 * Math.PI * (N_ / FRAMES + c.phase);
+  return {
+    deg: c.baseDeg + c.dDeg * Math.sin(t),
+    m:   Math.max(2, c.baseM + c.dM * Math.sin(t * 1.5)),
+  };
+}
+
+function drawBlips() {
+  for (const c of CONTACTS) {
+    const cur = contactAt(N, c);
+    const p   = polar(cur.deg, cur.m);
+
+    /* Outer halo — large soft glow */
+    const halo = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, 14);
+    halo.addColorStop(0,   'rgba(232,244,255,0.85)');
+    halo.addColorStop(0.4, 'rgba(63,168,255,0.45)');
+    halo.addColorStop(1,   'rgba(31,112,200,0.00)');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
+    ctx.fill();
+
+    /* Mid ring */
+    ctx.strokeStyle = 'rgba(159,216,255,0.85)';
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    /* Bright core dot */
+    ctx.fillStyle = C.blue0;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function nearestMetres() {
+  let nearest = Infinity;
+  for (const c of CONTACTS) {
+    const cur = contactAt(N, c);
+    if (cur.m < nearest) nearest = cur.m;
+  }
+  return nearest;
+}
+
+/* ── HUD chrome ────────────────────────────────────────────────────────── */
+function drawCorners(color) {
+  const S = 20;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 2;
+  ctx.beginPath(); ctx.moveTo(0, S);     ctx.lineTo(0, 0);     ctx.lineTo(S, 0);     ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W - S, 0); ctx.lineTo(W, 0);     ctx.lineTo(W, S);     ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, H - S); ctx.lineTo(0, H);     ctx.lineTo(S, H);     ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W - S, H); ctx.lineTo(W, H);     ctx.lineTo(W, H - S); ctx.stroke();
+}
+
+function drawHeader(meters) {
+  fill(0, 0, W, 28, 'rgba(8,28,72,0.65)');
+  ctx.strokeStyle = C.blue3;
+  ctx.lineWidth   = 1;
+  ctx.strokeRect(0, 0, W, 28);
+
+  txt('M314 MOTION TRACKER', 8, 18, C.blue1, 11, true);
+
+  /* Distance readout — RED, bright, with bloom, right-aligned */
+  ctx.shadowColor = C.red1;
+  ctx.shadowBlur  = 8;
+  const meterStr = meters.toFixed(1).padStart(4, '0') + ' M';
+  ctx.textAlign = 'right';
+  txt(meterStr, W - 8, 21, C.red1, 18, true);
+  ctx.textAlign = 'left';
+  ctx.shadowBlur = 0;
+
+  txt('RNG', W - 120, 18, C.red0, 10, true);
+}
+
+function drawFooter(meters) {
+  const danger = meters < 8;
+  const fy = H - 18;
+  fill(0, fy, W, 18, 'rgba(8,28,72,0.65)');
+  ctx.strokeStyle = danger ? C.amber : C.blue3;
+  ctx.strokeRect(0, fy, W, 18);
+
+  const mode = danger ? 'WARNING — CONTACT CLOSING' : 'SCAN  ACTIVE';
+  txt(mode, 8, H - 5, danger ? C.amber : C.blue1, 10, true);
+
+  /* Contact count + ping marker */
+  ctx.textAlign = 'right';
+  txt('CONTACTS ' + CONTACTS.length, W - 8, H - 5, C.blue1, 10, true);
+  ctx.textAlign = 'left';
+}
+
+/* ── 80s CRT effects: scanlines, roll bar, vignette ────────────────────── */
+function drawScanlines() {
+  /* Every odd row dimmed — interlaced CRT */
+  ctx.fillStyle = 'rgba(0,0,0,0.40)';
+  for (let y = 0; y < H; y += 2) {
+    ctx.fillRect(0, y, W, 1);
+  }
+  /* Sparse darker grouping every 6px for richer texture */
+  ctx.fillStyle = 'rgba(0,0,0,0.14)';
+  for (let y = 0; y < H; y += 6) {
+    ctx.fillRect(0, y, W, 1);
+  }
+}
+
+function drawRollBar() {
+  const barH = 26;
+  const y    = Math.floor(T * (H + barH)) - barH;
+
+  const grad = ctx.createLinearGradient(0, y, 0, y + barH);
+  grad.addColorStop(0,    'rgba(63,168,255,0.00)');
+  grad.addColorStop(0.5,  'rgba(63,168,255,0.18)');
+  grad.addColorStop(1,    'rgba(63,168,255,0.00)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, y, W, barH);
+
+  ctx.fillStyle = 'rgba(200,232,255,0.20)';
+  ctx.fillRect(0, y + barH / 2, W, 1);
+}
+
+function drawVignette() {
+  const grad = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35,
+                                        W / 2, H / 2, Math.max(W, H) * 0.65);
+  grad.addColorStop(0, 'rgba(0,0,0,0.00)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.78)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+/* ── Compose frame ─────────────────────────────────────────────────────── */
+function renderFrame() {
+  drawBackground();
+  drawFanTicks();
+  drawPulses();
+  drawBlips();
+
+  const meters = nearestMetres();
+  drawCorners(meters < 8 ? C.amber : C.blue3);
+  drawHeader(meters);
+  drawFooter(meters);
+
+  drawRollBar();
+  drawScanlines();
+  drawVignette();
+}
+
+renderFrame();
+
+/* ── Dev preview — browser only, activated when no vow_frame param ─────── *
+ * When the server grabs frames it always passes ?vow_frame=N, so this loop
+ * never runs during capture. In the browser it cycles all 16 frames at fps
+ * so the full animation can be checked without a device. */
+if (new URLSearchParams(location.search).get('vow_frame') === null) {
+  let last = 0;
+  (function tick(ts) {
+    requestAnimationFrame(tick);
+    if (ts - last < 1000 / 12) return;
+    last = ts;
+    N = (N + 1) % FRAMES;
+    T = N / FRAMES;
+    renderFrame();
+  })(0);
+}
+</script>
+</body>
+</html>

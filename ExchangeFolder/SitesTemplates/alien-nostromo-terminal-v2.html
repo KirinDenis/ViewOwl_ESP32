@@ -1,0 +1,201 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; }
+canvas { display: block; }
+</style>
+</head>
+<body
+  data-vow-class="C"
+  data-vow-name="ALIEN // OVERMONITORING ADDRESS MATRIX"
+  data-vow-description="Alien 1979 MUTHUR 9000 terminal — OVERMONITORING ADDRESS MATRIX with scanning cursor, green phosphor CRT"
+  data-vow-category="scifi"
+  data-vow-tags="alien,terminal,crt,scifi,muthur,nostromo,phosphor,vt323"
+  data-vow-frames="16"
+  data-vow-fps="3"
+  data-vow-refresh="0"
+>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+const W = window.innerWidth  || 480;
+const H = window.innerHeight || 320;
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d');
+
+const FRAMES     = 16;
+const frameParam = new URLSearchParams(location.search).get('vow_frame');
+let   N = ((parseInt(frameParam ?? '0', 10) % FRAMES) + FRAMES) % FRAMES;
+
+/* ── Palette ─────────────────────────────────────────────────────────────── */
+const GREEN  = '#5fe070';
+const DIM    = '#3ba048';
+const BRIGHT = '#b8ffbf';
+
+/* ── Terminal content — two columns ──────────────────────────────────────── */
+const LEFT = [
+  { label: 'CRFX',         value: '0.7743'  },
+  { label: 'ATTITUDE CTRL',value: 'NOMINAL' },
+  { label: 'WASTE HEAT',   value: '318.2 K' },
+  { label: 'RAD DETECT',   value: '0.002 mR'},
+  { label: 'HULL PRESS',   value: '14.1 PSI'},
+  { label: 'O2 PARTIAL',   value: '0.21 atm'},
+  { label: 'CRYO STATUS',  value: '6 / 6 OK'},
+  { label: 'LIFE SUPPORT', value: 'ACTIVE'  },
+];
+const RIGHT = [
+  { label: 'L ALIGNMENT',  value: '+0.003°' },
+  { label: 'R ALIGNMENT',  value: '+0.001°' },
+  { label: 'IUA',          value: '0.9981'  },
+  { label: 'INERTIAL DAMP',value: 'LOCK'    },
+  { label: 'NAV LOCK',     value: 'ACQUIRED'},
+  { label: 'AUX POWER',    value: '12.1 kW' },
+  { label: 'THRUSTER',     value: 'STANDBY' },
+  { label: 'BEACON',       value: '1573.4Hz'},
+];
+
+/* ── Cursor positions — one per frame, sequential L→R ───────────────────── */
+const CURSOR = [
+  ...LEFT.map((_,i)  => ({ col:'L', row:i })),
+  ...RIGHT.map((_,i) => ({ col:'R', row:i })),
+];
+
+/* ── Layout constants ────────────────────────────────────────────────────── */
+const PAD   = 14;          /* outer margin                  */
+const MID   = W / 2;       /* column divider X              */
+const TOP   = 10;          /* title baseline-top            */
+const SEP   = 36;          /* Y of main separator line      */
+const ROW0  = 46;          /* Y of first item row           */
+const ROWH  = 33;          /* row pitch (px)                */
+const FSIZE = 21;          /* item font size                */
+const FTITL = 17;          /* title font size               */
+const FFOOT = 13;          /* footer font size              */
+
+/* ── CRT effects ─────────────────────────────────────────────────────────── */
+function scanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.26)';
+  for (let y = 0; y < H; y += 2) ctx.fillRect(0, y, W, 1);
+}
+function vignette() {
+  const g = ctx.createRadialGradient(W/2,H/2, H*0.20, W/2,H/2, H*0.82);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.88)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+/* ── Render ──────────────────────────────────────────────────────────────── */
+function render() {
+  const cur = CURSOR[N % CURSOR.length];
+
+  /* Background */
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  /* ── Title ── */
+  ctx.font         = `bold ${FTITL}px 'VT323', monospace`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign    = 'left';
+  ctx.shadowColor  = 'rgba(95,224,112,0.70)';
+  ctx.shadowBlur   = 7;
+  ctx.fillStyle    = BRIGHT;
+  ctx.fillText('OVERMONITORING ADDRESS MATRIX', PAD, TOP);
+  ctx.shadowBlur   = 0;
+
+  /* ── Column sub-headers ── */
+  ctx.font      = `${FFOOT}px 'VT323', monospace`;
+  ctx.fillStyle = DIM;
+  ctx.fillText('PARAMETER', PAD, SEP - 14);
+  ctx.textAlign = 'right';
+  ctx.fillText('VALUE', MID - 6, SEP - 14);
+  ctx.textAlign = 'left';
+  ctx.fillText('PARAMETER', MID + 6, SEP - 14);
+  ctx.textAlign = 'right';
+  ctx.fillText('VALUE', W - PAD, SEP - 14);
+  ctx.textAlign = 'left';
+
+  /* ── Separator lines ── */
+  ctx.strokeStyle = DIM;
+  ctx.lineWidth   = 1;
+  ctx.beginPath(); ctx.moveTo(PAD, SEP); ctx.lineTo(W - PAD, SEP); ctx.stroke();
+
+  /* ── Vertical divider ── */
+  ctx.strokeStyle = 'rgba(95,224,112,0.18)';
+  ctx.beginPath(); ctx.moveTo(MID, SEP); ctx.lineTo(MID, H - 20); ctx.stroke();
+
+  /* ── Draw one column ── */
+  function drawCol(items, x1, x2, colId) {
+    items.forEach((item, row) => {
+      const y      = ROW0 + row * ROWH;
+      const active = cur.col === colId && cur.row === row;
+
+      /* Highlight row background */
+      if (active) {
+        ctx.fillStyle = 'rgba(95,224,112,0.07)';
+        ctx.fillRect(x1 - 2, y - 2, x2 - x1 + 4, ROWH - 2);
+      }
+
+      /* Label */
+      ctx.font      = `${FSIZE}px 'VT323', monospace`;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = active ? BRIGHT : GREEN;
+      if (active) { ctx.shadowColor = 'rgba(95,224,112,0.55)'; ctx.shadowBlur = 5; }
+      ctx.fillText(item.label, x1, y);
+      ctx.shadowBlur = 0;
+
+      /* Value */
+      ctx.textAlign = 'right';
+      ctx.fillStyle = active ? '#ffffff' : DIM;
+      ctx.fillText(item.value, x2, y);
+      ctx.textAlign = 'left';
+
+      /* Cursor underline */
+      if (active) {
+        ctx.fillStyle    = '#ffffff';
+        ctx.shadowColor  = 'rgba(255,255,255,0.9)';
+        ctx.shadowBlur   = 4;
+        ctx.fillRect(x1, y + FSIZE + 1, x2 - x1, 2);
+        ctx.shadowBlur   = 0;
+        ctx.shadowColor  = 'transparent';
+      }
+    });
+  }
+
+  drawCol(LEFT,  PAD,       MID - 8, 'L');
+  drawCol(RIGHT, MID + 8,   W - PAD, 'R');
+
+  /* ── Footer ── */
+  const fy = H - 14;
+  ctx.font      = `${FFOOT}px 'VT323', monospace`;
+  ctx.fillStyle = 'rgba(95,224,112,0.38)';
+  ctx.textAlign = 'left';
+  ctx.fillText('MU/TH-755  WEYLAND-YUTANI CORP', PAD, fy);
+  ctx.textAlign = 'right';
+  ctx.fillText('MUTHUR 9000  CH.07', W - PAD, fy);
+  ctx.textAlign = 'left';
+
+  scanlines();
+  vignette();
+}
+
+/* ── Boot: wait for VT323, then render ──────────────────────────────────── */
+document.fonts.load(`${FSIZE}px VT323`).then(() => {
+  render();
+  if (frameParam === null) {
+    const FPS = 3;
+    let last = 0;
+    (function tick(ts) {
+      if (ts - last > 1000 / FPS) { last = ts; N = (N+1) % FRAMES; render(); }
+      requestAnimationFrame(tick);
+    })(0);
+  }
+}).catch(() => { render(); }); /* fallback: render with Courier New if font fails */
+</script>
+</body>
+</html>

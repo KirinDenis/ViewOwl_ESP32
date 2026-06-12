@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ViewOwl — Security Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0a0e1a;
+    --panel:    #111827;
+    --border:   #1f2d40;
+    --accent:   #00d4ff;
+    --red:      #ff4444;
+    --yellow:   #ffcc00;
+    --green:    #00cc66;
+    --dim:      #6b7a99;
+    --text:     #c8d8ef;
+    --font:     'Courier New', Courier, monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  /* ── Layout ── */
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  header h1 { font-size: 16px; color: var(--accent); letter-spacing: 2px; }
+  header .status { margin-left: auto; font-size: 11px; color: var(--dim); }
+  header .status span { color: var(--green); }
+
+  .container { padding: 20px 24px; }
+
+  /* ── Auth bar ── */
+  #auth-bar {
+    display: flex; gap: 8px; margin-bottom: 16px; align-items: center;
+  }
+  #auth-bar input {
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--font); font-size: 13px;
+    padding: 6px 10px; border-radius: 3px; width: 300px;
+  }
+  #auth-bar input::placeholder { color: var(--dim); }
+
+  /* ── Stats cards ── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 16px;
+  }
+  .card .label { font-size: 10px; color: var(--dim); letter-spacing: 1px; text-transform: uppercase; }
+  .card .value { font-size: 28px; color: var(--accent); margin-top: 4px; }
+  .card .value.red   { color: var(--red); }
+  .card .value.green { color: var(--green); }
+  .card .value.yellow{ color: var(--yellow); }
+
+  /* ── Section titles ── */
+  .section-title {
+    font-size: 11px; color: var(--dim); letter-spacing: 2px;
+    text-transform: uppercase; margin-bottom: 8px; margin-top: 20px;
+    border-bottom: 1px solid var(--border); padding-bottom: 4px;
+  }
+
+  /* ── Tables ── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    background: var(--panel); color: var(--dim); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 1px;
+    padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+  }
+  td {
+    padding: 7px 10px; border-bottom: 1px solid rgba(31,45,64,0.5);
+    font-size: 12px; vertical-align: top;
+  }
+  tr:hover td { background: rgba(0,212,255,0.03); }
+
+  .badge {
+    display: inline-block; padding: 2px 7px; border-radius: 3px;
+    font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .badge-red    { background: rgba(255,68,68,0.15); color: var(--red); }
+  .badge-yellow { background: rgba(255,204,0,0.15); color: var(--yellow); }
+  .badge-blue   { background: rgba(0,212,255,0.15); color: var(--accent); }
+  .badge-green  { background: rgba(0,204,102,0.15); color: var(--green); }
+  .badge-gray   { background: rgba(107,122,153,0.15); color: var(--dim); }
+
+  /* ── Block form ── */
+  .block-form {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 4px; padding: 16px; margin-top: 20px;
+  }
+  .block-form h3 { font-size: 11px; color: var(--dim); letter-spacing: 2px;
+    text-transform: uppercase; margin-bottom: 12px; }
+  .block-form .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .block-form label { font-size: 10px; color: var(--dim); display: block; margin-bottom: 3px; }
+  .block-form input, .block-form select {
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--font); font-size: 13px;
+    padding: 6px 10px; border-radius: 3px;
+  }
+  .block-form input[type="text"] { width: 160px; }
+  .block-form input[type="number"] { width: 80px; }
+
+  /* ── Buttons ── */
+  button {
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--font); font-size: 12px;
+    padding: 6px 14px; border-radius: 3px; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.danger { border-color: rgba(255,68,68,0.4); color: var(--red); }
+  button.danger:hover { border-color: var(--red); }
+  button.primary { border-color: rgba(0,212,255,0.4); color: var(--accent); }
+  button.primary:hover { border-color: var(--accent); background: rgba(0,212,255,0.08); }
+
+  /* ── Pagination ── */
+  .pagination {
+    display: flex; gap: 8px; align-items: center; margin-top: 10px;
+    font-size: 11px; color: var(--dim);
+  }
+
+  /* ── Hour bar chart ── */
+  .hour-chart {
+    display: flex; align-items: flex-end; gap: 2px; height: 48px;
+    padding: 4px 0; margin-bottom: 4px;
+  }
+  .hour-bar {
+    flex: 1; background: rgba(0,212,255,0.2); border-radius: 2px 2px 0 0;
+    min-height: 2px; transition: background 0.2s;
+  }
+  .hour-bar:hover { background: rgba(0,212,255,0.6); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>◈ SECURITY MONITOR</h1>
+  <div class="status">AUTO-REFRESH <span id="countdown">30</span>s</div>
+</header>
+
+<div class="container">
+
+  <!-- Auth bar -->
+  <div id="auth-bar">
+    <input type="password" id="admin-key" placeholder="X-Admin-Key…" autocomplete="off">
+    <button class="primary" onclick="loadAll()">Connect</button>
+    <span id="auth-status" style="font-size:11px;color:var(--dim)"></span>
+  </div>
+
+  <!-- Stats cards -->
+  <div class="cards">
+    <div class="card">
+      <div class="label">Events Today</div>
+      <div class="value" id="stat-today">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Active Blocks</div>
+      <div class="value red" id="stat-blocks">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Brute Force (24h)</div>
+      <div class="value yellow" id="stat-bruteforce">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Scanner Probes (24h)</div>
+      <div class="value yellow" id="stat-scanner">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Rate Limits (24h)</div>
+      <div class="value" id="stat-ratelimit">—</div>
+    </div>
+  </div>
+
+  <!-- Events per hour chart -->
+  <div class="section-title">Events (last 24 h — by hour)</div>
+  <div class="hour-chart" id="hour-chart"></div>
+  <div style="font-size:10px;color:var(--dim)">← 24h ago &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; now →</div>
+
+  <!-- Recent events -->
+  <div class="section-title">Recent Events</div>
+  <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+    <select id="filter-type" onchange="loadEvents(1)">
+      <option value="">All types</option>
+      <option>BruteForce</option>
+      <option>RateLimit</option>
+      <option>ScannerProbe</option>
+      <option>InvalidToken</option>
+      <option>Blocked</option>
+      <option>SuspiciousActivity</option>
+    </select>
+    <input type="text" id="filter-ip" placeholder="Filter by IP…"
+      style="width:160px;background:var(--panel);border:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:13px;padding:6px 10px;border-radius:3px;"
+      oninput="loadEvents(1)">
+    <button onclick="loadEvents(1)">Filter</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Time (UTC)</th>
+          <th>IP</th>
+          <th>Type</th>
+          <th>Method</th>
+          <th>Endpoint</th>
+          <th>Status</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody id="events-body">
+        <tr><td colspan="7" style="color:var(--dim);text-align:center;padding:20px">Enter admin key and click Connect</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination">
+    <button onclick="changePage(-1)">◀ Prev</button>
+    <span id="page-info">Page 1</span>
+    <button onclick="changePage(1)">Next ▶</button>
+  </div>
+
+  <!-- Active blocks -->
+  <div class="section-title">Active Blocks</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>IP</th>
+          <th>Reason</th>
+          <th>Blocked At</th>
+          <th>Expires</th>
+          <th>Type</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="blocks-body">
+        <tr><td colspan="6" style="color:var(--dim);text-align:center;padding:20px">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Manual block form -->
+  <div class="block-form">
+    <h3>Manual Block</h3>
+    <div class="row">
+      <div>
+        <label>IP Address</label>
+        <input type="text" id="block-ip" placeholder="192.168.1.1">
+      </div>
+      <div>
+        <label>Reason</label>
+        <input type="text" id="block-reason" placeholder="Manual review" style="width:220px">
+      </div>
+      <div>
+        <label>Duration (hours, 0=permanent)</label>
+        <input type="number" id="block-hours" value="24" min="0">
+      </div>
+      <div>
+        <button class="danger" onclick="manualBlock()">Block IP</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const BASE = '/admin/security';
+  let currentPage = 1;
+  let countdownVal = 30;
+  let countdownTimer;
+
+  function getKey() {
+    return document.getElementById('admin-key').value.trim();
+  }
+
+  function headers() {
+    return { 'X-Admin-Key': getKey(), 'Content-Type': 'application/json' };
+  }
+
+  async function loadAll() {
+    await Promise.all([loadStats(), loadEvents(currentPage), loadBlocks()]);
+    resetCountdown();
+  }
+
+  async function loadStats() {
+    try {
+      const r = await fetch(`${BASE}/stats`, { headers: headers() });
+      if (r.status === 401) { setAuthStatus(false); return; }
+      setAuthStatus(true);
+      const d = await r.json();
+      document.getElementById('stat-today').textContent     = d.totalToday ?? '—';
+      document.getElementById('stat-blocks').textContent    = d.activeBlocks ?? '—';
+      document.getElementById('stat-bruteforce').textContent = d.byType?.BruteForce ?? 0;
+      document.getElementById('stat-scanner').textContent   = d.byType?.ScannerProbe ?? 0;
+      document.getElementById('stat-ratelimit').textContent = d.byType?.RateLimit ?? 0;
+
+      // Hour chart
+      const bars = (d.eventsPerHour || []);
+      const max  = Math.max(...bars, 1);
+      document.getElementById('hour-chart').innerHTML =
+        bars.map(v =>
+          `<div class="hour-bar" title="${v} events" style="height:${Math.max(4, (v/max)*44)}px"></div>`
+        ).join('');
+    } catch (e) { console.error('stats', e); }
+  }
+
+  let eventsTotal = 0;
+
+  async function loadEvents(page) {
+    currentPage = page;
+    const type = document.getElementById('filter-type').value;
+    const ip   = document.getElementById('filter-ip').value.trim();
+    const qs   = new URLSearchParams({ page, pageSize: 50 });
+    if (type) qs.set('eventType', type);
+    if (ip)   qs.set('ip', ip);
+
+    try {
+      const r = await fetch(`${BASE}/events?${qs}`, { headers: headers() });
+      if (r.status === 401) { setAuthStatus(false); return; }
+      const d = await r.json();
+      eventsTotal = d.total;
+      document.getElementById('page-info').textContent =
+        `Page ${page} / ${Math.max(1, Math.ceil(d.total / 50))}  (${d.total} total)`;
+
+      const tbody = document.getElementById('events-body');
+      if (!d.items || !d.items.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:16px">No events</td></tr>';
+        return;
+      }
+      tbody.innerHTML = d.items.map(e => `
+        <tr>
+          <td style="white-space:nowrap;color:var(--dim)">${fmtTime(e.createdAt)}</td>
+          <td><code style="color:var(--accent)">${esc(e.ipAddress)}</code></td>
+          <td>${badgeFor(e.eventType)}</td>
+          <td><span style="color:var(--dim)">${esc(e.method)}</span></td>
+          <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+              title="${esc(e.endpoint)}">${esc(e.endpoint)}</td>
+          <td>${statusBadge(e.statusCode)}</td>
+          <td style="color:var(--dim);font-size:11px">${esc(e.details ?? '')}</td>
+        </tr>`).join('');
+    } catch (e) { console.error('events', e); }
+  }
+
+  async function loadBlocks() {
+    try {
+      const r = await fetch(`${BASE}/blocks`, { headers: headers() });
+      if (r.status === 401) return;
+      const blocks = await r.json();
+      const tbody = document.getElementById('blocks-body');
+      if (!blocks.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--dim);text-align:center;padding:16px">No active blocks</td></tr>';
+        return;
+      }
+      tbody.innerHTML = blocks.map(b => `
+        <tr>
+          <td><code style="color:var(--red)">${esc(b.ipAddress)}</code></td>
+          <td>${esc(b.reason)}</td>
+          <td style="color:var(--dim)">${fmtTime(b.blockedAt)}</td>
+          <td style="color:var(--dim)">${b.blockedUntil ? fmtTime(b.blockedUntil) : '∞ permanent'}</td>
+          <td>${b.isManual
+            ? '<span class="badge badge-red">Manual</span>'
+            : '<span class="badge badge-yellow">Auto</span>'}</td>
+          <td><button class="danger" onclick="unblock('${esc(b.ipAddress)}')">Unblock</button></td>
+        </tr>`).join('');
+    } catch (e) { console.error('blocks', e); }
+  }
+
+  async function unblock(ip) {
+    if (!confirm(`Unblock ${ip}?`)) return;
+    await fetch(`${BASE}/blocks/${encodeURIComponent(ip)}`, {
+      method: 'DELETE', headers: headers()
+    });
+    await loadBlocks();
+    await loadStats();
+  }
+
+  async function manualBlock() {
+    const ip     = document.getElementById('block-ip').value.trim();
+    const reason = document.getElementById('block-reason').value.trim() || 'Manual block';
+    const hours  = parseInt(document.getElementById('block-hours').value, 10) || 0;
+    if (!ip) { alert('Enter an IP address'); return; }
+    await fetch(`${BASE}/blocks/${encodeURIComponent(ip)}`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ reason, hours })
+    });
+    document.getElementById('block-ip').value = '';
+    await loadBlocks();
+    await loadStats();
+  }
+
+  function changePage(delta) {
+    const maxPage = Math.max(1, Math.ceil(eventsTotal / 50));
+    const next    = Math.min(maxPage, Math.max(1, currentPage + delta));
+    if (next !== currentPage) loadEvents(next);
+  }
+
+  // ── Formatters ──────────────────────────────────────────────────────────────
+
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toISOString().replace('T', ' ').slice(0, 19);
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function badgeFor(type) {
+    const map = {
+      BruteForce:        'badge-red',
+      RateLimit:         'badge-yellow',
+      ScannerProbe:      'badge-red',
+      InvalidToken:      'badge-yellow',
+      Blocked:           'badge-gray',
+      SuspiciousActivity:'badge-yellow'
+    };
+    return `<span class="badge ${map[type] ?? 'badge-blue'}">${esc(type)}</span>`;
+  }
+
+  function statusBadge(code) {
+    const cls = code >= 500 ? 'badge-red'
+              : code >= 400 ? 'badge-yellow'
+              : code >= 300 ? 'badge-blue'
+              : 'badge-green';
+    return `<span class="badge ${cls}">${code}</span>`;
+  }
+
+  // ── Countdown & auto-refresh ────────────────────────────────────────────────
+
+  function resetCountdown() {
+    clearInterval(countdownTimer);
+    countdownVal = 30;
+    document.getElementById('countdown').textContent = countdownVal;
+    countdownTimer = setInterval(() => {
+      countdownVal--;
+      document.getElementById('countdown').textContent = countdownVal;
+      if (countdownVal <= 0) { loadAll(); }
+    }, 1000);
+  }
+
+  function setAuthStatus(ok) {
+    const el = document.getElementById('auth-status');
+    el.textContent = ok ? '✓ Connected' : '✗ Invalid key';
+    el.style.color = ok ? 'var(--green)' : 'var(--red)';
+  }
+
+  // Restore saved key on load
+  window.addEventListener('DOMContentLoaded', () => {
+    const saved = sessionStorage.getItem('vo-admin-key');
+    if (saved) {
+      document.getElementById('admin-key').value = saved;
+      loadAll();
+    }
+  });
+
+  document.getElementById('admin-key').addEventListener('change', () => {
+    sessionStorage.setItem('vo-admin-key', document.getElementById('admin-key').value);
+  });
+</script>
+</body>
+</html>

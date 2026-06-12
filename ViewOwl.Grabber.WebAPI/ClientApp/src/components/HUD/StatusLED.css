@@ -1,0 +1,8 @@
+.status-led { display: flex; align-items: center; gap: var(--space-sm); }
+.led-label {
+  font-family: var(--font);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--neutral-text);   /* dim when healthy */
+}
