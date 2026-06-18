@@ -1,8 +1,8 @@
 # Self-Hosting
 
-ViewOwl is designed to run on a Linux ARM64 server, and also runs on x86-64 with minor changes to the build target.
+ViewOwl is designed to run on a Linux ARM64 server (any ARM64 VPS or single-board computer). x86-64 also works with minor changes to the deployment steps.
 
-This guide covers a manual setup. Automating it with your own CI (GitHub Actions, GitLab CI, a deploy script, etc.) is straightforward once the manual steps work — build the self-contained binaries, copy them to the server, and restart the services.
+This guide covers a manual setup. You can automate these steps with your own CI pipeline.
 
 ---
 

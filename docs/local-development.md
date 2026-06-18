@@ -1,7 +1,7 @@
 # Local Development Guide
 
 This guide walks through running ViewOwl on a Windows development machine from a fresh clone.
-Running it on a Linux server is covered separately in [Self-hosting](server/self-hosting.md).
+Production deployment (Linux ARM64) is covered separately — see the [Self-hosting guide](server/self-hosting.md).
 
 ---
 

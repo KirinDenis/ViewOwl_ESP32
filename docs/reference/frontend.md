@@ -245,7 +245,7 @@ Useful for debugging: if `grab_completed` appears but `session_opened` never fol
 
 **File:** [`components/Burn/BurnModal.jsx`](../../ViewOwl.Grabber.WebAPI/ClientApp/src/components/Burn/)
 
-The web-based ESP32 flash wizard. Uses `esp-web-tools` (`<esp-web-install-button>`) to flash firmware directly from the browser via Web Serial API.
+The web-based ESP32 flash wizard. Uses `esp-web-tools` (`<esp-web-install-button>`) to flash firmware directly from the browser via Web Serial API. The library is **self-hosted** under `wwwroot/vendor/esp-web-tools/` (Apache-2.0, no third-party CDN — keeps the public landing free of any external script), and the Material flash dialog is themed to the ViewOwl palette via MD3 custom properties in `index.html`.
 
 Steps:
 1. User selects display size (480×320 or 320×240) from a dropdown

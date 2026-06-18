@@ -507,7 +507,7 @@ Called by the UDP Server after each PING. Returns `{ hasPendingRestart, hasPendi
 
 ### `POST /api/internal/deploy-notify`
 
-Called by your deploy pipeline to broadcast a deploy lifecycle event to all dashboard clients. Auth via `X-Deploy-Secret` header (pre-shared secret) — no JWT required. Body: `{ "phase": "starting" | "complete", "commit": "abc1234" }`.
+Called by your CI deploy pipeline to broadcast a deploy lifecycle event to all dashboard clients. Auth via `X-Deploy-Secret` header (pre-shared secret) — no JWT required. Body: `{ "phase": "starting" | "complete", "commit": "abc1234" }`.
 
 ---
 

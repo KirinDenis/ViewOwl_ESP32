@@ -220,8 +220,8 @@ Create a regular HTML page that fetches data from your API.
 
 ```bash
 # Clone the repository
-git clone https://github.com/KirinDenis/ViewOwl_ESP32.git
-cd ViewOwl_ESP32
+git clone https://github.com/KirinDenis/ViewOwl.git
+cd ViewOwl
 
 # Start the Grabber (renders your HTML to PNG)
 dotnet run --project ViewOwl.Grabber.WebAPI

@@ -14,6 +14,8 @@ The server opens the URL in headless Chromium, takes a screenshot, converts to B
 
 **Device sees:** one static BGR565 frame, refreshed every `data-vow-refresh` minutes.
 
+> **External-API templates** render the same way — but on a shared instance a *browser-side preview* sends the visitor's IP to the third-party API (a GDPR consideration), so the hosted demo keeps them out of its served set as examples under `ExchangeFolder/External/`. Rendering for a device is server-side and does not expose a visitor IP. Details and the planned data-source proxy: [Class A → External data](class-a.md).
+
 ---
 
 ### Class B — Canvas push
@@ -134,7 +136,12 @@ Templates should use `window.innerWidth` / `window.innerHeight` rather than hard
 
 ## Included templates
 
-The `ExchangeFolder/SitesTemplates/` directory ships with 54 ready-made templates. The full machine-readable catalog is in `ExchangeFolder/SitesTemplates/index.json`.
+ViewOwl ships ready-made templates in two places:
+
+- **`ExchangeFolder/SitesTemplates/`** — the curated set the hosted demo serves (sci-fi, ambient, clock, system, and other self-contained templates).
+- **`ExchangeFolder/External/`** — external-API examples (weather, rates, maps, transit) kept *off* the hosted demo for the privacy reason above; copy one into `SitesTemplates/` on your own instance to use it. See [Class A → External data](class-a.md).
+
+The list below is illustrative — the canonical, machine-readable catalog is `ExchangeFolder/SitesTemplates/index.json`. Some entries below (Crypto, FX Terminal, Trains, the weather templates) now live under `External/`.
 
 ### Ambient
 

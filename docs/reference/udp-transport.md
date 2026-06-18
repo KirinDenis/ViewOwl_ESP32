@@ -278,9 +278,9 @@ If the two implementations diverge, NOT_MODIFIED never matches and devices re-do
 
 ## Stability record
 
-In production use on a Linux ARM64 server with multiple ESP32 devices:
+In a production deployment on a Linux ARM64 server with multiple ESP32 devices:
 
 - Devices run continuously for weeks without WDT reboots
-- Server restarts (e.g. a redeploy) cause at most one delayed HELLO cycle (device CRC persisted in NVS matches manifest CRC → `NOT_MODIFIED` on reconnect)
+- Server restarts (CI deploys) cause at most one delayed HELLO cycle (device CRC persisted in NVS matches manifest CRC → `NOT_MODIFIED` on reconnect)
 - Network outages of up to ~75 seconds recover automatically via socket resurrection
 - Power cycles recover in under 5 seconds (NVS CRC → immediate NOT_MODIFIED)

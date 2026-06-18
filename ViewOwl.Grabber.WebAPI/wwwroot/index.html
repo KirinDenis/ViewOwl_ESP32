@@ -14,6 +14,10 @@
   <meta property="og:title"       content="ViewOwl — Your Desk. Your Data. Your Screen. ESP32" />
   <meta property="og:description" content="Pick a template, connect your ESP32 LCD device and flash from your browser. No IDE. No drivers. No reflashing when content changes. Just USB and Wi-Fi." />
   <meta property="og:image"       content="https://view.owlos.sk/og-image.png" />
+  <meta property="og:image:width"  content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:type"   content="image/png" />
+  <meta property="og:image:alt"    content="ViewOwl — live web pages on small dedicated screens" />
 
   <!-- Twitter / X -->
   <meta name="twitter:card"        content="summary_large_image" />
@@ -22,8 +26,9 @@
   <meta name="twitter:description" content="Pick a template, connect your ESP32 LCD device and flash from your browser. No IDE. No drivers. No reflashing when content changes. Just USB and Wi-Fi." />
   <meta name="twitter:image"       content="https://view.owlos.sk/og-image.png" />
 
-  <!-- esp-web-tools: browser-based ESP32 flashing (Chrome/Edge Web Serial) -->
-  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <!-- esp-web-tools: browser-based ESP32 flashing (Chrome/Edge Web Serial).
+       Self-hosted (Apache-2.0) under /vendor/ — no third-party CDN, no visitor IP leak. -->
+  <script type="module" src="/vendor/esp-web-tools/install-button.js"></script>
   <style>
     /* ── Reset ──────────────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -37,6 +42,48 @@
       --dim:    #c8d8e4;     /* secondary text */
       --dimmer: #9fb0c0;     /* tertiary labels */
       --border: rgba(77,208,225,0.45); /* unified panel border — cyan tint */
+    }
+
+    /* ── esp-web-tools theme — recolor the Material flash dialog to the ViewOwl palette.
+         The dialog mounts as <ewt-install-dialog> on document.body, so the Material
+         design tokens are set on that element (button-scoped vars would not reach it). */
+    esp-web-install-button {
+      --esp-tools-button-color: #00d4ff;
+      --esp-tools-button-text-color: #07101f;
+      --esp-tools-button-border-radius: 4px;
+    }
+    ewt-install-dialog, esp-web-install-button {
+      --md-sys-color-primary:                   #00d4ff;
+      --md-sys-color-on-primary:                #07101f;
+      --md-sys-color-primary-container:         #103047;
+      --md-sys-color-on-primary-container:      #aee8ff;
+      --md-sys-color-secondary:                 #4dd0e1;
+      --md-sys-color-secondary-container:       #15324a;
+      --md-sys-color-on-secondary-container:    #cfeaff;
+      --md-sys-color-tertiary:                  #7b2dfa;
+      --md-sys-color-tertiary-container:        #241246;
+      --md-sys-color-surface:                   #0f1a30;
+      --md-sys-color-surface-container:         #13203a;
+      --md-sys-color-surface-container-high:    #172642;
+      --md-sys-color-surface-container-highest: #1b2c4c;
+      --md-sys-color-on-surface:                #e8f2f8;
+      --md-sys-color-on-surface-variant:        #9fb0c0;
+      --md-sys-color-outline:                   rgba(77,208,225,0.30);
+      --md-sys-color-outline-variant:           rgba(77,208,225,0.18);
+      --md-sys-color-error:                     #ff6b6b;
+      --md-sys-color-on-error:                  #2a0a0a;
+      --md-sys-color-on-error-container:        #ffb3b3;
+      --md-sys-color-scrim:                     #03060d;
+      --md-sys-color-shadow:                    #000000;
+      --md-sys-shape-corner-extra-large:        8px;
+      --md-sys-shape-corner-large:              6px;
+      --md-sys-shape-corner-medium:             4px;
+      /* dialog header close (×) and other md-icon-buttons — keep them light on the
+         dark surface (default fell back to Material's dark #49454f → looked black). */
+      --md-icon-button-icon-color:              #c0d0e8;
+      --md-icon-button-hover-icon-color:        #ffffff;
+      --md-icon-button-focus-icon-color:        #ffffff;
+      --md-icon-button-pressed-icon-color:      #ffffff;
     }
 
     html { scroll-behavior: smooth; }

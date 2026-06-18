@@ -59,7 +59,11 @@ Source: [`DeviceTemplateRefreshWorker.cs`](../../ViewOwl.Grabber.WebAPI/Backgrou
 
 **Test at 480×320 pixels.** Open the template in a browser window resized to exactly 480×320 and zoom to 100%. What you see is what the device gets.
 
-**External data:** Class A templates can `fetch()` any GDPR-compliant API on page load. The server waits for `networkidle0` before taking the screenshot. Approved APIs: Open-Meteo (weather), OpenSky (flights), transport.rest (trains), Frankfurter.app (EUR rates), CoinGecko (crypto). See [`gdpr_apis.md`](../../memory/gdpr_apis.md) for the full list.
+**External data:** A Class A template can `fetch()` an external API on page load — the server waits for `networkidle0` before screenshotting. When rendering **for a device**, the grab runs in the *server's* headless Chromium, so the fetch happens from the server, not from a visitor's browser — no end-user IP reaches the third party.
+
+> **On a shared instance, mind browser-side previews.** A live preview in the dashboard gallery runs the template in the *visitor's* browser, so its `fetch()` sends that visitor's IP to the third-party API — a GDPR consideration. For that reason the hosted demo ([view.owlos.sk](https://view.owlos.sk)) does **not** serve external-API templates; they ship as examples under [`ExchangeFolder/External/`](../../ExchangeFolder/External/) for self-hosters. A planned **data-source proxy** will let templates fetch through the ViewOwl server (first-party) — removing the exposure and deduplicating repeated calls.
+
+Free, no-key APIs these examples use: Open-Meteo (weather), transport.rest (trains), Frankfurter (EUR rates), CoinGecko (crypto), Overpass (maps). Respect each API's terms of use when self-hosting.
 
 **Refresh rate:** `data-vow-refresh="5"` means the server re-grabs every 5 minutes. For templates with live data, match the refresh to how often the underlying data changes. `data-vow-refresh="0"` disables automatic re-grabs entirely.
 

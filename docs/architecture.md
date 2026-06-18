@@ -156,6 +156,6 @@ ViewOwl.Config
 
 ## Deployment
 
-Both server components publish as `linux-arm64` (or `linux-x64`) self-contained single-file binaries and run as services behind a TLS-terminating reverse proxy.
+Both server components publish as `linux-arm64` self-contained single-file binaries. A CI pipeline builds them and deploys to a Linux ARM64 server via SSH.
 
 See [Self-hosting](server/self-hosting.md) for manual deployment instructions.

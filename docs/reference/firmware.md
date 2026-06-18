@@ -220,18 +220,20 @@ Carried in `PACKET_BATCH_START`. Tells the device how many animation frames will
 
 ---
 
-## Build variants
+## Build variants and CI
 
-Each display variant is a separate build (see the table above). With ESP-IDF 5.5:
+Two binaries are built by CI on every push to `dev`:
 
-```bash
-idf.py build                    # 320×240 ILI9341 (default)
-idf.py -DLCD_480x320=1 build    # 480×320 ST7796
-idf.py -DLCD_ILI9486=1 build    # 480×320 ILI9486
+```yaml
+# CI firmware build (simplified)
+- name: Build 320×240
+  run: idf.py build
+
+- name: Build 480×320
+  run: idf.py -DLCD_480x320=1 build
 ```
 
-The resulting binaries are referenced by the web flash manifest. The landing-page
-flash wizard selects the correct one based on the display the user chooses.
+Both binaries are uploaded as release assets and referenced by the web flash manifest. The landing page flash wizard selects the correct binary based on the display size chosen by the user.
 
 ---
 
