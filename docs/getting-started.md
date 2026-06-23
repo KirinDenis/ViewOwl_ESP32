@@ -13,7 +13,7 @@ This guide takes you from unboxing to a working display in about 10 minutes.
 | Part | Notes |
 |---|---|
 | **ESP32 dev board** | ESP32-WROOM-32 or any standard 38-pin ESP32 module |
-| **SPI LCD display** | 480×320 (ST7796) or 320×240 (ILI9341) — see [Hardware guide](hardware.md) for tested modules |
+| **SPI LCD display** | 480×320 (ST7796) or 320×240 (ILI9341) — see [Hardware guide](hardware.md) for tested modules. A 240×240 **round** GC9A01 panel (integrated ESP32-C3) is also supported — flashed the same way. |
 | **USB cable** | Data cable, not charge-only |
 | **Computer** | Windows, macOS, or Linux with Chrome or Edge |
 
@@ -47,7 +47,9 @@ Browse the template gallery. Use the **Class** and **Category** filters on the l
 
 Click a template card to preview it. The preview shows the actual render at your display's resolution.
 
-When you find one you like, select your display size from the dropdown (**480×320** or **320×240**) and click **▸ FLASH**.
+When you find one you like, select your display from the dropdown (**480×320**, **320×240**, or **240×240 round**) and click **▸ FLASH**.
+
+> **Round display:** the 240×240 round panel flashes and provisions exactly like the rectangular boards. Its content is authored as round-native templates — see [Class C → round-native templates](templates/class-c.md) for the proving ground and geometry rules.
 
 ---
 

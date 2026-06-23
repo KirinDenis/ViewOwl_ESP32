@@ -37,6 +37,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <Content Include="..\display-types.json" Link="display-types.json">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </Content>
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.0" />

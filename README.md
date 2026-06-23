@@ -167,7 +167,7 @@ We deliberately run the live instance on **modest hardware**. It's a standing st
 ### What you need
 
 **Hardware:**
-- ESP32 with an LCD display (ST7796 or ILI9341, 480×320 or 320×240)
+- ESP32 with an LCD display (ST7796 or ILI9341, 480×320 or 320×240), **or** a 240×240 round GC9A01 panel (integrated ESP32-C3)
 - 5V power supply
 - Wi-Fi network
 
@@ -268,7 +268,8 @@ ViewOwl/
 ├── ViewOwl.UDP.Client.WPF/      # WPF client for Windows (debug / simulation)
 ├── ViewOwl.Grabber.WebAPI/      # Grabber — renders HTML to PNG via headless browser
 ├── ViewOwl.Grabber.Engine/      # Rendering engine (PuppeteerSharp / Chromium)
-├── ViewOwl.ESP32.Client/        # ESP32 firmware (ESP-IDF, C)
+├── ViewOwl.ESP32.Client/        # ESP32 firmware — rectangular SPI panels (ESP-IDF, C)
+├── ViewOwl.ESP32_C3.Client/     # ESP32-C3 firmware — 240×240 round GC9A01 display
 ├── ViewOwl.Config/              # Shared configuration
 ├── ViewOwl.UDP.Utils/           # UDP protocol utilities
 └── ExchangeFolder/
@@ -299,7 +300,7 @@ All templates work **without API keys** and are ready to use out of the box.
 | Transport protocol | UDP |
 | Pixel format | BGR565 (16-bit color) |
 | Recommended resolution | 480×320 px |
-| Supported displays | ST7796, ILI9341 (and compatible) |
+| Supported displays | ST7796, ILI9341, ILI9486 (rectangular) · GC9A01 240×240 round (ESP32-C3) |
 | Server platform | .NET 8, Linux ARM64 / x64 |
 | Client platform | ESP32 (ESP-IDF) |
 | UDP Server port | 11000 |

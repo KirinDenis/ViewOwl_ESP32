@@ -27,6 +27,12 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<Content Include="..\display-types.json" Link="display-types.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
 		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
 		<!-- Microsoft.AspNetCore.RateLimiting is part of the ASP.NET Core 8 shared framework;   -->

@@ -80,6 +80,7 @@ namespace ViewOwl.UDP.Server
         private readonly ILogger<UDPServer> _logger;
         private readonly WebApiClient _webApiClient;
         private readonly SharedConfig _sharedConfig;
+        private readonly DisplayTypeCatalog _displayTypeCatalog;
 
         // ── Networking ────────────────────────────────────────────────────────
 
@@ -150,18 +151,21 @@ namespace ViewOwl.UDP.Server
         /// <param name="logger">Logger.</param>
         /// <param name="bind">Local endpoint to bind to.</param>
         /// <param name="webApiClient">Internal WebAPI client for device resolution and ping recording.</param>
-        /// <param name="sharedConfig">Shared configuration — provides firmware compatibility bounds.</param>
+        /// <param name="sharedConfig">Shared configuration — provides the fallback firmware compatibility bounds.</param>
+        /// <param name="displayTypeCatalog">Registry of supported display types for per-type firmware checks.</param>
         public UDPServer(
             ILogger<UDPServer> logger,
             IPEndPoint bind,
             WebApiClient webApiClient,
-            SharedConfig sharedConfig)
+            SharedConfig sharedConfig,
+            DisplayTypeCatalog displayTypeCatalog)
         {
-            _logger        = logger;
-            _bind          = bind;
-            _webApiClient  = webApiClient;
-            _sharedConfig  = sharedConfig;
-            _disposed      = false;
+            _logger             = logger;
+            _bind               = bind;
+            _webApiClient       = webApiClient;
+            _sharedConfig       = sharedConfig;
+            _displayTypeCatalog = displayTypeCatalog;
+            _disposed           = false;
 
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
 
@@ -388,15 +392,22 @@ namespace ViewOwl.UDP.Server
                 byte fwMin = extendedData.Value.FirmwareVersionMinor;
                 byte fwPat = extendedData.Value.FirmwareVersionPatch;
 
-                if (fwMaj != _sharedConfig.MinFirmwareMajor || fwMin != _sharedConfig.MinFirmwareMinor)
+                // Resolve the per-display-type firmware bounds; fall back to the global
+                // SharedConfig defaults when the reported display type is unknown.
+                FirmwareTarget? target = _displayTypeCatalog.GetFirmwareTarget(extendedData.Value.DisplayTypeId);
+                byte expMaj       = target?.MinMajor            ?? _sharedConfig.MinFirmwareMajor;
+                byte expMin       = target?.MinMinor            ?? _sharedConfig.MinFirmwareMinor;
+                string recommended = target?.RecommendedFirmware ?? _sharedConfig.RecommendedFirmware;
+
+                if (fwMaj != expMaj || fwMin != expMin)
                 {
                     _logger.LogWarning(
                         "Firmware version mismatch: device reports {FwMaj}.{FwMin}.{FwPat}, " +
                         "server expects {ExpMaj}.{ExpMin}.x — upgrade firmware to avoid protocol issues. " +
                         "Recommended firmware: {Recommended}",
                         fwMaj, fwMin, fwPat,
-                        _sharedConfig.MinFirmwareMajor, _sharedConfig.MinFirmwareMinor,
-                        _sharedConfig.RecommendedFirmware);
+                        expMaj, expMin,
+                        recommended);
                 }
             }
 

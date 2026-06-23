@@ -34,6 +34,15 @@ const DISPLAY_TYPES = [
     height:   320,
     manifest: '/firmware/v1/manifest-ili9486-480x320.json',
   },
+  {
+    id:       'gc9a01',
+    label:    '240 × 240 round',
+    driver:   'GC9A01',
+    board:    'CrowPanel C3 1.28"',
+    width:    240,
+    height:   240,
+    manifest: '/firmware/v1/manifest-gc9a01-240x240.json',
+  },
 ]
 
 // ── Pin profiles per display type ──────────────────────────────────────────
@@ -78,6 +87,16 @@ const PIN_PROFILES = {
       pins: { sclk: 18, mosi: 23, miso: 19, dc: 2, rst: 4, cs: 15, bl: -1 },
     },
     { id: 'custom', name: 'Custom', pins: null },
+  ],
+  // CrowPanel C3 1.28" is a fixed-pin board: RST + backlight are driven via the
+  // PI4IOE5V6408 I2C expander and the round display is write-only, so the firmware
+  // ignores any pin config sent over serial. One fixed profile, no custom option.
+  gc9a01: [
+    {
+      id:   'crowpanel-c3',
+      name: 'CrowPanel C3 1.28" (fixed)',
+      pins: { sclk: 6, mosi: 7, miso: -1, dc: 2, rst: -1, cs: 10, bl: -1 },
+    },
   ],
 }
 

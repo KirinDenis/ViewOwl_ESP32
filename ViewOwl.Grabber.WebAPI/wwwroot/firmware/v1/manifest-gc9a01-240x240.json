@@ -1,0 +1,14 @@
+{
+  "name": "ViewOwl 240×240 Round (GC9A01)",
+  "version": "0.1.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-C3",
+      "parts": [
+        { "path": "bootloader-c3.bin",         "offset": 0     },
+        { "path": "partition-table-c3.bin",    "offset": 32768 },
+        { "path": "viewowl-gc9a01-240x240.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}

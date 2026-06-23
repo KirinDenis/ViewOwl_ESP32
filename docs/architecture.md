@@ -4,7 +4,9 @@ ViewOwl has three components that run independently and communicate through the 
 
 1. **Grabber** (`ViewOwl.Grabber.WebAPI`) — ASP.NET Core 8 service. Runs headless Chromium, renders HTML templates to BGR565 `.bin` files, serves templates over HTTP so Chromium can load them.
 2. **UDP Server** (`ViewOwl.UDP.Server`) — .NET 8 console app. Listens for ESP32 HELLO packets, streams `.bin` files to devices over a custom ACK protocol.
-3. **ESP32 firmware** (`ViewOwl.ESP32.Client`) — ESP-IDF C firmware. Connects to WiFi, requests frames from the UDP server, drives the SPI LCD.
+3. **ESP32 firmware** (`ViewOwl.ESP32.Client`, plus `ViewOwl.ESP32_C3.Client` for the round display) — ESP-IDF C firmware. Connects to WiFi, requests frames from the UDP server, drives the LCD. The round 240×240 GC9A01 panel runs a separate ESP32-C3 client that shares the SoC-agnostic logic and the identical wire protocol.
+
+Supported display types are described once in a root **`display-types.json`** registry (`firmwareFamilies` + `displayTypes`), which drives the server's per-type firmware version checks, the CI firmware build, and the browser flasher manifests — adding a display is one registry entry, no drift across those layers.
 
 ---
 
@@ -156,6 +158,6 @@ ViewOwl.Config
 
 ## Deployment
 
-Both server components publish as `linux-arm64` self-contained single-file binaries. A CI pipeline builds them and deploys to a Linux ARM64 server via SSH.
+Both server components publish as `linux-arm64` self-contained single-file binaries. CI builds them on push to `dev` and deploys to a Linux ARM64 server via SSH.
 
 See [Self-hosting](server/self-hosting.md) for manual deployment instructions.

@@ -1405,6 +1405,10 @@
             <div class="fm-display-size">480 × 320</div>
             <div class="fm-display-model">ILI9486 · RPi</div>
           </div>
+          <div class="fm-display-card" data-size="gc9a01" onclick="fmSelectDisplay('gc9a01')">
+            <div class="fm-display-size">240 × 240</div>
+            <div class="fm-display-model">GC9A01 · round</div>
+          </div>
         </div>
         <button id="fm-next-step1" class="fm-btn" disabled onclick="fmGoStep(2)">▸ Continue</button>
       </div>
@@ -2891,6 +2895,7 @@
         '480x320': '/firmware/v1/manifest-480x320.json',
         '320x240': '/firmware/v1/manifest-320x240.json',
         'ili9486': '/firmware/v1/manifest-ili9486-480x320.json',
+        'gc9a01':  '/firmware/v1/manifest-gc9a01-240x240.json',
       };
 
       // Display physical size map: used to report correct dimensions to the server.
@@ -2898,6 +2903,7 @@
         '480x320': [480, 320],
         '320x240': [320, 240],
         'ili9486': [480, 320],
+        'gc9a01':  [240, 240],
       };
 
       // Pin profiles per display variant — same presets as the admin BurnModal.
@@ -2917,6 +2923,11 @@
         'ili9486': [
           { id: 'owlos-aq', name: 'OWLOSAirQuality', pins: { sclk:18,mosi:23,miso:19,dc:2,rst:4,cs:15,bl:-1 } },
           { id: 'custom', name: 'Custom', pins: null },
+        ],
+        // CrowPanel C3 1.28" round — fixed-pin board (RST + backlight via the
+        // PI4IOE5V6408 I2C expander), so the firmware ignores pin config. One profile.
+        'gc9a01': [
+          { id: 'crowpanel-c3', name: 'CrowPanel C3 1.28"', pins: { sclk:6,mosi:7,miso:-1,dc:2,rst:-1,cs:10,bl:-1 } },
         ],
       };
       const PIN_KEYS   = ['sclk','mosi','miso','dc','rst','cs','bl'];

@@ -3,13 +3,29 @@
 **Language:** C99  
 **Framework:** ESP-IDF 5.5  
 **Build system:** CMake (ESP-IDF native)  
-**Directory:** [`ViewOwl.ESP32.Client/main/`](../../ViewOwl.ESP32.Client/main/)
+**Directory:** [`ViewOwl.ESP32.Client/main/`](../../ViewOwl.ESP32.Client/main/) (classic rectangular boards), [`ViewOwl.ESP32_C3.Client/main/`](../../ViewOwl.ESP32_C3.Client/main/) (round display)
 
-Two firmware variants are built from the same source tree:
+Rectangular variants are built from the classic source tree:
 - **320×240** — ILI9341 driver, GPIO 21 backlight (default build)
 - **480×320** — ST7796 driver, GPIO 27 backlight (`-DLCD_480x320=1`)
 
 The variant is selected at compile time via a CMake flag that must appear in **both** `CMakeLists.txt` (cmake level) and `main/CMakeLists.txt` (`target_compile_definitions`) — a bug where it only appeared at the cmake level caused both variants to silently build as ILI9341 for months.
+
+### Round display — separate ESP32-C3 client
+
+The 240×240 round GC9A01 display has its **own firmware client**, [`ViewOwl.ESP32_C3.Client`](../../ViewOwl.ESP32_C3.Client/), because it runs on an ESP32-C3 (RISC-V, single core, 2 MB flash, no PSRAM) rather than the classic ESP32. The SoC-agnostic logic — UDP protocol, frame decode, WiFi, NVS — is **shared** from the classic client; only the LCD layer and board config are C3-specific. The wire protocol (`packet.h`) is byte-for-byte identical across both clients, so the server treats every device the same. Class C animation playback works on the round too: the frame batch streams to a dedicated flash partition and plays from flash (the whole batch does not fit the C3's RAM), so playback survives a network drop.
+
+### `display-types.json` — display registry (single source of truth)
+
+**File:** [`display-types.json`](../../display-types.json) (repo root)
+
+Every display type is described once in this registry (`firmwareFamilies` + `displayTypes`). It drives, with no drift between them:
+- per-display-type firmware version checks on the server,
+- the CI firmware build,
+- the esp-web-tools manifests used by the browser flasher,
+- the flasher UI target list.
+
+To add a future display, you add one entry here. Current `DisplayType` ids: `ILI9341 = 2`, `ST7796 = 3`, `ILI9486 = 4`, `GC9A01 = 5` (the round display).
 
 ---
 
@@ -178,7 +194,7 @@ Extended HELLO payload — sent once at first connection so the server can updat
 | Field | Type | Bytes | Notes |
 |---|---|---|---|
 | `token` | `uint8_t[16]` | 16 | Device auth GUID in Windows binary GUID layout |
-| `display_type_id` | `uint8_t` | 1 | `0=Unknown, 1=ST7789, 2=ILI9341, 3=ST7796` |
+| `display_type_id` | `uint8_t` | 1 | `0=Unknown, 1=ST7789, 2=ILI9341, 3=ST7796, 4=ILI9486, 5=GC9A01 (round)` |
 | `display_width` | `uint16_t` | 2 | Pixels |
 | `display_height` | `uint16_t` | 2 | Pixels |
 | `firmware_version_major` | `uint8_t` | 1 | |
@@ -225,7 +241,7 @@ Carried in `PACKET_BATCH_START`. Tells the device how many animation frames will
 Two binaries are built by CI on every push to `dev`:
 
 ```yaml
-# CI firmware build (simplified)
+# CI workflow (simplified)
 - name: Build 320×240
   run: idf.py build
 
@@ -233,7 +249,9 @@ Two binaries are built by CI on every push to `dev`:
   run: idf.py -DLCD_480x320=1 build
 ```
 
-Both binaries are uploaded as release assets and referenced by the web flash manifest. The landing page flash wizard selects the correct binary based on the display size chosen by the user.
+The round ESP32-C3 client is built alongside them as its own target. Which firmware is built for which display is driven by `display-types.json` (see above), so the build list and the flasher manifests never drift.
+
+All binaries are uploaded as release assets and referenced by the web flash manifest. The landing page flash wizard selects the correct binary based on the display chosen by the user — including the **240 × 240 round** target.
 
 ---
 

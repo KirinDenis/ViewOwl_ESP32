@@ -49,6 +49,8 @@ The server renders each frame individually by appending `?vow_frame=N` to the UR
 
 **Device sees:** N-frame looping animation stored in flash, playing at `data-vow-fps` FPS.
 
+> **Round displays:** Class C also drives the 240×240 round GC9A01 panel. Round-native templates live in `ExchangeFolder/SitesTemplates/` (reference: `sf-reactor-radial.html`) and follow round geometry rules — 240×240 canvas, 112 px safe radius, round mask. See [Class C → round-native templates](class-c.md).
+
 ---
 
 ## data-vow-* attribute contract

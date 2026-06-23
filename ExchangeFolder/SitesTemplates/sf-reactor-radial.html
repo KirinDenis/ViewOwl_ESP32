@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+  #c { display: block; }
+</style>
+</head>
+<!--
+  Reactor Radial v2 - round-native Class-C HUD for the 240x240 GC9A01.
+  Design follows readable-FUI practice instead of a raw polar plot:
+    - CENTER = one big focal readout (the headline metric + status). Anchors the eye.
+    - MIDDLE = concentric SEGMENTED gauge rings. A filled arc reads as a level, the
+      way a circular progress bar does - legible to anyone, not just data people.
+    - OUTER  = decorative greebles + a rotating radar sweep (the "advanced" feel).
+    - Glow only on the focal centre, the scan highlight and the sweep edge - never
+      uniform, so the visual hierarchy survives.
+  Everything sits inside the safe radius (112); the round bezel clips only black.
+
+  Class C: the grabber renders ?vow_frame=N; the device plays the frames from flash.
+  With no vow_frame param the page auto-plays in a browser for design preview.
+-->
+<body
+  data-vow-class="C"
+  data-vow-name="Reactor Radial"
+  data-vow-description="Round-native reactor HUD - focal core readout, concentric segmented gauge rings, radar sweep."
+  data-vow-category="scifi"
+  data-vow-tags="reactor,hud,round,gauge,gc9a01,telemetry"
+  data-vow-frames="16"
+  data-vow-fps="8"
+  data-vow-refresh="0">
+
+<canvas id="c" width="240" height="240"></canvas>
+
+<script>
+(function () {
+  "use strict";
+
+  var W = 240, H = 240, CX = 120, CY = 120, SAFE = 112;
+  var FRAMES = 16;
+  var ctx = document.getElementById("c").getContext("2d");
+
+  /* reactor "state" - stable across frames so it reads as a steady readout */
+  var CORE = 92;                              /* headline %  */
+  var CHAN = [                                /* gauge rings, outer -> inner */
+    { tag: "TMP", val: 78, r: 90, hue: "#19e0ff" },
+    { tag: "PRS", val: 64, r: 73, hue: "#37b8ff" },
+    { tag: "FLX", val: 45, r: 56, hue: "#7fd8ff" }
+  ];
+  var SEGS = 40, GAP = 0.045;
+
+  function rad(degFromTop) { return (degFromTop - 90) * Math.PI / 180; }
+  function pt(degFromTop, r) { var a = rad(degFromTop); return [CX + r * Math.cos(a), CY + r * Math.sin(a)]; }
+
+  /* one segmented gauge ring: filled arc = value, with a travelling scan highlight */
+  function gauge(ring, N) {
+    var i, a0, a1, filled, hot, col, glow, dist;
+    var scan = Math.floor((N / FRAMES) * SEGS) % SEGS;
+    var fillCount = Math.round(ring.val / 100 * SEGS);
+    for (i = 0; i < SEGS; i++) {
+      a0 = rad(i / SEGS * 360) + GAP;
+      a1 = rad((i + 1) / SEGS * 360) - GAP;
+      filled = i < fillCount;
+      dist = Math.min((i - scan + SEGS) % SEGS, (scan - i + SEGS) % SEGS);
+      hot = filled && dist < 2;
+      col  = filled ? (hot ? "#e6fbff" : ring.hue) : "rgba(70,150,200,0.16)";
+      glow = hot ? 7 : (filled ? 2 : 0);
+      ctx.beginPath();
+      ctx.arc(CX, CY, ring.r, a0, a1);
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = col;
+      ctx.shadowColor = col; ctx.shadowBlur = glow;
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    /* value pip at the ring's 12 o'clock */
+    var p = pt(0, ring.r);
+    ctx.fillStyle = "#cdeeff"; ctx.font = "7px monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(String(ring.val), p[0], p[1]);
+  }
+
+  /* outer decorative greeble band + 4 corner brackets + slow rotating dashes */
+  function greebles(N) {
+    var a, p1, p2, lng;
+    ctx.strokeStyle = "rgba(120,205,255,0.40)";
+    for (a = 0; a < 360; a += 5) {
+      lng = (a % 30 === 0);
+      p1 = pt(a, SAFE); p2 = pt(a, SAFE - (lng ? 8 : 4));
+      ctx.lineWidth = lng ? 1.3 : 0.7;
+      ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+    }
+    /* corner brackets at the diagonals */
+    ctx.strokeStyle = "rgba(150,225,255,0.55)"; ctx.lineWidth = 1.4;
+    [45, 135, 225, 315].forEach(function (c) {
+      ctx.beginPath();
+      ctx.arc(CX, CY, SAFE - 2, rad(c - 9), rad(c + 9));
+      ctx.stroke();
+    });
+    /* rotating dash markers just inside the bracket band */
+    var base = N / FRAMES * 360;
+    ctx.strokeStyle = "rgba(190,240,255,0.7)"; ctx.lineWidth = 1.6;
+    [0, 120, 240].forEach(function (o) {
+      p1 = pt(base + o, SAFE - 14); p2 = pt(base + o, SAFE - 20);
+      ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+    });
+  }
+
+  /* rotating radar sweep: fading trail + bright leading line */
+  function sweep(N) {
+    var ang = N / FRAMES * 360, i, p, alpha;
+    for (i = 0; i < 40; i++) {
+      alpha = (1 - i / 40) * 0.22;
+      p = pt(ang - i * 2.4, SAFE - 16);
+      ctx.strokeStyle = "rgba(150,235,255," + alpha.toFixed(3) + ")";
+      ctx.lineWidth = 1.1;
+      ctx.beginPath(); ctx.moveTo(CX, CY); ctx.lineTo(p[0], p[1]); ctx.stroke();
+    }
+    p = pt(ang, SAFE - 16);
+    ctx.shadowColor = "#dffaff"; ctx.shadowBlur = 8;
+    ctx.strokeStyle = "#dffaff"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(CX, CY); ctx.lineTo(p[0], p[1]); ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  /* focal centre: bracket ring + big readout + status + bottom legend */
+  function centre(N) {
+    var flick = 0.88 + 0.12 * Math.sin(N / FRAMES * Math.PI * 4);
+
+    ctx.strokeStyle = "rgba(120,210,255,0.45)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(CX, CY, 40, 0, Math.PI * 2); ctx.stroke();
+    /* small ticks around the bracket */
+    var a, p1, p2;
+    ctx.strokeStyle = "rgba(120,210,255,0.35)";
+    for (a = 0; a < 360; a += 30) {
+      p1 = pt(a, 40); p2 = pt(a, 44);
+      ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+    }
+
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(150,205,235,0.85)"; ctx.font = "8px monospace";
+    ctx.fillText("CORE OUTPUT", CX, CY - 18);
+
+    ctx.shadowColor = "#9fefff"; ctx.shadowBlur = 9;
+    ctx.fillStyle = "rgba(228,251,255," + flick.toFixed(3) + ")";
+    ctx.font = "bold 30px monospace";
+    ctx.fillText(CORE + "%", CX, CY + 4);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = "#5fe6a4"; ctx.font = "9px monospace";
+    ctx.fillText("● STABLE", CX, CY + 24);
+
+    /* bottom legend: the three channels in plain numbers */
+    ctx.fillStyle = "rgba(170,220,245,0.9)"; ctx.font = "8px monospace";
+    ctx.fillText("TMP " + CHAN[0].val + "   PRS " + CHAN[1].val + "   FLX " + CHAN[2].val, CX, CY + 70);
+  }
+
+  function crt() {
+    ctx.fillStyle = "rgba(0,0,0,0.14)";
+    for (var y = 0; y < H; y += 2) ctx.fillRect(0, y, W, 1);
+    var g = ctx.createRadialGradient(CX, CY, SAFE * 0.5, CX, CY, SAFE * 1.05);
+    g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,0.7)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    /* black out everything outside the round area */
+    ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.rect(0, 0, W, H);
+    ctx.arc(CX, CY, SAFE + 4, 0, Math.PI * 2, true);
+    ctx.fill();
+  }
+
+  function render(N) {
+    var bg = ctx.createRadialGradient(CX, CY, 8, CX, CY, SAFE + 8);
+    bg.addColorStop(0, "#0a2236"); bg.addColorStop(1, "#020a13");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+    greebles(N);
+    sweep(N);
+    CHAN.forEach(function (ring) { gauge(ring, N); });
+    centre(N);
+    crt();
+  }
+
+  var qs = new URLSearchParams(location.search);
+  var fp = qs.get("vow_frame");
+  if (fp !== null) {
+    render(parseInt(fp, 10) % FRAMES);
+  } else {
+    var N = 0, last = 0, FPS = 8;
+    (function tick(ts) {
+      if (ts - last > 1000 / FPS) { last = ts; render(N); N = (N + 1) % FRAMES; }
+      requestAnimationFrame(tick);
+    })(0);
+  }
+})();
+</script>
+</body>
+</html>

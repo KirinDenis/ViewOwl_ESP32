@@ -52,5 +52,11 @@ namespace ViewOwl.UDP.Utils
 
         /// <summary>Sitronix ST7796.</summary>
         ST7796 = 3,
+
+        /// <summary>ILI Technology ILI9486 (Waveshare RPi LCD via 74HC245).</summary>
+        ILI9486 = 4,
+
+        /// <summary>Galaxycore GC9A01 (240x240 round, ESP32-C3 client).</summary>
+        GC9A01 = 5,
     }
 }

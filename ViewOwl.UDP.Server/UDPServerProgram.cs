@@ -86,6 +86,10 @@ namespace ViewOwl.UDP.Server
             services.AddSingleton<UdpServerHttpConfig>(
                 sp => sp.GetRequiredService<IOptions<UdpServerHttpConfig>>().Value);
 
+            // Single source of truth for supported display types — loads display-types.json
+            // (deployed next to the binary) and answers per-display-type firmware lookups.
+            services.AddSingleton<DisplayTypeCatalog>();
+
             // ── HTTP client for internal WebAPI calls ──────────────────────────
 
             string webApiBaseUrl =

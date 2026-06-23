@@ -36,6 +36,10 @@ builder.Configuration
 
 builder.Services.Configure<GrabberConfig>(builder.Configuration.GetSection("Grabber"));
 builder.Services.Configure<SharedConfig>(builder.Configuration.GetSection("Shared"));
+
+// Display-type registry (display-types.json) — drives per-display-type firmware version checks.
+builder.Services.AddSingleton<DisplayTypeCatalog>();
+
 builder.Services.Configure<JwtConfig>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<AdminSeedConfig>(builder.Configuration.GetSection("AdminSeed"));
 builder.Services.Configure<DatabaseConfig>(builder.Configuration.GetSection("Database"));

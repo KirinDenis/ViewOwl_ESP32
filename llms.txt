@@ -24,7 +24,9 @@ offline playback engine. The hard problems it solves end-to-end:
   the device writes it to a flash partition and plays the loop **independently of the
   network** — survives Wi-Fi loss entirely.
 - **Per-device multi-resolution rendering.** Each template is rendered at every connected
-  device's native resolution (320×240 ILI9341, 480×320 ST7796, 480×320 ILI9486).
+  device's native resolution (320×240 ILI9341, 480×320 ST7796, 480×320 ILI9486, 240×240 round
+  GC9A01 on ESP32-C3). Supported displays are described once in a root `display-types.json`
+  registry that drives version checks, the CI firmware build, and the browser flasher manifests.
 - **Zero-toolchain onboarding.** Browser-based flashing (Web Serial) and serial
   Wi-Fi/token provisioning persisted to NVS — a non-developer can bring a device online.
 - **Self-describing templates + live data.** `data-vow-*` HTML attributes drive the whole
@@ -83,7 +85,7 @@ Three components communicating through the filesystem and UDP:
 
 1. **Grabber** (`ViewOwl.Grabber.WebAPI/`) — ASP.NET Core 8 service. Runs headless Chromium, renders HTML → PNG → BGR565 `.bin`. Serves templates over HTTP (Chromium ARM64 blocks `file://`). Port 5000/TCP.
 2. **UDP Server** (`ViewOwl.UDP.Server/`) — .NET 8 console. Listens for ESP32 HELLO packets, streams `.bin` files via a custom 15-byte header ACK protocol. Port 11000/UDP.
-3. **Firmware** (`ViewOwl.ESP32.Client/`) — ESP-IDF 5.5 C99. WiFi + UDP client + SPI LCD driver + flash playback engine. Three build variants: 320×240 (ILI9341), 480×320 (ST7796), 480×320 (ILI9486).
+3. **Firmware** (`ViewOwl.ESP32.Client/`) — ESP-IDF 5.5 C99. WiFi + UDP client + SPI LCD driver + flash playback engine. Build variants: 320×240 (ILI9341), 480×320 (ST7796), 480×320 (ILI9486). The 240×240 round GC9A01 panel runs a separate ESP32-C3 client (`ViewOwl.ESP32_C3.Client/`) that shares the SoC-agnostic logic (UDP, frame decode, WiFi, NVS) and the identical `packet.h` wire protocol.
 
 Shared state: `ExchangeFolder/` — Grabber writes `{guid}.bin`, UDP Server reads it. Both on same machine. Atomic writes (`.tmp` → rename).
 

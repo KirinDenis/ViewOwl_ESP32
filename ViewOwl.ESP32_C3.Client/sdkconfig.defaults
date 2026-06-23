@@ -1,0 +1,12 @@
+# ViewOwl ESP32-C3 client — target is the C3 (RISC-V single core), NOT classic ESP32.
+# If a stale sdkconfig exists, delete it or run:  idf.py set-target esp32c3
+# NOTE: the VS Code ESP-IDF extension's active target overrides this — set it to
+# esp32c3 in the status bar too (otherwise it builds --chip esp32 and esptool errors).
+CONFIG_IDF_TARGET="esp32c3"
+
+# Custom partition table - adds the "frames" partition for Class-C playback (M3c).
+# After changing this, delete the stale sdkconfig (or `idf.py reconfigure`) so the
+# new table takes effect. nvs is unchanged, so NVS survives `idf.py flash` - NO
+# erase-flash and NO re-provision needed.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"

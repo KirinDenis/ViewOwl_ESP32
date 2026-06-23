@@ -6,7 +6,7 @@ This page covers supported display modules, wiring, and the hardware constraints
 
 ## Supported displays
 
-ViewOwl ships two firmware variants, one per display controller family.
+ViewOwl supports both rectangular SPI panels (driven by a classic ESP32) and a round display (driven by an ESP32-C3). Firmware is built per display controller family; see [Firmware reference](reference/firmware.md) for the per-variant build details and the `display-types.json` registry.
 
 ### 480×320 — ST7796
 
@@ -41,13 +41,35 @@ Tested modules:
 | Adafruit 2.8" TFT | ILI9341, works out of the box | [Adafruit product page](https://www.adafruit.com/product/1651) |
 | Generic 2.4" / 2.8" ILI9341 | Cheap and plentiful; check the controller chip label | — |
 
+### 240×240 round — GC9A01 (ESP32-C3)
+
+| Property | Value |
+|---|---|
+| Resolution | 240 × 240 px, **round** |
+| Color depth | 16-bit BGR565 |
+| Interface | SPI |
+| SoC | ESP32-C3 (RISC-V, single core, 2 MB flash, no PSRAM) |
+| Frame size | **115,200 bytes** (240 × 240 × 2) |
+
+A smartwatch-sized circular screen with a metal bezel for flush-mounting into a flat surface. It runs its own ESP32-C3 firmware client (see [Firmware reference](reference/firmware.md)) but speaks the identical wire protocol and is flashed from the browser like the rectangular boards.
+
+Tested module:
+
+| Module | Notes | Link |
+|---|---|---|
+| Elecrow CrowPanel 1.28" round | GC9A01 controller, integrated ESP32-C3 | [Elecrow](https://www.elecrow.com/) |
+
+> **Round geometry:** the bezel clips the corners of the square framebuffer, so round-native content draws within a **safe radius of 112 px** and masks everything outside the circle to black. Center-anchored / radial layouts read best. See [Class C templates → round-native templates](templates/class-c.md) for the proving ground and authoring rules.
+
 > **Tip:** When buying generic modules, look for "ILI9341" or "ST7796" printed on the driver IC on the back of the board. Some sellers label the same product with different controller names — the chip marking is the ground truth.
 
 ---
 
 ## Wiring
 
-All SPI pins are the same for both display variants. Only the backlight pin differs.
+The pins below are for the rectangular ESP32 panels. The round CrowPanel ships as an integrated ESP32-C3 + GC9A01 board with fixed internal wiring — nothing to wire by hand.
+
+All SPI pins are the same for both rectangular variants. Only the backlight pin differs.
 
 | Display signal | ESP32 GPIO | Both variants |
 |---|---|---|

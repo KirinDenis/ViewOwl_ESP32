@@ -1,0 +1,16 @@
+# ViewOwl ESP32-C3 partition table (2 MB flash).
+# Adds a "frames" data partition for Class-C animation playback (M3c): the batch of
+# compressed frames is streamed to flash and the player reads one frame at a time,
+# since the whole batch (~516 KB for 16 frames) does not fit in C3 RAM.
+#
+# nvs is kept at the DEFAULT offset/size (0x9000, 0x6000) so `idf.py flash` does NOT
+# touch it - Wi-Fi creds and the device token survive the reflash (no re-provision).
+# A full `idf.py erase-flash` would, of course, wipe NVS and require re-provisioning.
+#
+# After editing this, delete the stale sdkconfig (or `idf.py reconfigure`) so the new
+# partition table takes effect before `idf.py build flash`.
+#
+# Name,    Type, SubType, Offset,   Size
+nvs,       data, nvs,     0x9000,   0x6000
+factory,   app,  factory, 0x10000,  0x150000
+frames,    data, 0x40,    0x160000, 0xA0000

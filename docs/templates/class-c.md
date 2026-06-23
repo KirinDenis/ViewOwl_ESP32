@@ -13,7 +13,7 @@ const frameParam = new URLSearchParams(location.search).get('vow_frame');
 const N = frameParam !== null ? parseInt(frameParam, 10) : 0;
 ```
 
-When `vow_frame` is absent (direct browser preview), the template runs a normal animation loop using `requestAnimationFrame`.
+When `vow_frame` is absent (direct browser preview), the template runs a normal animation loop using `requestAnimationFrame`. **This is also the proving ground:** opening the `.html` file directly in a desktop browser auto-plays the animation, so the file itself is the sandbox for authoring and testing a template before it ever reaches a device.
 
 **Critical rule:** `?vow_frame=N` must be the **only** source of variation. The same N must always produce the same pixels. `Math.random()` is forbidden — it breaks the CRC check that prevents unnecessary re-renders. Use `Math.sin(N)`, `Math.cos(N)`, or a seeded PRNG instead.
 
@@ -63,6 +63,23 @@ if (frameParam !== null) {
   })(0);
 }
 ```
+
+---
+
+## Round-native templates (240×240 GC9A01) — the proving ground
+
+The 240×240 round display runs the same Class C pipeline, but content must be authored **round-native** so it reads correctly inside the circular bezel.
+
+**Where round templates live:** round-native HTML templates sit alongside every other template in [`ExchangeFolder/SitesTemplates/`](../../ExchangeFolder/SitesTemplates/). The reference example is [`sf-reactor-radial.html`](../../ExchangeFolder/SitesTemplates/sf-reactor-radial.html) — a 240×240 round-native Class C animated HUD ("Reactor Radial"). Copy it as a starting point.
+
+**How to preview / test (the sandbox):** open the `.html` file directly in a desktop browser. With no `?vow_frame=N` query param it auto-plays the animation, so the file itself is the round-display proving ground — no device or server needed to iterate. The grabber renders `?vow_frame=N` to capture each frame exactly as on the rectangular boards.
+
+**Round geometry rules a template must follow:**
+
+- **Canvas is 240 × 240.**
+- **Draw within the safe radius of 112 px** from center — the metal bezel clips the corners of the square framebuffer.
+- **Apply a round mask** so anything outside the circle renders black.
+- **Center-anchored / radial layouts read best** — radial gauges, rings, and dials suit the shape far better than left-aligned text.
 
 ---
 
