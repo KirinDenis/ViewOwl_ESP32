@@ -1,0 +1,14 @@
+{
+  "name": "ViewOwl 400×300 e-paper (SSD1683)",
+  "version": "0.1.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "bootloader-epd.bin",        "offset": 0     },
+        { "path": "partition-table-epd.bin",   "offset": 32768 },
+        { "path": "viewowl-epd-400x300.bin",   "offset": 65536 }
+      ]
+    }
+  ]
+}

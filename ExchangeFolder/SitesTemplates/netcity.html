@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>*{margin:0;padding:0}html,body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body"
+  data-vow-class="C"
+  data-vow-render="mono"
+  data-vow-name="VIEWOWL Net-City"
+  data-vow-category="scifi"
+  data-vow-description="1-bit wireframe megacity flyover for e-paper — hidden-line towers, lit windows, autonav HUD, VIEWOWL holo billboard. Inverts to a black-on-white blueprint; played via whole-screen partial refresh."
+  data-vow-tags="city,cyberpunk,wireframe,viewowl,flyover,epaper,mono"
+  data-vow-frames="8"
+  data-vow-fps="4"
+  data-vow-refresh="0">
+<canvas id="fc" width="400" height="300"></canvas>
+<script>
+'use strict';
+/* Logical design space is the e-paper's 400x300. White-on-black source; the
+ * firmware inverts to a black-on-white blueprint. 16 frames, seamless loop
+ * (16 * STEP 32 = 512 = one PERIOD * CELL = 8 * 64), so frame 16 == frame 0. */
+var W=400,H=300,FRAMES=8,CELL=64,STEP=64,PERIOD=8,FOCAL=240,NEARZ=20,FARZ=1180,CAMY=82,HOR=H*0.40;
+var ctx=document.getElementById('fc').getContext('2d');
+
+function L(a,b,c,d,lw){ctx.lineWidth=lw||1;ctx.beginPath();ctx.moveTo(a,b);ctx.lineTo(c,d);ctx.stroke();}
+function poly(pts,lw){ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);for(var i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],pts[i][1]);ctx.closePath();ctx.fillStyle='#000';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=lw;ctx.stroke();}
+
+/* Deterministic building height from cell coords (repeats every PERIOD rows). */
+function bh(ix,iz){var izw=((iz%PERIOD)+PERIOD)%PERIOD;var s=(ix*374761393+izw*668265263)>>>0;s=((s^(s>>>13))*1274126177)>>>0;return 26+(s%1000)/1000*108;}
+
+function render(N){
+  N=((N%FRAMES)+FRAMES)%FRAMES;
+  ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.strokeStyle='#fff';
+  var camZ=N*STEP, camX=Math.sin(N/FRAMES*6.283)*3, camY=CAMY;
+  var px=function(wx,dz){return W/2+(wx-camX)*FOCAL/dz;};
+  var py=function(wy,dz){return HOR+(camY-wy)*FOCAL/dz;};
+
+  /* horizon + ground grid (longitudinal converge, cross-rulings flow forward) */
+  L(0,HOR,W,HOR,1.2);
+  for(var ix=-6;ix<=6;ix++){var wx=ix*CELL;L(px(wx,NEARZ+30),py(0,NEARZ+30),px(wx,FARZ),py(0,FARZ),ix===0?1.1:0.6);}
+  var r0=Math.ceil((camZ+NEARZ+24)/CELL);
+  for(var k=r0;k*CELL-camZ<FARZ;k++){var dz=k*CELL-camZ;var gy=py(0,dz);if(gy>H)continue;var n=1-dz/FARZ;L(0,gy,W,gy,n>0.6?0.9:0.5);}
+
+  /* towers far->near; faces filled black so lines behind are hidden (80s trick) */
+  for(var iz=r0+18;iz>=r0-1;iz--){
+    var cz=(iz+0.5)*CELL, izw=((iz%PERIOD)+PERIOD)%PERIOD;
+    for(var ic=-6;ic<=5;ic++){
+      if(ic===-1||ic===0)continue;                      /* central flight corridor */
+      var cxw=(ic+0.5)*CELL, hgt=bh(ic,iz);
+      var x0=cxw-24,x1=cxw+24,z0=cz-24,z1=cz+24,dzA=z0-camZ,dzB=z1-camZ;
+      if(dzA<NEARZ||dzA>FARZ)continue;
+      var tier=dzA>700?0:dzA>300?1:2, lw=tier===2?1.3:tier===1?0.9:0.6;
+      var fx0=px(x0,dzA),fx1=px(x1,dzA),fg=py(0,dzA),ft=py(hgt,dzA);
+      var bx0=px(x0,dzB),bx1=px(x1,dzB),bt=py(hgt,dzB),bgr=py(0,dzB);
+      if(fx1<-30||fx0>W+30)continue;
+      if(camY>hgt)poly([[fx0,ft],[fx1,ft],[bx1,bt],[bx0,bt]],lw);   /* roof */
+      if(camX<x0)poly([[fx0,fg],[fx0,ft],[bx0,bt],[bx0,bgr]],lw);   /* side */
+      else if(camX>x1)poly([[fx1,fg],[fx1,ft],[bx1,bt],[bx1,bgr]],lw);
+      poly([[fx0,fg],[fx1,fg],[fx1,ft],[fx0,ft]],lw);               /* front */
+      if(tier>0){
+        var rows=Math.min(6,~~(hgt/16)),fw=fx1-fx0,fh=fg-ft;ctx.fillStyle='#fff';
+        for(var r=0;r<rows;r++)for(var c=0;c<3;c++){var s=(ic*65521+izw*40503+r*97561+c*7919)>>>0;s=((s^(s>>>11))*2654435761)>>>0;if(s%10>=3)continue;ctx.fillRect(fx0+fw*(0.18+c*0.26),ft+fh*(0.12+r*(0.78/rows)),Math.max(1.2,fw*0.13),Math.max(1,fh*0.46/rows));}
+      }
+    }
+  }
+
+  /* bezel */
+  ctx.strokeStyle='#fff';ctx.lineWidth=1.4;ctx.strokeRect(2,2,W-4,H-4);ctx.lineWidth=0.7;ctx.strokeRect(6,6,W-12,H-12);
+  /* header */
+  ctx.fillStyle='#000';ctx.fillRect(7,7,W-14,15);
+  ctx.fillStyle='#fff';ctx.font='bold 11px monospace';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText('VIEWOWL // NET-CITY',12,15);
+  ctx.font='9px monospace';ctx.textAlign='right';ctx.fillText('AUTONAV ENGAGED',W-12,15);ctx.textAlign='left';
+  L(7,22,W-7,22,0.7);
+  /* VIEWOWL holo billboard (static, mounted over the city) */
+  var pw=120,ph=22,pbx=(W-pw)/2,pby=30;
+  L(pbx+14,pby+ph,pbx+14,HOR,0.6);L(pbx+pw-14,pby+ph,pbx+pw-14,HOR,0.6);
+  ctx.fillStyle='#000';ctx.fillRect(pbx,pby,pw,ph);ctx.strokeStyle='#fff';ctx.lineWidth=1.4;ctx.strokeRect(pbx,pby,pw,ph);ctx.lineWidth=0.7;ctx.strokeRect(pbx+3,pby+3,pw-6,ph-6);
+  ctx.fillStyle='#fff';ctx.font='bold 14px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('VIEWOWL',W/2,pby+ph/2+1);
+  /* HUD readouts */
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.font='9px monospace';
+  var vel=120+Math.round(4*Math.sin(N/FRAMES*6.283));
+  ctx.fillText('VEL',12,H-30);ctx.font='bold 11px monospace';ctx.fillText(String(vel).padStart(4,'0')+' m/s',12,H-18);ctx.font='9px monospace';
+  var hh=38820+N*2,hts=String(~~(hh/3600)).padStart(2,'0')+':'+String(~~(hh/60)%60).padStart(2,'0')+':'+String(hh%60).padStart(2,'0');
+  ctx.fillText('MET '+hts,12,H-8);
+  ctx.textAlign='right';ctx.fillText('ALT 0082 m',W-12,H-30);ctx.font='bold 11px monospace';ctx.fillText('SYNC '+String(N+1).padStart(2,'0')+'/'+FRAMES,W-12,H-18);ctx.font='9px monospace';ctx.fillText('HDG 000.0',W-12,H-8);ctx.textAlign='left';
+  /* flight-path marker */
+  ctx.strokeStyle='#fff';ctx.lineWidth=1.1;ctx.beginPath();ctx.arc(W/2,HOR+26,5,0,6.283);ctx.stroke();
+  L(W/2-12,HOR+26,W/2-5,HOR+26,1.1);L(W/2+5,HOR+26,W/2+12,HOR+26,1.1);
+}
+
+/* Grab path: server appends ?vow_frame=N -> render exactly that frame.
+ * Preview path: self-animate so the dashboard thumbnail shows motion. */
+var vf=new URLSearchParams(location.search).get('vow_frame');
+if(vf!==null){
+  render(parseInt(vf,10)||0);
+}else{
+  var pf=0;render(0);
+  setInterval(function(){pf=(pf+1)%FRAMES;render(pf);},200);
+}
+</script></body></html>

@@ -128,6 +128,18 @@ int frame_lz4_stream_init(frame_lz4_stream_t *s,
     s->block_buf     = block_buf;
     s->block_buf_len = 0;
     s->block_buf_pos = 0;
+
+    /* Precompute a full 256-entry 16-bit palette.  Entries beyond pal_len are
+     * black; a well-formed stream never indexes them, so the per-pixel decode
+     * loop can drop both the range check and the two byte stores.  Byte layout
+     * matches the source (out byte0 = hi, byte1 = lo), which on this
+     * little-endian core is the 16-bit value (hi | lo << 8). */
+    const uint8_t *pal = src + 2;
+    for (int i = 0; i < 256; i++) {
+        s->pal16[i] = (i < pal_len)
+            ? (uint16_t)(pal[i * 2] | ((uint16_t)pal[i * 2 + 1] << 8))
+            : 0u;
+    }
     return 0;
 }
 
@@ -179,7 +191,12 @@ int frame_lz4_stream_read(frame_lz4_stream_t *s, uint8_t *dst, size_t n_pixels)
 {
     if (!s || !dst) return -1;
 
-    size_t written = 0;
+    /* dst is always s_linebuf (statically aligned) and written at even byte
+     * offsets, so a 16-bit view is safe. */
+    uint16_t       *out   = (uint16_t *)dst;
+    const uint16_t *pal16 = s->pal16;
+    size_t          written = 0;
+
     while (written < n_pixels) {
         /* Refill when the current block is exhausted. */
         if (s->block_buf_pos >= s->block_buf_len) {
@@ -188,17 +205,23 @@ int frame_lz4_stream_read(frame_lz4_stream_t *s, uint8_t *dst, size_t n_pixels)
             if (r < 0) return -1;
         }
 
-        uint8_t idx = s->block_buf[s->block_buf_pos++];
-        if (idx >= s->pal_len) {
-            ESP_LOGE(TAG, "lz4_stream_read: index %u >= palLen %u", idx, s->pal_len);
-            return -1;
+        /* Expand as many pixels as the current block and request allow in one
+         * tight loop — struct fields are read once, not per pixel. */
+        const uint8_t *blk   = s->block_buf;
+        size_t         bpos  = (size_t)s->block_buf_pos;
+        size_t         avail = (size_t)s->block_buf_len - bpos;
+        size_t         need  = n_pixels - written;
+        size_t         run   = (avail < need) ? avail : need;
+
+        for (size_t k = 0; k < run; k++) {
+            out[written + k] = pal16[blk[bpos + k]];
         }
 
-        dst[written * 2]     = s->palette[idx * 2];
-        dst[written * 2 + 1] = s->palette[idx * 2 + 1];
-        written++;
-        s->pixel_pos++;
+        s->block_buf_pos = (int)(bpos + run);
+        written += run;
     }
+
+    s->pixel_pos += (uint32_t)written;
 
     if (written == 0) return 0;
     return (int)written;

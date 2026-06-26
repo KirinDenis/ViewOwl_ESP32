@@ -19,6 +19,13 @@ namespace ViewOwl.Grabber.Engine
         // must not race with each other inside Chromium.
         private readonly SemaphoreSlim _navLock = new(1, 1);
 
+        // Hard ceiling on a single open-tab operation. A wedged browser process can make
+        // NewPageAsync/GoToAsync hang indefinitely while holding _navLock, which freezes
+        // every subsequent grab (observed: a 4-hour pipeline stall). Bounding the operation
+        // guarantees OpenAsync always returns and releases the lock; a browser that keeps
+        // timing out is then recycled by the GrabberWatchdogService.
+        private const int NavigationTimeoutMs = 25_000;
+
         private IBrowser? _browser;
 
         // ── Initialisation ────────────────────────────────────────────────────
@@ -47,7 +54,7 @@ namespace ViewOwl.Grabber.Engine
         /// <returns>
         /// The new page, its final URL after any redirects, and a success flag.
         /// </returns>
-        public async Task<(IPage Page, string FinalUrl, bool Success)> OpenAsync(
+        public async Task<(IPage? Page, string FinalUrl, bool Success)> OpenAsync(
             string url,
             ViewPortOptions viewport,
             string styleContent,
@@ -56,33 +63,65 @@ namespace ViewOwl.Grabber.Engine
             await _navLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                IPage page = await Browser.NewPageAsync().ConfigureAwait(false);
+                Task<(IPage? Page, string FinalUrl, bool Success)> work =
+                    OpenCoreAsync(url, viewport, styleContent);
 
-                await page.SetViewportAsync(viewport).ConfigureAwait(false);
+                // Backstop for a wedged browser where even GoToAsync's own timeout never fires
+                // (the CDP connection is unresponsive). If the work does not finish in time we
+                // abandon it and return failure so the lock is released and the worker proceeds.
+                Task finished = await Task
+                    .WhenAny(work, Task.Delay(NavigationTimeoutMs, ct))
+                    .ConfigureAwait(false);
 
-                // Navigate FIRST — injecting styles before GoToAsync would overwrite them
-                // when the page document is replaced, and may throw on privileged blank pages.
-                var response = await page.GoToAsync(url).ConfigureAwait(false);
-
-                string finalUrl = page.Url;
-
-                // Inject styles after the page has loaded so they survive in the live document
-                if (!string.IsNullOrWhiteSpace(styleContent))
+                if (finished != work)
                 {
-                    await page.AddStyleTagAsync(new AddTagOptions { Content = styleContent })
-                              .ConfigureAwait(false);
+                    Console.WriteLine(
+                        $"[Chrome] OpenAsync timed out after {NavigationTimeoutMs} ms: {url} " +
+                        "— abandoning (watchdog will recycle the browser)");
+                    return (null, url, false);
                 }
 
-                // Register by final URL so Find() can locate it for screenshots
-                _tabs.TryAdd(finalUrl, page);
-
-                // response can be null for about:blank navigations; treat that as failure
-                return (page, finalUrl, response?.Ok ?? false);
+                return await work.ConfigureAwait(false);
             }
             finally
             {
                 _navLock.Release();
             }
+        }
+
+        /// <summary>
+        /// Performs the actual tab-open work: new page, viewport, navigation, style injection,
+        /// and registration. Bounded by the caller (<see cref="OpenAsync"/>) via a timeout.
+        /// </summary>
+        private async Task<(IPage? Page, string FinalUrl, bool Success)> OpenCoreAsync(
+            string url, ViewPortOptions viewport, string styleContent)
+        {
+            IPage page = await Browser.NewPageAsync().ConfigureAwait(false);
+
+            await page.SetViewportAsync(viewport).ConfigureAwait(false);
+
+            // Navigate FIRST — injecting styles before GoToAsync would overwrite them
+            // when the page document is replaced, and may throw on privileged blank pages.
+            // An explicit Timeout makes a slow/never-loading page fail fast instead of
+            // hanging on the default behaviour.
+            var response = await page
+                .GoToAsync(url, new NavigationOptions { Timeout = NavigationTimeoutMs })
+                .ConfigureAwait(false);
+
+            string finalUrl = page.Url;
+
+            // Inject styles after the page has loaded so they survive in the live document
+            if (!string.IsNullOrWhiteSpace(styleContent))
+            {
+                await page.AddStyleTagAsync(new AddTagOptions { Content = styleContent })
+                          .ConfigureAwait(false);
+            }
+
+            // Register by final URL so Find() can locate it for screenshots
+            _tabs.TryAdd(finalUrl, page);
+
+            // response can be null for about:blank navigations; treat that as failure
+            return (page, finalUrl, response?.Ok ?? false);
         }
 
         /// <summary>

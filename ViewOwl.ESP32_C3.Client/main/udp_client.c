@@ -101,12 +101,26 @@ static void player_task_fn(void *arg)
         uint8_t idx = 0;
         while (!s_player_stop) {
             size_t flen = 0;
+            int64_t t0 = esp_timer_get_time();
             if (flash_frames_read(idx, fbuf, cap, &flen) == ESP_OK
                 && flen > 0 && fbuf[0] == FRAME_FLAG_LZ4_PALETTE) {
                 render_lz4_palette(fbuf, flen);
             }
+#if PLAYER_FREE_RUN
+            /* Free-run: as fast as the decode + SPI path allows; one-tick yield
+             * keeps the idle task / Wi-Fi serviced (single-core C3). */
+            (void)t0;
             idx = (uint8_t)((idx + 1u) % count);
-            vTaskDelay(pdMS_TO_TICKS(delay_ms));
+            vTaskDelay(1);
+#else
+            /* Paced: honour the encoded fps, compensated for this frame's work;
+             * floor at one tick so an overloaded device free-runs at its max. */
+            uint32_t work_ms = (uint32_t)((esp_timer_get_time() - t0) / 1000);
+            TickType_t st = (delay_ms > work_ms) ? pdMS_TO_TICKS(delay_ms - work_ms) : 0;
+            if (st == 0) st = 1;
+            idx = (uint8_t)((idx + 1u) % count);
+            vTaskDelay(st);
+#endif
         }
         ESP_LOGI(TAG, "player: stopped");
     }

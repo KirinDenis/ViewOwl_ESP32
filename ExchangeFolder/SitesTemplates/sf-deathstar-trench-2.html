@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body"
+  data-vow-name="Death Trench Run II"
+  data-vow-category="scifi"
+  data-vow-description="Slower, deeper flight down an open-top battle-station trench — fine compound greebles (cubes built from cubes) on walls and floor, hidden-surface removal, raking sun on the upper-right wall, long relief shadows, tiny blue ports, cinematic letterbox"
+  data-vow-class="C"
+  data-vow-frames="30"
+  data-vow-fps="12"
+  data-vow-refresh="0">
+<canvas id="screen"></canvas>
+<script>
+'use strict'
+/* Logical 480x320; canvas scaled to viewport. Frames grabbed OFFLINE into
+ * BGR565, so detail is free — the device only replays the captured frames. */
+const W=480,H=320
+const cv=document.getElementById('screen')
+const VW=window.innerWidth||W, VH=window.innerHeight||H
+cv.width=VW; cv.height=VH
+const cx=cv.getContext('2d')
+
+const FRAME_COUNT=30
+
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+function dither(){
+  const id=cx.getImageData(0,0,VW,VH),d=id.data
+  for(let y=0;y<VH;y++)for(let x=0;x<VW;x++){
+    const i=(y*VW+x)*4
+    for(let c=0;c<3;c++){
+      const bits=c===1?6:5,max=(1<<bits)-1,old=d[i+c]
+      const nv=Math.round(old/255*max)/max*255,err=old-nv
+      d[i+c]=nv
+      if(x+1<VW)d[i+4+c]+=err*7/16
+      if(y+1<VH){if(x>0)d[i+(VW-1)*4+c]+=err*3/16;d[i+VW*4+c]+=err*5/16;if(x+1<VW)d[i+(VW+1)*4+c]+=err/16}
+    }
+  }
+  cx.putImageData(id,0,0)
+}
+const cl=(v)=>Math.max(0,Math.min(255,v))
+const ng=(v)=>css(cl(v),cl(v*0.985),cl(v*0.94))   /* near-neutral battle grey */
+const P={sky:css(2,3,9),star1:css(150,160,196),star2:css(70,78,104),bar:css(0,0,0),
+  port:css(96,156,255),portHot:css(176,212,255),portOff:css(16,22,38)}
+function q(p,c){cx.beginPath();cx.moveTo(p[0][0],p[0][1]);for(let i=1;i<p.length;i++)cx.lineTo(p[i][0],p[i][1]);cx.closePath();cx.fillStyle=c;cx.fill()}
+function fill(x,y,w,h,c){cx.fillStyle=c;cx.fillRect(x,y,w,h)}
+
+/* ── World ─────────────────────────────────────────────────────────────── */
+const HW=80, WALLTOP=190, FLOORY=0
+const CELLZ=6, CELLY=8                 /* ~2x finer than trench I (11x14)      */
+const NLEV=Math.ceil(WALLTOP/CELLY)
+const PERIOD=60                        /* pattern tiles every 60 cells ...     */
+const STEP=12                          /* ... 2 cells/frame, slower travel:    */
+                                       /* 30*12 = 60*6 → exact seamless loop.  */
+const FOCAL=250, HOR=H*0.46
+const NEARZ=14, FARZ=400, CAMY=70
+const LOD=210                          /* compound detail only within this dz  */
+const LEFT=-1, RIGHT=1
+const LIT_SIDE=RIGHT                   /* sun on the upper-right wall          */
+function vlight(wy){const t=wy/WALLTOP;return 0.20+1.10*Math.max(0,Math.min(1,(t-0.20)/0.80))}
+function hsh(tag,a,b){let s=(tag*73856093^a*19349663^b*83492791)>>>0;s=((s^(s>>>13))*1274126177)>>>0;return(s^(s>>>16))>>>0}
+const STARS=[];for(let i=0;i<70;i++)STARS.push([(i*97)%W,(i*53)%((~~HOR)+18),i%4])
+
+function render(frame){
+  frame=((frame%FRAME_COUNT)+FRAME_COUNT)%FRAME_COUNT
+  cx.setTransform(VW/W,0,0,VH/H,0,0)
+  const th=frame/FRAME_COUNT*Math.PI*2
+  const camZ=frame*STEP
+  /* Gentler hand-held bob (reduced ~30% — less nausea, physics kept). */
+  const camX=Math.sin(th)*3.0
+  const camY=CAMY+Math.sin(th*2)*1.7
+  const lookX=Math.sin(th+0.6)*6.5
+  const vpx=W/2+lookX
+  const px=(wx,dz)=>vpx+(wx-camX)*FOCAL/dz
+  const py=(wy,dz)=>HOR+(camY-wy)*FOCAL/dz
+
+  /* one extruded box on a wall: inner face + sunlit top ledge + shadow underside */
+  function wcube(side,xWall,za,zb,ya,yb,rel,baseV,fog,lit){
+    const xF=xWall-side*rel, ym=(ya+yb)/2
+    let iv=lit?baseV*fog*vlight(ym):baseV*fog
+    if(rel<0)iv*=0.5
+    q([[px(xF,za),py(ya,za)],[px(xF,za),py(yb,za)],[px(xF,zb),py(yb,zb)],[px(xF,zb),py(ya,zb)]],ng(iv))
+    if(rel>0){
+      q([[px(xWall,za),py(yb,za)],[px(xF,za),py(yb,za)],[px(xF,zb),py(yb,zb)],[px(xWall,zb),py(yb,zb)]],
+        ng(lit?cl(baseV*fog*vlight(yb)*1.5):baseV*fog*0.85))                 /* top ledge */
+      q([[px(xWall,za),py(ya,za)],[px(xF,za),py(ya,za)],[px(xF,zb),py(ya,zb)],[px(xWall,zb),py(ya,zb)]],
+        ng(baseV*fog*0.10))                                                  /* underside */
+      fill(px(xWall,za),py(ya,za),Math.max(1,px(xF,za)-px(xWall,za)),
+           Math.max(1,py(ya-2.4,za)-py(ya,za)),ng(baseV*fog*0.08))           /* drop shadow */
+    }
+  }
+
+  /* ── Sky + parallax stars ── */
+  fill(0,0,W,H,P.sky)
+  for(const[sx,sy,m]of STARS){const x=((sx-camX*0.6-lookX*1.2)%W+W)%W
+    cx.fillStyle=m===0?P.star1:P.star2;cx.fillRect(x,sy,m===0?2:1,m===0?2:1)}
+
+  const kFar=~~((camZ+FARZ)/CELLZ), kNear=Math.ceil((camZ+NEARZ)/CELLZ)
+
+  /* ── Floor — grey of the shadow side, fine pads + occasional cube clusters ── */
+  for(let k=kFar;k>=kNear;k--){
+    const dzN=k*CELLZ-camZ, dzF=(k+1)*CELLZ-camZ; if(dzN<NEARZ)continue
+    const fog=0.45+0.55*(1-Math.min(1,(dzN-NEARZ)/(FARZ-NEARZ)))
+    const kw=((k%PERIOD)+PERIOD)%PERIOD
+    for(let ix=-5;ix<5;ix++){
+      const x0=ix*16,x1=x0+16,hv=hsh(7,kw,ix+8)
+      q([[px(x0,dzN),py(0,dzN)],[px(x1,dzN),py(0,dzN)],[px(x1,dzF),py(0,dzF)],[px(x0,dzF),py(0,dzF)]],
+        ng((38+((hv>>8)&15))*fog))
+      if((hv&3)===0 && dzN<LOD){                       /* 2x2 cube cluster pad */
+        for(let a=0;a<2;a++)for(let b=0;b<2;b++){
+          const sx0=x0+a*8,sx1=sx0+7,sz0=k*CELLZ+b*(CELLZ/2)-camZ,sz1=sz0+CELLZ/2-1
+          const h=2+((hsh(13,kw*4+a,ix*4+b)>>3)&3)
+          q([[px(sx0,sz0),py(h,sz0)],[px(sx1,sz0),py(h,sz0)],[px(sx1,sz1),py(h,sz1)],[px(sx0,sz1),py(h,sz1)]],ng((52+((hv>>4)&15))*fog))
+          q([[px(sx0,sz0),py(0,sz0)],[px(sx1,sz0),py(0,sz0)],[px(sx1,sz0),py(h,sz0)],[px(sx0,sz0),py(h,sz0)]],ng(20*fog))
+        }
+      }
+    }
+  }
+  cx.strokeStyle=ng(32);cx.lineWidth=1
+  cx.beginPath();cx.moveTo(px(0,NEARZ),py(0,NEARZ));cx.lineTo(px(0,FARZ),py(0,FARZ));cx.stroke()
+
+  /* ── Walls — painter's far→near; right (far) before left ── */
+  for(let k=kFar;k>=kNear;k--){
+    const dzN=k*CELLZ-camZ, dzF=(k+1)*CELLZ-camZ; if(dzN<NEARZ)continue
+    const fog=0.45+0.55*(1-Math.min(1,(dzN-NEARZ)/(FARZ-NEARZ)))
+    const kw=((k%PERIOD)+PERIOD)%PERIOD
+    const z0=k*CELLZ-camZ, z1=(k+1)*CELLZ-camZ
+    for(const side of [RIGHT,LEFT]){
+      const xWall=side*HW, lit=(side===LIT_SIDE), baseV=lit?130:58
+      q([[px(xWall,dzN),py(0,dzN)],[px(xWall,dzN),py(WALLTOP,dzN)],
+         [px(xWall,dzF),py(WALLTOP,dzF)],[px(xWall,dzF),py(0,dzF)]],
+         lit?ng(70*fog*0.6):ng(40*fog))                       /* recess plane */
+      for(let iy=0;iy<NLEV;iy++){
+        const y0=iy*CELLY,y1=Math.min(WALLTOP,y0+CELLY)
+        const hv=hsh(side===LEFT?11:29,kw,iy),ty=hv&7
+        const vv=baseV+(((hv>>10)&15)-7)*4
+        if(ty<2){                                             /* flush face   */
+          wcube(side,xWall,z0,z1,y0,y1,0,vv,fog,lit)
+        }else if(ty===4){                                     /* recessed well */
+          wcube(side,xWall,z0,z1,y0,y1,-(4+((hv>>3)&3)*2),vv,fog,lit)
+        }else if(ty===5){                                     /* thin rib      */
+          const p=CELLZ*0.3;wcube(side,xWall,z0+p,z1-p,y0,y1,2+((hv>>3)&3),vv,fog,lit)
+        }else if((ty===6||ty===7)&&dzN<LOD){                  /* cube of cubes */
+          for(let a=0;a<2;a++)for(let b=0;b<2;b++){
+            const zz0=z0+a*(CELLZ/2),zz1=zz0+CELLZ/2,yy0=y0+b*(CELLY/2),yy1=yy0+CELLY/2
+            const r=3+((hsh(41,kw*4+a,iy*4+b)>>3)&7)*1.3
+            wcube(side,xWall,zz0,zz1,yy0,yy1,r,vv,fog,lit)
+          }
+        }else{                                                /* single block  */
+          wcube(side,xWall,z0,z1,y0,y1,3+((hv>>3)&7)*1.4,vv,fog,lit)
+        }
+        /* tiny blue ports — small and plentiful */
+        if((hv%9)<2 && ty!==5){
+          const s=Math.max(1.2,(py(y0,z0)-py(y1,z0))*0.20)
+          const on=(hv>>4&3)!==0,cxp=px(xWall-side*2,(z0+z1)/2),cyp=py((y0+y1)/2,(z0+z1)/2)
+          fill(cxp-s/2,cyp-s/2,s,s,on?((hv&7)===0?P.portHot:P.port):P.portOff)
+        }
+      }
+    }
+  }
+
+  /* ── Cinematic letterbox + edge vignette ── */
+  fill(0,0,W,24,P.bar);fill(0,H-24,W,24,P.bar)
+  cx.globalAlpha=0.18;cx.fillStyle=P.bar
+  cx.fillRect(0,24,16,H-48);cx.fillRect(W-16,24,16,H-48);cx.globalAlpha=1
+  dither()
+}
+
+const vf=new URLSearchParams(location.search).get('vow_frame')
+if(vf!==null){render(parseInt(vf,10)||0)}
+else{let pf=0;render(pf);setInterval(()=>{pf=(pf+1)%FRAME_COUNT;render(pf)},140)}
+</script></body></html>

@@ -2,8 +2,23 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 #include "esp_partition.h"
+#include "esp_lcd_panel_io.h"
+
+#ifndef _ILI9486_LCD
+/**
+ * @brief on_color_trans_done callback — releases one ping-pong strip buffer.
+ *
+ * Registered on the panel IO in lcd_init().  Runs in ISR context: a strip's
+ * RAMWR completion gives the buffer-free semaphore so the renderer may reuse
+ * that buffer.  Not used on the ILI9486 raw-SPI (synchronous) path.
+ */
+bool lcd_strip_trans_done(esp_lcd_panel_io_handle_t panel_io,
+                          esp_lcd_panel_io_event_data_t *edata,
+                          void *user_ctx);
+#endif
 
 /**
  * @brief Sends a fully decoded BGR565 frame from PSRAM to the LCD strip-by-strip.

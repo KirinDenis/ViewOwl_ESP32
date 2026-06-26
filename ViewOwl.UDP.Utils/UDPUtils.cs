@@ -394,15 +394,19 @@ namespace ViewOwl.UDP.Utils
     /// <summary>
     /// Payload carried in a BATCH_START packet.
     /// Binary-identical to <c>batch_start_payload_t</c> in <c>packet.h</c>.
-    /// Total size: 4 + MaxFrames * 4 = 68 bytes.
+    /// Total size: 4 + MaxFrames * 4 = 132 bytes.
     /// </summary>
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct BatchStartPayload
     {
         /// <summary>
         /// Maximum frames per batch.  Must match BATCH_MAX_FRAMES in packet.h.
+        /// Raised 16→32 to allow longer Class-C loops (e.g. the 30-frame trench).
+        /// Wire-compatible with ≤16-frame batches on older firmware (which reads
+        /// only the first 68 bytes); >16-frame batches require firmware ≥ the
+        /// matching BATCH_MAX_FRAMES=32 build.
         /// </summary>
-        public const int MaxFrames = 16;
+        public const int MaxFrames = 32;
 
         /// <summary>Number of frames to transfer (1..MaxFrames).</summary>
         public byte FrameCount;

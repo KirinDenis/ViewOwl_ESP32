@@ -33,5 +33,14 @@ namespace ViewOwl.Config
         /// Returned by <c>GET /api/version</c> so clients can check compatibility.
         /// </summary>
         public string RecommendedFirmware { get; set; } = "1.2.41";
+
+        /// <summary>
+        /// When <c>true</c>, creating a device auto-generates a per-device
+        /// "STATUS — {name}" template, assigns it, and grabs it.
+        /// Disabled by default: these auto-templates leaked into the public gallery
+        /// and some crashed the headless grabber browser. Re-enable once the
+        /// device-status template is hardened and kept out of the gallery.
+        /// </summary>
+        public bool AutoCreateDeviceStatusTemplate { get; set; }
     }
 }

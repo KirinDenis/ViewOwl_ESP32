@@ -10,7 +10,7 @@
  * @property {string} name        - data-vow-name
  * @property {string} category    - data-vow-category (default 'other')
  * @property {string} description - data-vow-description
- * @property {number} frameCount  - data-vow-frames   (1-16, default 1)
+ * @property {number} frameCount  - data-vow-frames   (1-32, default 1)
  * @property {number} fps         - data-vow-fps      (1-30, default 10)
  * @property {number} refresh     - data-vow-refresh  minutes (default 5)
  */
@@ -33,7 +33,7 @@ export function parseVowMeta(html) {
     name:        attrs['name']        ?? '',
     category:    (attrs['category']   ?? 'other').toLowerCase(),
     description: attrs['description'] ?? '',
-    frameCount:  clamp(parseInt(attrs['frames']  ?? '1',  10), 1, 16),
+    frameCount:  clamp(parseInt(attrs['frames']  ?? '1',  10), 1, 32),
     fps:         clamp(parseInt(attrs['fps']     ?? '10', 10), 1, 30),
     refresh:     Math.max(0, parseInt(attrs['refresh'] ?? '5', 10)),
   }

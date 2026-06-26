@@ -43,6 +43,15 @@ const DISPLAY_TYPES = [
     height:   240,
     manifest: '/firmware/v1/manifest-gc9a01-240x240.json',
   },
+  {
+    id:       'epd',
+    label:    '400 × 300 e-paper',
+    driver:   'SSD1683',
+    board:    '4.2" e-paper (ESP32-S3)',
+    width:    400,
+    height:   300,
+    manifest: '/firmware/v1/manifest-epd-400x300.json',
+  },
 ]
 
 // ── Pin profiles per display type ──────────────────────────────────────────
@@ -96,6 +105,16 @@ const PIN_PROFILES = {
       id:   'crowpanel-c3',
       name: 'CrowPanel C3 1.28" (fixed)',
       pins: { sclk: 6, mosi: 7, miso: -1, dc: 2, rst: -1, cs: 10, bl: -1 },
+    },
+  ],
+  // 4.2" e-paper (SSD1683) on ESP32-S3 is a fixed-pin board: the bit-bang SPI +
+  // power pins are hardwired in firmware, so any pin config sent over serial is
+  // ignored. One fixed profile, no custom option (like the CrowPanel C3).
+  epd: [
+    {
+      id:   'epd-s3',
+      name: '4.2" e-paper (fixed)',
+      pins: { sclk: 12, mosi: 11, miso: -1, dc: 46, rst: 47, cs: 45, bl: -1 },
     },
   ],
 }

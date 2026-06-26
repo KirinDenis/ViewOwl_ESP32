@@ -84,6 +84,19 @@ namespace ViewOwl.Grabber.Engine.Compression
 
         // ── Private helpers ────────────────────────────────────────────────────
 
+        /// <summary>
+        /// Wraps a buffer with the 0x00 "raw" flag, skipping palette/LZ4 compression.
+        /// Used for non-BGR565 e-paper formats (mono 1-bit / 4-gray) that the BGR565
+        /// palette compressor would mis-encode; the firmware reads these as flag + raw.
+        /// </summary>
+        /// <param name="raw">The raw frame bytes.</param>
+        /// <returns>A 0x00 flag byte followed by the raw bytes.</returns>
+        public static byte[] Raw(byte[] raw)
+        {
+            ArgumentNullException.ThrowIfNull(raw);
+            return BuildRaw(raw);
+        }
+
         private static byte[] BuildRaw(byte[] raw)
         {
             // 1 flag byte + original pixels

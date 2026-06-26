@@ -241,7 +241,7 @@ Carried in `PACKET_BATCH_START`. Tells the device how many animation frames will
 Two binaries are built by CI on every push to `dev`:
 
 ```yaml
-# CI workflow (simplified)
+# CI firmware build pipeline (simplified)
 - name: Build 320×240
   run: idf.py build
 

@@ -14,6 +14,22 @@ namespace ViewOwl.Grabber.Engine
         Task<bool> InitAsync();
 
         /// <summary>
+        /// UTC timestamp of the most recent successful screenshot (or browser (re)launch).
+        /// Read by the grabber watchdog to detect a wedged browser that has stopped
+        /// producing frames even though it still reports as connected.
+        /// </summary>
+        DateTime LastSuccessfulGrabUtc { get; }
+
+        /// <summary>
+        /// Forcibly recycles the headless browser regardless of its reported connection
+        /// state. Kills the process first so a hung <c>Dispose</c> cannot block the recycle,
+        /// then relaunches via <see cref="InitAsync"/>. Used by the watchdog to recover a
+        /// browser that is "connected" but no longer responding to navigation.
+        /// </summary>
+        /// <param name="ct">Cancellation token.</param>
+        Task ForceReinitAsync(CancellationToken ct = default);
+
+        /// <summary>
         /// Opens a new browser tab for <paramref name="url"/> and returns metadata
         /// including the final tab URL used as the capture key.
         /// </summary>
@@ -43,6 +59,10 @@ namespace ViewOwl.Grabber.Engine
         /// Base file path (no extension). Output files are
         /// <c>{outputBasePath}_batch_0.bin</c> through <c>{outputBasePath}_batch_{N-1}.bin</c>.
         /// </param>
+        /// <param name="converterId">
+        /// Pixel-format converter to apply, matching an <c>IImageConverter.FormatId</c>
+        /// (e.g. "bgr565" for LCDs, "mono1bit" for e-paper). Defaults to "bgr565".
+        /// </param>
         /// <param name="ct">Cancellation token.</param>
         /// <returns>Array of absolute paths to the written frame files, in frame order.</returns>
         Task<string[]> TakeMultiframeScreenshotAsync(
@@ -51,6 +71,7 @@ namespace ViewOwl.Grabber.Engine
             int width,
             int height,
             string outputBasePath,
+            string converterId = "bgr565",
             CancellationToken ct = default);
     }
 }

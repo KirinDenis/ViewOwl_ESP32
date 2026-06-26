@@ -1492,6 +1492,9 @@ ViewOwl.Grabber.WebAPI/wwwroot/dashboard/
 /ViewOwl.Grabber.WebAPI/security.db-shm
 /ViewOwl.Grabber.WebAPI/security.db-wal
 /ViewOwl.ESP32.Client/.vscode/settings.json
+/ViewOwl.ESP32_C3.Client/.vscode/settings.json
+/ViewOwl.ESP32_EPD.Client/.vscode/settings.json
+/ViewOwl.ESP32_EPD.Client/diagnostics/.vscode/settings.json
 
 # Claude Code — keep memory in repo, ignore local-only files
 .claude/settings.local.json

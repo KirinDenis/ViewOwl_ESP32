@@ -139,6 +139,7 @@ static void player_task_fn(void *arg)
 
         while (!s_player_stop_requested) {
             size_t    frame_len = 0;
+            int64_t   t_frame0  = esp_timer_get_time();
             esp_err_t err = flash_frames_read(idx, frame_buf, player_buf_cap, &frame_len);
 
             if (err != ESP_OK) {
@@ -174,8 +175,29 @@ static void player_task_fn(void *arg)
                          frame_buf[0], idx, (unsigned)frame_len);
             }
 
+#if PLAYER_FREE_RUN
+            /* Free-run: play as fast as the decode + SPI path allows.  One-tick
+             * yield keeps the idle task / Wi-Fi stack serviced (task WDT). */
+            (void)t_frame0;
             idx = (uint8_t)((idx + 1u) % count);
-            vTaskDelay(pdMS_TO_TICKS(delay_ms));
+            vTaskDelay(1);
+#else
+            /* Paced playback: honour the template's encoded fps, but subtract
+             * this frame's actual work (read + render) from the target interval
+             * so the displayed rate tracks the encoded fps instead of
+             * (work + delay).  When the hardware cannot keep up (work >= the
+             * target interval) the sleep floors at one tick, so the device
+             * free-runs at its render-bound maximum.  The 1-tick floor also
+             * guarantees the idle task / Wi-Fi stack are serviced (task WDT). */
+            uint32_t work_ms = (uint32_t)((esp_timer_get_time() - t_frame0) / 1000);
+            TickType_t sleep_ticks =
+                (delay_ms > work_ms) ? pdMS_TO_TICKS(delay_ms - work_ms) : 0;
+            if (sleep_ticks == 0) {
+                sleep_ticks = 1;
+            }
+            idx = (uint8_t)((idx + 1u) % count);
+            vTaskDelay(sleep_ticks);
+#endif
         }
 
         ESP_LOGI(TAG, "player: stopped (new batch incoming)");

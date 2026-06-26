@@ -21,6 +21,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
         private readonly GrabChannel _grabChannel;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly SharedConfig _sharedConfig;
+        private readonly DisplayTypeCatalog _catalog;
         private readonly ILogger<GuestDeviceRefreshWorker> _logger;
 
         /// <summary>
@@ -31,6 +32,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             GrabChannel grabChannel,
             IServiceScopeFactory scopeFactory,
             IOptions<SharedConfig> sharedOptions,
+            DisplayTypeCatalog catalog,
             ILogger<GuestDeviceRefreshWorker> logger)
         {
             ArgumentNullException.ThrowIfNull(sharedOptions);
@@ -38,6 +40,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             _grabChannel  = grabChannel;
             _scopeFactory = scopeFactory;
             _sharedConfig = sharedOptions.Value;
+            _catalog      = catalog;
             _logger       = logger;
         }
 
@@ -159,15 +162,32 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
                 grabUrl = $"SitesTemplates/{device.TemplateName}";
             }
 
+            // Resolve the output frame format. Guest devices store only their resolution (no
+            // display-type name like Device.DisplayType), so the display type — and thus the
+            // default frame format (e.g. mono1bit for a 400x300 e-paper) — is looked up by
+            // resolution. A template may request an alternate format via data-vow-render
+            // (e.g. "mono-CGA" → mono4gray), honoured only when the resolved display type
+            // supports it. Mirrors DeviceTemplateRefreshWorker so guest e-paper devices get
+            // mono frames instead of the BGR565 default.
+            string? displayTypeName =
+                _catalog.GetProtocolNameByResolution(device.DisplayWidth, device.DisplayHeight);
+            string frameFormat = _catalog.GetFrameFormat(displayTypeName);
+
             // Class-C template: capture all animation frames and write a batch manifest.
             // GetFrame (InternalController) will serve the manifest path so the UDP server
             // uses the BATCH_START/BATCH_COMMIT protocol, enabling on-device animation.
             if (template is not null)
             {
                 TemplateVowMetadata meta = TemplateMetadataParser.Parse(template.HtmlContent);
+                if (meta.RenderFormat is not null
+                    && _catalog.IsFormatSupported(displayTypeName, meta.RenderFormat))
+                {
+                    frameFormat = meta.RenderFormat;
+                }
+
                 if (meta.VowClass == 'C')
                 {
-                    await GrabMultiframeForGuestAsync(device, meta, grabUrl, ct)
+                    await GrabMultiframeForGuestAsync(device, meta, grabUrl, frameFormat, ct)
                         .ConfigureAwait(false);
                     await MarkGrabbedAsync(device.Id, ct).ConfigureAwait(false);
                     return;
@@ -196,14 +216,17 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
                 Width                = device.DisplayWidth,
                 Height               = device.DisplayHeight,
                 CloseTabAfterCapture = true,
+                // Output format resolved from the device resolution (mono for e-paper, BGR565
+                // for LCDs) plus any supported template override; the DTO default is BGR565.
+                ConverterId          = frameFormat,
                 // GrabLogId, TemplateId, UserId left at defaults — guest grab has no DB template.
             };
 
             await _grabChannel.EnqueueAsync(param, ct).ConfigureAwait(false);
 
             _logger.LogInformation(
-                "[GuestDeviceRefreshWorker] Queued grab for guest device {Guid} → {Name} ({W}x{H})",
-                device.Guid, device.TemplateName, device.DisplayWidth, device.DisplayHeight);
+                "[GuestDeviceRefreshWorker] Queued grab for guest device {Guid} → {Name} ({W}x{H}, {Format})",
+                device.Guid, device.TemplateName, device.DisplayWidth, device.DisplayHeight, frameFormat);
 
             await MarkGrabbedAsync(device.Id, ct).ConfigureAwait(false);
         }
@@ -219,6 +242,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             GuestDevice device,
             TemplateVowMetadata meta,
             string templateUrl,
+            string frameFormat,
             CancellationToken ct)
         {
             // Base path: {ExchangeFolder}/{guid:N}
@@ -233,7 +257,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
                     .TakeMultiframeScreenshotAsync(
                         templateUrl, meta.FrameCount,
                         device.DisplayWidth, device.DisplayHeight,
-                        basePath, ct)
+                        basePath, frameFormat, ct)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -256,8 +280,8 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
 
             _logger.LogInformation(
                 "[GuestDeviceRefreshWorker] Class-C multiframe grab complete: guest device {Guid}, " +
-                "{FrameCount} frames at {W}x{H}",
-                device.Guid, framePaths.Length, device.DisplayWidth, device.DisplayHeight);
+                "{FrameCount} frames at {W}x{H} ({Format})",
+                device.Guid, framePaths.Length, device.DisplayWidth, device.DisplayHeight, frameFormat);
         }
 
         /// <summary>

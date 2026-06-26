@@ -1,12 +1,14 @@
 {
   "firmwareFamilies": {
-    "classic":  { "project": "ViewOwl.ESP32.Client",    "chip": "esp32",   "recommendedFirmware": "1.2.41", "minMajor": 1, "minMinor": 2 },
-    "c3-round": { "project": "ViewOwl.ESP32_C3.Client",  "chip": "esp32c3", "recommendedFirmware": "0.1.0",  "minMajor": 0, "minMinor": 1 }
+    "classic":  { "project": "ViewOwl.ESP32.Client",     "chip": "esp32",   "recommendedFirmware": "1.2.50", "minMajor": 1, "minMinor": 2 },
+    "c3-round": { "project": "ViewOwl.ESP32_C3.Client",   "chip": "esp32c3", "recommendedFirmware": "0.1.0",  "minMajor": 0, "minMinor": 1 },
+    "epd":      { "project": "ViewOwl.ESP32_EPD.Client",  "chip": "esp32s3", "recommendedFirmware": "0.1.0",  "minMajor": 0, "minMinor": 1 }
   },
   "displayTypes": [
-    { "id": 2, "key": "ili9341-320x240", "name": "ViewOwl 320x240 (ILI9341)",       "width": 320, "height": 240, "family": "classic",  "buildFlags": [],              "binary": "viewowl-320x240.bin" },
-    { "id": 3, "key": "st7796-480x320",  "name": "ViewOwl 480x320 (ST7796)",        "width": 480, "height": 320, "family": "classic",  "buildFlags": ["LCD_480x320"], "binary": "viewowl-480x320.bin" },
-    { "id": 4, "key": "ili9486-480x320", "name": "ViewOwl 480x320 (ILI9486)",       "width": 480, "height": 320, "family": "classic",  "buildFlags": ["LCD_ILI9486"], "binary": "viewowl-ili9486-480x320.bin" },
-    { "id": 5, "key": "gc9a01-240x240",  "name": "ViewOwl 240x240 Round (GC9A01)",  "width": 240, "height": 240, "family": "c3-round", "buildFlags": [],              "binary": "viewowl-gc9a01-240x240.bin" }
+    { "id": 2, "key": "ili9341-320x240", "name": "ViewOwl 320x240 (ILI9341)",            "protocolName": "ILI9341", "width": 320, "height": 240, "family": "classic",  "frameFormat": "bgr565",   "buildFlags": [],              "binary": "viewowl-320x240.bin" },
+    { "id": 3, "key": "st7796-480x320",  "name": "ViewOwl 480x320 (ST7796)",             "protocolName": "ST7796",  "width": 480, "height": 320, "family": "classic",  "frameFormat": "bgr565",   "buildFlags": ["LCD_480x320"], "binary": "viewowl-480x320.bin" },
+    { "id": 4, "key": "ili9486-480x320", "name": "ViewOwl 480x320 (ILI9486)",            "protocolName": "ILI9486", "width": 480, "height": 320, "family": "classic",  "frameFormat": "bgr565",   "buildFlags": ["LCD_ILI9486"], "binary": "viewowl-ili9486-480x320.bin" },
+    { "id": 5, "key": "gc9a01-240x240",  "name": "ViewOwl 240x240 Round (GC9A01)",       "protocolName": "GC9A01",  "width": 240, "height": 240, "family": "c3-round", "frameFormat": "bgr565",   "buildFlags": [],              "binary": "viewowl-gc9a01-240x240.bin" },
+    { "id": 6, "key": "epd-400x300",     "name": "ViewOwl 400x300 e-paper (SSD1683)",    "protocolName": "EPD",     "width": 400, "height": 300, "family": "epd",      "frameFormat": "mono1bit", "supportedFormats": ["mono1bit", "mono4gray"], "buildFlags": [],              "binary": "viewowl-epd-400x300.bin" }
   ]
 }

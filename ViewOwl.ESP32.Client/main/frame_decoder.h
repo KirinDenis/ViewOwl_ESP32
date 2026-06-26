@@ -78,6 +78,9 @@ typedef struct {
     uint8_t       *block_buf;     /**< Caller-supplied decompression scratch (LZ4_BLOCK_SIZE B). */
     int            block_buf_len; /**< Valid decompressed bytes in block_buf.              */
     int            block_buf_pos; /**< Read cursor within block_buf.                       */
+    uint16_t       pal16[256];    /**< Full 256-entry palette, each laid out as [hi,lo] bytes
+                                       so the hot loop does one 16-bit store per pixel and
+                                       needs no per-pixel range check.                     */
 } frame_lz4_stream_t;
 
 /**

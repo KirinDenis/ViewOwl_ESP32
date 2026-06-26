@@ -1409,6 +1409,10 @@
             <div class="fm-display-size">240 × 240</div>
             <div class="fm-display-model">GC9A01 · round</div>
           </div>
+          <div class="fm-display-card" data-size="epd" onclick="fmSelectDisplay('epd')">
+            <div class="fm-display-size">400 × 300</div>
+            <div class="fm-display-model">SSD1683 · e-paper</div>
+          </div>
         </div>
         <button id="fm-next-step1" class="fm-btn" disabled onclick="fmGoStep(2)">▸ Continue</button>
       </div>
@@ -2896,6 +2900,7 @@
         '320x240': '/firmware/v1/manifest-320x240.json',
         'ili9486': '/firmware/v1/manifest-ili9486-480x320.json',
         'gc9a01':  '/firmware/v1/manifest-gc9a01-240x240.json',
+        'epd':     '/firmware/v1/manifest-epd-400x300.json',
       };
 
       // Display physical size map: used to report correct dimensions to the server.
@@ -2904,6 +2909,7 @@
         '320x240': [320, 240],
         'ili9486': [480, 320],
         'gc9a01':  [240, 240],
+        'epd':     [400, 300],
       };
 
       // Pin profiles per display variant — same presets as the admin BurnModal.
@@ -2928,6 +2934,11 @@
         // PI4IOE5V6408 I2C expander), so the firmware ignores pin config. One profile.
         'gc9a01': [
           { id: 'crowpanel-c3', name: 'CrowPanel C3 1.28"', pins: { sclk:6,mosi:7,miso:-1,dc:2,rst:-1,cs:10,bl:-1 } },
+        ],
+        // 4.2" e-paper (SSD1683) on ESP32-S3 — fixed-pin board (bit-bang SPI + power
+        // pins hardwired in firmware), so pin config sent over serial is ignored. One profile.
+        'epd': [
+          { id: 'epd-s3', name: '4.2" e-paper (S3)', pins: { sclk:12,mosi:11,miso:-1,dc:46,rst:47,cs:45,bl:-1 } },
         ],
       };
       const PIN_KEYS   = ['sclk','mosi','miso','dc','rst','cs','bl'];
@@ -3082,12 +3093,33 @@
         }
 
         try {
-          const writer  = port.writable.getWriter();
           const enc     = new TextEncoder();
           const guidHex = uuidToGuidHex(_fmUUID);
 
-          // Brief pause — device is already booted and waiting for serial commands
-          await sleep(400);
+          // Wait for the device to ACTUALLY enter provisioning — it broadcasts
+          // VIEWOWL_READY every 3 s. A fixed pause is unreliable: the e-paper boot
+          // screen alone is a ~3 s full refresh, so credentials sent too early land
+          // during the boot and are lost (the "first attempt misses" bug). Block
+          // until READY (or ~15 s as a fallback).
+          statusEl.textContent = '◌ Waiting for device (VIEWOWL_READY)…';
+          {
+            const reader = port.readable.getReader();
+            const rdec   = new TextDecoder();
+            let acc = '', ready = false;
+            const deadline = Date.now() + 15000;
+            try {
+              while (Date.now() < deadline) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                if (value) acc += rdec.decode(value);
+                if (acc.includes('VIEWOWL_READY')) { ready = true; break; }
+              }
+            } catch (_) { /* ignore transient read errors */ }
+            reader.releaseLock();
+            if (!ready) statusEl.textContent = '◌ No READY seen — sending anyway…';
+          }
+
+          const writer  = port.writable.getWriter();
 
           // Send pin configuration first (best-effort: current firmware ignores unknown
           // commands gracefully and continues; Phase 2 firmware will act on these).

@@ -36,14 +36,14 @@ builder.Configuration
 
 builder.Services.Configure<GrabberConfig>(builder.Configuration.GetSection("Grabber"));
 builder.Services.Configure<SharedConfig>(builder.Configuration.GetSection("Shared"));
-
-// Display-type registry (display-types.json) — drives per-display-type firmware version checks.
-builder.Services.AddSingleton<DisplayTypeCatalog>();
-
 builder.Services.Configure<JwtConfig>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<AdminSeedConfig>(builder.Configuration.GetSection("AdminSeed"));
 builder.Services.Configure<DatabaseConfig>(builder.Configuration.GetSection("Database"));
 builder.Services.Configure<DeviceMonitorConfig>(builder.Configuration.GetSection("DeviceMonitor"));
+
+// Single source of truth for supported display types — loads display-types.json
+// (deployed next to the binary) and answers per-display-type firmware lookups.
+builder.Services.AddSingleton<DisplayTypeCatalog>();
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
 
@@ -216,6 +216,7 @@ builder.Services.AddSingleton<TabManager>();
 // IEnumerable<IImageConverter> and selects by ScreenShotParamDTO.ConverterId.
 builder.Services.AddSingleton<IImageConverter, BGR565Converter>();
 builder.Services.AddSingleton<IImageConverter, MonochromeConverter>();
+builder.Services.AddSingleton<IImageConverter, FourGrayConverter>();
 
 // ── Grab channel & workers ────────────────────────────────────────────────────
 
@@ -238,6 +239,10 @@ builder.Services.AddHostedService<DbCleanupWorker>();
 
 // GuestDeviceRefreshWorker: re-grabs templates for landing-page guest devices every 5 min.
 builder.Services.AddHostedService<GuestDeviceRefreshWorker>();
+
+// GrabberWatchdogService: force-recycles the headless browser if no grab has succeeded for
+// 10 min, so a wedged browser self-heals instead of freezing the pipeline until a manual restart.
+builder.Services.AddHostedService<GrabberWatchdogService>();
 
 // ── Build ─────────────────────────────────────────────────────────────────────
 

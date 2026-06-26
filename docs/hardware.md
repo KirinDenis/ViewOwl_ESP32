@@ -65,6 +65,22 @@ Tested module:
 
 ---
 
+## SoCs & USB flashing
+
+ViewOwl firmware runs on three Espressif SoCs — one per display family:
+
+| SoC | Core | Display family | Native USB |
+|---|---|---|---|
+| ESP32 (classic) | Xtensa, dual-core | rectangular ST7796 / ILI9341 / ILI9486 | no |
+| ESP32-C3 | RISC-V, single-core | round GC9A01 | yes — USB-Serial-JTAG |
+| ESP32-S3 | Xtensa, dual-core | 4.2" e-paper (SSD1683) | yes — USB-Serial-JTAG |
+
+**Browser flashing and Wi-Fi provisioning rely on native USB.** The C3 and S3 have a built-in USB-Serial-JTAG controller, so you flash the firmware *and* send the Wi-Fi credentials and device token straight from the browser over a single USB cable — no extra hardware. The classic ESP32 has **no native USB**: it needs an external USB-to-UART bridge (a CP2102 or CH340, already fitted on most dev kits) both to flash and to receive provisioning over serial. So provisioning runs natively on the C3 and S3, while a classic board depends on that bridge chip.
+
+> **PSRAM:** the ESP32-S3 and WROVER-class classic modules support external PSRAM — the natural place for large frame batches (e.g. a full Class-C animation that would otherwise be trimmed to fit internal RAM). Plain ESP32-WROOM and the C3 have no PSRAM.
+
+---
+
 ## Wiring
 
 The pins below are for the rectangular ESP32 panels. The round CrowPanel ships as an integrated ESP32-C3 + GC9A01 board with fixed internal wiring — nothing to wire by hand.

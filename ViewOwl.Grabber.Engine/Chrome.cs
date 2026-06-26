@@ -58,6 +58,12 @@ namespace ViewOwl.Grabber.Engine
 
         private readonly SemaphoreSlim _reinitLock = new(1, 1);
 
+        // UTC ticks of the last successful screenshot or browser (re)launch. Updated on every
+        // successful grab and on every InitAsync so a freshly recycled browser starts with a
+        // fresh window. Read by the watchdog via LastSuccessfulGrabUtc. Accessed with
+        // Interlocked because the writer (capture thread) and reader (watchdog) run concurrently.
+        private long _lastSuccessfulGrabTicks = DateTime.UtcNow.Ticks;
+
         private readonly TabManager _tabManager;
         private readonly IEnumerable<IImageConverter> _converters;
         private readonly SharedConfig _sharedConfig;
@@ -138,7 +144,44 @@ namespace ViewOwl.Grabber.Engine
                 Console.WriteLine($"[Chrome] Warm-up failed: {ex.Message}");
             }
 
+            // A freshly launched browser is healthy — reset the watchdog clock so a recycle
+            // does not immediately re-trigger before the first grab cycle has had time to run.
+            Interlocked.Exchange(ref _lastSuccessfulGrabTicks, DateTime.UtcNow.Ticks);
+
             return true;
+        }
+
+        /// <inheritdoc/>
+        public DateTime LastSuccessfulGrabUtc =>
+            new(Interlocked.Read(ref _lastSuccessfulGrabTicks), DateTimeKind.Utc);
+
+        /// <inheritdoc/>
+        public async Task ForceReinitAsync(CancellationToken ct = default)
+        {
+            await _reinitLock.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                Console.WriteLine("[Chrome] Watchdog: force-recycling the browser...");
+
+                if (_browser is not null)
+                {
+                    // Kill the process first: a wedged browser can make Dispose() block
+                    // indefinitely, which would hang the watchdog itself.
+                    try { _browser.Process?.Kill(entireProcessTree: true); }
+                    catch { /* process already gone */ }
+                    try { _browser.Dispose(); }
+                    catch { /* process already gone */ }
+                    _browser = null;
+                }
+
+                _tabManager.Reset();
+                await InitAsync().ConfigureAwait(false);
+                Console.WriteLine("[Chrome] Watchdog: browser recycled.");
+            }
+            finally
+            {
+                _reinitLock.Release();
+            }
         }
 
         /// <summary>
@@ -345,6 +388,9 @@ namespace ViewOwl.Grabber.Engine
                 {
                     await ProcessTargetAsync(pngBytes, target, ct).ConfigureAwait(false);
                 }
+
+                // Mark the browser healthy for the watchdog: a screenshot completed end-to-end.
+                Interlocked.Exchange(ref _lastSuccessfulGrabTicks, DateTime.UtcNow.Ticks);
             }
             finally
             {
@@ -379,6 +425,7 @@ namespace ViewOwl.Grabber.Engine
             int width,
             int height,
             string outputBasePath,
+            string converterId = "bgr565",
             CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(templateUrl);
@@ -451,7 +498,10 @@ namespace ViewOwl.Grabber.Engine
                     using Image<Rgb24> image = Image.Load<Rgb24>(pngBytes);
                     image.Mutate(op => op.Resize(width, height));
 
-                    IImageConverter converter = FindConverter("bgr565")!;
+                    // Select the output format requested by the caller (e.g. "mono1bit" for
+                    // e-paper); fall back to BGR565 when the id is unknown.
+                    IImageConverter converter =
+                        FindConverter(converterId) ?? FindConverter("bgr565")!;
 
                     image.Mutate(op => op.Quantize(
                         new SixLabors.ImageSharp.Processing.Processors.Quantization.OctreeQuantizer(
@@ -461,7 +511,11 @@ namespace ViewOwl.Grabber.Engine
                             })));
 
                     byte[] rawBytes    = converter.Convert(image);
-                    byte[] outputBytes = FrameCompressor.Compress(rawBytes);
+                    // Mono (1-bit / 4-gray) is not BGR565 — ship it raw so the palette
+                    // compressor cannot mis-encode it; the firmware expects flag + raw.
+                    byte[] outputBytes = converterId is "mono1bit" or "mono4gray"
+                        ? FrameCompressor.Raw(rawBytes)
+                        : FrameCompressor.Compress(rawBytes);
 
                     string outPath = $"{outputBasePath}_batch_{frameIdx}.bin";
                     await File.WriteAllBytesAsync(outPath, outputBytes, ct).ConfigureAwait(false);
@@ -513,7 +567,11 @@ namespace ViewOwl.Grabber.Engine
                     })));
 
             byte[] rawBytes    = converter.Convert(image);
-            byte[] outputBytes = FrameCompressor.Compress(rawBytes);
+            // Mono (1-bit / 4-gray) is not BGR565 — ship it raw so the palette
+            // compressor cannot mis-encode it; the firmware expects flag + raw.
+            byte[] outputBytes = target.ConverterId is "mono1bit" or "mono4gray"
+                ? FrameCompressor.Raw(rawBytes)
+                : FrameCompressor.Compress(rawBytes);
 
             uint newCrc = ComputeCrc32(outputBytes);
             if (_frameCrcCache.TryGetValue(target.TokenGuid, out uint prevCrc) && prevCrc == newCrc)

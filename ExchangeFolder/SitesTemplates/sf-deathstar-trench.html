@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body"
+  data-vow-name="Death Trench Run"
+  data-vow-category="scifi"
+  data-vow-description="First-person flight down an open-top battle-station trench — solid greebled walls and floor with hidden-surface removal, raking sun grazing the upper-right wall while the left wall sits in grey shadow, long relief shadows, small blue ports, cinematic letterbox"
+  data-vow-class="C"
+  data-vow-frames="20"
+  data-vow-fps="12"
+  data-vow-refresh="0">
+<canvas id="screen"></canvas>
+<script>
+'use strict'
+/* Logical design space 480x320; canvas matches the viewport and is scaled, so a
+ * 320x240 backend grab renders natively. Frames are captured OFFLINE (headless
+ * Chrome) into BGR565, so detail is free — the device only replays. */
+const W=480,H=320
+const cv=document.getElementById('screen')
+const VW=window.innerWidth||W, VH=window.innerHeight||H
+cv.width=VW; cv.height=VH
+const cx=cv.getContext('2d')
+
+const FRAME_COUNT=20
+
+/* ── BGR565 snapping + Floyd-Steinberg dither ──────────────────────────── */
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+function dither(){
+  const id=cx.getImageData(0,0,VW,VH),d=id.data
+  for(let y=0;y<VH;y++)for(let x=0;x<VW;x++){
+    const i=(y*VW+x)*4
+    for(let c=0;c<3;c++){
+      const bits=c===1?6:5,max=(1<<bits)-1,old=d[i+c]
+      const nv=Math.round(old/255*max)/max*255,err=old-nv
+      d[i+c]=nv
+      if(x+1<VW)d[i+4+c]+=err*7/16
+      if(y+1<VH){if(x>0)d[i+(VW-1)*4+c]+=err*3/16;d[i+VW*4+c]+=err*5/16;if(x+1<VW)d[i+(VW+1)*4+c]+=err/16}
+    }
+  }
+  cx.putImageData(id,0,0)
+}
+
+const cl=(v)=>Math.max(0,Math.min(255,v))
+/* Battle-station grey — near-neutral, a hair warm so sunlit edges read as sun. */
+const ng=(v)=>css(cl(v),cl(v*0.985),cl(v*0.94))
+const P={
+  sky: css(2,3,9), star1: css(150,160,196), star2: css(70,78,104),
+  bar: css(0,0,0),
+  port: css(96,156,255), portHot: css(176,212,255), portOff: css(16,22,38),
+}
+function q(p,c){cx.beginPath();cx.moveTo(p[0][0],p[0][1]);for(let i=1;i<p.length;i++)cx.lineTo(p[i][0],p[i][1]);cx.closePath();cx.fillStyle=c;cx.fill()}
+function fill(x,y,w,h,c){cx.fillStyle=c;cx.fillRect(x,y,w,h)}
+
+/* ── World ─────────────────────────────────────────────────────────────── */
+const HW=80, WALLTOP=190, FLOORY=0
+const CELLZ=11, CELLY=14                 /* greebles ~2x finer than before    */
+const NLEV=Math.ceil(WALLTOP/CELLY)
+const PERIOD=40                          /* relief pattern tiles every 40 cells*/
+const STEP=22                            /* 2 cells/frame; 20*22 = 40*11 → loop*/
+const FOCAL=250, HOR=H*0.46
+const NEARZ=14, FARZ=560, CAMY=70
+const LEFT=-1, RIGHT=1
+/* Sun grazes from the upper RIGHT → the RIGHT wall's upper half is lit; the
+ * LEFT wall sits in flat grey shadow.  Flip LIT_SIDE to swap. */
+const LIT_SIDE=RIGHT
+
+/* Vertical light ramp on the lit wall: dark low, bright on the upper half. */
+function vlight(wy){const t=wy/WALLTOP;return 0.20+1.10*Math.max(0,Math.min(1,(t-0.20)/0.80))}
+
+function hsh(tag,a,b){
+  let s=(tag*73856093 ^ a*19349663 ^ b*83492791)>>>0
+  s=((s^(s>>>13))*1274126177)>>>0
+  return (s^(s>>>16))>>>0
+}
+
+const STARS=[];for(let i=0;i<70;i++)STARS.push([(i*97)%W,(i*53)%((~~HOR)+18),i%4])
+
+function render(frame){
+  frame=((frame%FRAME_COUNT)+FRAME_COUNT)%FRAME_COUNT
+  cx.setTransform(VW/W,0,0,VH/H,0,0)
+  const th=frame/FRAME_COUNT*Math.PI*2
+  const camZ=frame*STEP
+  const camX=Math.sin(th)*4.5
+  const camY=CAMY+Math.sin(th*2)*2.2
+  const lookX=Math.sin(th+0.6)*10
+  const vpx=W/2+lookX
+  const px=(wx,dz)=>vpx+(wx-camX)*FOCAL/dz
+  const py=(wy,dz)=>HOR+(camY-wy)*FOCAL/dz
+
+  /* ── Sky + parallax stars ── */
+  fill(0,0,W,H,P.sky)
+  for(const[sx,sy,m]of STARS){
+    const x=((sx-camX*0.6-lookX*1.2)%W+W)%W
+    cx.fillStyle=m===0?P.star1:P.star2
+    cx.fillRect(x,sy,m===0?2:1,m===0?2:1)
+  }
+
+  const kFar=~~((camZ+FARZ)/CELLZ), kNear=Math.ceil((camZ+NEARZ)/CELLZ)
+
+  /* ── Floor — greebled like the walls, grey of the shadowed side, mostly
+   *    dark (deep in the trench).  Drawn first, far→near; walls overlay it. */
+  for(let k=kFar;k>=kNear;k--){
+    const dzN=k*CELLZ-camZ, dzF=(k+1)*CELLZ-camZ
+    if(dzN<NEARZ)continue
+    const fog=0.45+0.55*(1-Math.min(1,(dzN-NEARZ)/(FARZ-NEARZ)))
+    const kw=((k%PERIOD)+PERIOD)%PERIOD
+    for(let ix=-4;ix<4;ix++){
+      const x0=ix*20, x1=x0+20
+      const hv=hsh(7,kw,ix+8)
+      const bump=(hv&3)===0?2+((hv>>4)&3):0     /* occasional raised pad      */
+      const base=ng((40+((hv>>8)&15))*fog)
+      q([[px(x0,dzN),py(FLOORY,dzN)],[px(x1,dzN),py(FLOORY,dzN)],
+         [px(x1,dzF),py(FLOORY,dzF)],[px(x0,dzF),py(FLOORY,dzF)]],base)
+      if(bump){ /* lit top + dark leading face of the pad */
+        q([[px(x0,dzN),py(bump,dzN)],[px(x1,dzN),py(bump,dzN)],
+           [px(x1,dzF),py(bump,dzF)],[px(x0,dzF),py(bump,dzF)]],ng((58+((hv>>8)&15))*fog))
+        q([[px(x0,dzN),py(FLOORY,dzN)],[px(x1,dzN),py(FLOORY,dzN)],
+           [px(x1,dzN),py(bump,dzN)],[px(x0,dzN),py(bump,dzN)]],ng(22*fog))
+      }
+    }
+  }
+  /* centre groove */
+  cx.strokeStyle=ng(34);cx.lineWidth=1
+  cx.beginPath();cx.moveTo(px(0,NEARZ),py(0,NEARZ));cx.lineTo(px(0,FARZ),py(0,FARZ));cx.stroke()
+
+  /* ── Walls — painter's far→near, both sides; right far drawn before left. ── */
+  for(let k=kFar;k>=kNear;k--){
+    const dzN=k*CELLZ-camZ, dzF=(k+1)*CELLZ-camZ
+    if(dzN<NEARZ)continue
+    const fog=0.45+0.55*(1-Math.min(1,(dzN-NEARZ)/(FARZ-NEARZ)))
+    const kw=((k%PERIOD)+PERIOD)%PERIOD
+    for(const side of [RIGHT,LEFT]){
+      const xWall=side*HW, lit=(side===LIT_SIDE)
+      /* recess base plane (deepest) for the whole column */
+      q([[px(xWall,dzN),py(0,dzN)],[px(xWall,dzN),py(WALLTOP,dzN)],
+         [px(xWall,dzF),py(WALLTOP,dzF)],[px(xWall,dzF),py(0,dzF)]],
+         lit?ng(70*fog*0.6):ng(40*fog))
+      for(let iy=0;iy<NLEV;iy++){
+        const y0=iy*CELLY, y1=Math.min(WALLTOP,y0+CELLY), ym=(y0+y1)/2
+        const hv=hsh(side===LEFT?11:29,kw,iy)
+        const ty=hv&7
+        /* archetype → signed relief + optional z-channel inset */
+        let rel=0, pad=0
+        if(ty<2) rel=0                              /* flush                  */
+        else if(ty<5) rel=3+((hv>>3)&7)*1.4         /* raised block (varied)  */
+        else if(ty===5) rel=-(4+((hv>>3)&3)*2)      /* recessed well          */
+        else if(ty===6){rel=2+((hv>>3)&3);pad=0.30} /* thin rib (channel)     */
+        else rel=7+((hv>>3)&7)*1.1                  /* big block              */
+        const xF=xWall-side*rel
+        const z0=k*CELLZ+pad*CELLZ-camZ, z1=(k+1)*CELLZ-pad*CELLZ-camZ
+        const var_=(((hv>>10)&15)-7)*4
+
+        if(lit){
+          /* RIGHT wall: vertical sun ramp; relief lit on TOP, shadow BELOW.  */
+          const baseV=130+var_
+          const innerC=ng(baseV*fog*vlight(ym))
+          q([[px(xF,z0),py(y0,z0)],[px(xF,z0),py(y1,z0)],
+             [px(xF,z1),py(y1,z1)],[px(xF,z1),py(y0,z1)]],
+             rel<0?ng(baseV*fog*vlight(ym)*0.45):innerC)
+          if(rel>0){
+            /* top ledge catches the grazing sun — bright sliver */
+            q([[px(xWall,z0),py(y1,z0)],[px(xF,z0),py(y1,z0)],
+               [px(xF,z1),py(y1,z1)],[px(xWall,z1),py(y1,z1)]],
+               ng(cl(baseV*fog*vlight(y1)*1.45)))
+            /* underside + cast shadow below the block */
+            q([[px(xWall,z0),py(y0,z0)],[px(xF,z0),py(y0,z0)],
+               [px(xF,z1),py(y0,z1)],[px(xWall,z1),py(y0,z1)]],ng(baseV*fog*0.12))
+            fill(px(xWall,z0),py(y0,z0),Math.max(1,px(xF,z0)-px(xWall,z0)),
+                 Math.max(1,(py(y0-3,z0)-py(y0,z0))),ng(baseV*fog*0.10))
+          }
+        }else{
+          /* LEFT wall: flat grey shadow, low contrast, faint bottom self-shade*/
+          const baseV=58+var_
+          q([[px(xF,z0),py(y0,z0)],[px(xF,z0),py(y1,z0)],
+             [px(xF,z1),py(y1,z1)],[px(xF,z1),py(y0,z1)]],
+             rel<0?ng(baseV*fog*0.6):ng(baseV*fog))
+          if(rel>0){
+            q([[px(xWall,z0),py(y0,z0)],[px(xF,z0),py(y0,z0)],
+               [px(xF,z1),py(y0,z1)],[px(xWall,z1),py(y0,z1)]],ng(baseV*fog*0.45))
+            q([[px(xWall,z0),py(y1,z0)],[px(xF,z0),py(y1,z0)],
+               [px(xF,z1),py(y1,z1)],[px(xWall,z1),py(y1,z1)]],ng(baseV*fog*0.78))
+          }
+        }
+
+        /* ── Blue ports — small (~1/3) and plentiful ── */
+        if((hv%11)<3 && ty!==6){
+          const pw=Math.max(1.4,(py(y0,z0)-py(y1,z0))*0.16)
+          const ph=Math.max(1.4,(py(y0,z0)-py(y1,z0))*0.16)
+          const on=(hv>>4&3)!==0
+          const cxp=px(xF,(z0+z1)/2), cyp=py(ym,(z0+z1)/2)
+          fill(cxp-pw/2,cyp-ph/2,pw,ph,on?((hv&7)===0?P.portHot:P.port):P.portOff)
+        }
+      }
+    }
+  }
+
+  /* ── Cinematic letterbox + edge vignette ── */
+  fill(0,0,W,24,P.bar);fill(0,H-24,W,24,P.bar)
+  cx.globalAlpha=0.18;cx.fillStyle=P.bar
+  cx.fillRect(0,24,16,H-48);cx.fillRect(W-16,24,16,H-48);cx.globalAlpha=1
+
+  dither()
+}
+
+const vf=new URLSearchParams(location.search).get('vow_frame')
+if(vf!==null){
+  render(parseInt(vf,10)||0)
+}else{
+  let pf=0
+  render(pf)
+  setInterval(()=>{pf=(pf+1)%FRAME_COUNT;render(pf)},120)
+}
+</script></body></html>

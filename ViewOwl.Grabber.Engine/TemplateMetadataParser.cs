@@ -24,7 +24,7 @@ namespace ViewOwl.Grabber.Engine
 
         /// <summary>
         /// Number of animation frames from <c>data-vow-frames</c>.
-        /// Clamped to [1, 16] on parse.
+        /// Clamped to [1, 32] on parse (must match BatchStartPayload.MaxFrames).
         /// </summary>
         public int FrameCount { get; init; } = 1;
 
@@ -39,6 +39,15 @@ namespace ViewOwl.Grabber.Engine
         /// 0 means "never re-grab automatically".
         /// </summary>
         public int RefreshMinutes { get; init; } = 5;
+
+        /// <summary>
+        /// Output frame format requested by the template via <c>data-vow-render</c>,
+        /// expressed as an <c>IImageConverter.FormatId</c>
+        /// ("mono1bit" for <c>mono</c>; "mono4gray" for <c>mono-CGA</c>/<c>4gray</c>).
+        /// <c>null</c> when the attribute is absent or its value is unrecognised, meaning
+        /// "no override" — the device's default display-type format is used.
+        /// </summary>
+        public string? RenderFormat { get; init; }
     }
 
     /// <summary>
@@ -81,7 +90,8 @@ namespace ViewOwl.Grabber.Engine
             if (attrs.TryGetValue("frames", out string? framesVal)
                 && int.TryParse(framesVal, out int fc))
             {
-                frameCount = Math.Clamp(fc, 1, 16);
+                // Upper bound must match BatchStartPayload.MaxFrames / BATCH_MAX_FRAMES (packet.h).
+                frameCount = Math.Clamp(fc, 1, 32);
             }
 
             int fps = 10;
@@ -98,6 +108,12 @@ namespace ViewOwl.Grabber.Engine
                 refreshMinutes = Math.Max(0, r);
             }
 
+            string? renderFormat = null;
+            if (attrs.TryGetValue("render", out string? renderVal))
+            {
+                renderFormat = MapRenderProfile(renderVal);
+            }
+
             return new TemplateVowMetadata
             {
                 VowClass       = vowClass,
@@ -107,7 +123,23 @@ namespace ViewOwl.Grabber.Engine
                 FrameCount     = frameCount,
                 Fps            = fps,
                 RefreshMinutes = refreshMinutes,
+                RenderFormat   = renderFormat,
             };
         }
+
+        /// <summary>
+        /// Maps a <c>data-vow-render</c> profile value to an <c>IImageConverter.FormatId</c>.
+        /// <c>mono</c> → "mono1bit"; <c>mono-CGA</c> or <c>4gray</c> → "mono4gray".
+        /// Returns <c>null</c> for absent or unrecognised values (no format override).
+        /// </summary>
+        /// <param name="value">Raw attribute value (case-insensitive).</param>
+        private static string? MapRenderProfile(string? value) =>
+            value?.Trim().ToUpperInvariant() switch
+            {
+                "MONO"     => "mono1bit",
+                "MONO-CGA" => "mono4gray",
+                "4GRAY"    => "mono4gray",
+                _          => null,
+            };
     }
 }

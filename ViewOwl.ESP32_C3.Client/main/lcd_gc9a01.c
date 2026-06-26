@@ -33,7 +33,11 @@ static const char *TAG = "lcd_gc9a01";
 #define I2C_SCL     5
 #define IOEX_ADDR   0x43          /* PI4IOE5V6408 I2C GPIO expander */
 
-#define SPI_CLOCK_HZ  (40 * 1000 * 1000)
+/* 80 MHz: C3 playback is SPI-bound (measured render ~34 ms = ~23 ms SPI + ~11 ms
+ * decode at 40 MHz).  Pins 6/7/2/10 are the C3 FSPI IOMUX pins, so the silicon
+ * supports 80 MHz — halves the transfer.  If the panel shows snow/corruption,
+ * drop back to 40/60 MHz. */
+#define SPI_CLOCK_HZ  (80 * 1000 * 1000)
 /* MV+MX+BGR. 0x28 (MV+BGR) rendered real content mirrored left-right (only visible
  * on asymmetric frames); adding MX (0x40) un-mirrors it. If it comes out vertically
  * flipped instead, use MY (0xA8); both axes = 0xE8. */

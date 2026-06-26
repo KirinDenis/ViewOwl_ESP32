@@ -1,5 +1,6 @@
 
 #include "config.h"
+#include "lcd_render.h"
 #include "esp_timer.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_vendor.h"
@@ -112,8 +113,11 @@ void lcd_init(void)
         .lcd_cmd_bits      = LCD_CMD_BITS,
         .lcd_param_bits    = LCD_PARAM_BITS,
         .spi_mode          = 0,
-        .trans_queue_depth = 1,
-        .on_color_trans_done = NULL,
+        /* Deep enough to hold a frame's in-flight strips (2 buffers × CASET +
+         * RASET + RAMWR ≈ 6 transactions) so the async colour writes pipeline. */
+        .trans_queue_depth = 7,
+        /* Releases a ping-pong strip buffer when its RAMWR transfer completes. */
+        .on_color_trans_done = lcd_strip_trans_done,
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST,
                                               &io_config, &io_handle));

@@ -6,6 +6,10 @@
 
 #include <string.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_rom_crc.h"
 #include "esp_partition.h"
@@ -22,17 +26,83 @@
 
 static const char *TAG = "lcd_render";
 
-/* SRAM line-strip DMA buffer — must not be in PSRAM (DMA cannot read SPIRAM).
- * Sized for one strip of LCD_H_LINES rows across the full display width. */
-static uint8_t s_linebuf[LCD_BUFFER_SIZE];
+/* Two SRAM strip DMA buffers for ping-pong rendering: the CPU decodes/copies
+ * the next strip into one buffer while DMA blits the previous strip from the
+ * other.  Declared as one contiguous [2][N] block — the same total size as the
+ * former single 80-line buffer (2 × LCD_BUFFER_SIZE) — so the delta path can
+ * still treat it as one region of sizeof(s_linebuf) bytes via (uint8_t *).
+ * Must stay in SRAM — DMA cannot read PSRAM. */
+static uint8_t s_linebuf[2][LCD_BUFFER_SIZE];
 
 /* Static scratch for per-block LZ4 decompression — avoids 4 KB on the task stack. */
 static uint8_t s_lz4_scratch[LZ4_BLOCK_SIZE];
+
+/* ── Ping-pong strip pipeline ─────────────────────────────────────────── */
+
+#ifndef _ILI9486_LCD
+/* Number of strip buffers currently free to (re)write.  A strip's RAMWR
+ * completion gives this semaphore (lcd_strip_trans_done); a render takes it
+ * before decoding into that buffer, so a buffer is never overwritten while its
+ * DMA transfer is still in flight. */
+static SemaphoreHandle_t s_strip_sem;
+
+bool IRAM_ATTR lcd_strip_trans_done(esp_lcd_panel_io_handle_t panel_io,
+                                    esp_lcd_panel_io_event_data_t *edata,
+                                    void *user_ctx)
+{
+    (void)panel_io;
+    (void)edata;
+    (void)user_ctx;
+    BaseType_t hp = pdFALSE;
+    if (s_strip_sem) {
+        xSemaphoreGiveFromISR(s_strip_sem, &hp);
+    }
+    return hp == pdTRUE;
+}
+
+/* Marks both strip buffers free at the start of a frame.  Draining first clears
+ * any stray completions left by the boot text or a delta write, which share the
+ * same on_color_trans_done callback. */
+static void strips_begin(void)
+{
+    if (!s_strip_sem) {
+        s_strip_sem = xSemaphoreCreateCounting(2, 2);
+    }
+    while (xSemaphoreTake(s_strip_sem, 0) == pdTRUE) { }
+    xSemaphoreGive(s_strip_sem);
+    xSemaphoreGive(s_strip_sem);
+}
+
+/* Blocks until strip buffer @p parity is free, then returns it. */
+static uint8_t *strip_acquire(int parity)
+{
+    xSemaphoreTake(s_strip_sem, portMAX_DELAY);
+    return s_linebuf[parity];
+}
+
+/* Waits for every queued strip transfer of the current frame to finish.  The
+ * synchronising NOP drains the SPI queue, so the buffers are safe to reuse and
+ * any mmap'd source may be released after this returns. */
+static void strips_end(void)
+{
+    esp_lcd_panel_io_tx_param(io_handle, 0x00, NULL, 0);
+}
+#else
+/* ILI9486 raw-SPI path is synchronous (ili9486_blit blocks): no ping-pong is
+ * possible, so the helpers degrade to plain single-strip behaviour. */
+static void strips_begin(void) { }
+static uint8_t *strip_acquire(int parity) { return s_linebuf[parity]; }
+static void strips_end(void) { }
+#endif
 
 /* ── Internal helpers ─────────────────────────────────────────────────── */
 
 /**
  * @brief Writes one horizontal strip to the LCD via CASET/RASET/RAMWR.
+ *
+ * On the esp_lcd path the colour write is asynchronous (queued); the queue is
+ * drained once per frame in strips_end(), not per strip, so DMA overlaps the
+ * next strip's decode.
  *
  * @param y      First row of the strip.
  * @param buf    Pointer to strip pixel data (LCD_BUFFER_SIZE bytes, SRAM).
@@ -60,10 +130,10 @@ static void send_strip(int y, const uint8_t *buf)
             (y + LCD_H_LINES - 1) & 0xFF,
         }, 4));
 
+    /* Asynchronous — returns once queued; buffer reuse is gated by the strip
+     * semaphore and the queue is drained once per frame in strips_end(). */
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_color(io_handle, LCD_CMD_RAMWR,
                                                buf, LCD_BUFFER_SIZE));
-    /* Synchronisation NOP — drains the SPI queue before the next command. */
-    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io_handle, 0x00, NULL, 0));
 #endif
 }
 
@@ -71,12 +141,18 @@ static void send_strip(int y, const uint8_t *buf)
 
 void lcd_render_full(const uint8_t *frame_buf)
 {
+    strips_begin();
+    int parity = 0;
     for (int y = 0; y < LCD_V_RES; y += LCD_H_LINES) {
-        /* Copy strip from PSRAM into SRAM before DMA hand-off. */
+        /* Copy strip into a free SRAM buffer before the DMA hand-off; the copy
+         * overlaps the previous strip's transfer. */
+        uint8_t *buf = strip_acquire(parity);
         uint32_t offset = (uint32_t)y * LCD_H_RES * sizeof(uint16_t);
-        memcpy(s_linebuf, frame_buf + offset, LCD_BUFFER_SIZE);
-        send_strip(y, s_linebuf);
+        memcpy(buf, frame_buf + offset, LCD_BUFFER_SIZE);
+        send_strip(y, buf);
+        parity ^= 1;
     }
+    strips_end();
 }
 
 int lcd_render_palette(const uint8_t *comp, size_t comp_len)
@@ -89,14 +165,20 @@ int lcd_render_palette(const uint8_t *comp, size_t comp_len)
 
     size_t pixels_per_strip = (size_t)LCD_H_RES * LCD_H_LINES;
 
+    strips_begin();
+    int parity = 0;
     for (int y = 0; y < LCD_V_RES; y += LCD_H_LINES) {
-        int got = frame_stream_read(&stream, s_linebuf, pixels_per_strip);
+        uint8_t *buf = strip_acquire(parity);
+        int got = frame_stream_read(&stream, buf, pixels_per_strip);
         if (got <= 0) {
             ESP_LOGE(TAG, "lcd_render_palette: stream ended early at y=%d", y);
+            strips_end();
             return -1;
         }
-        send_strip(y, s_linebuf);
+        send_strip(y, buf);
+        parity ^= 1;
     }
+    strips_end();
     return 0;
 }
 
@@ -112,14 +194,20 @@ int lcd_render_lz4(const uint8_t *comp, size_t comp_len)
 
     size_t pixels_per_strip = (size_t)LCD_H_RES * LCD_H_LINES;
 
+    strips_begin();
+    int parity = 0;
     for (int y = 0; y < LCD_V_RES; y += LCD_H_LINES) {
-        int got = frame_lz4_stream_read(&stream, s_linebuf, pixels_per_strip);
+        uint8_t *buf = strip_acquire(parity);
+        int got = frame_lz4_stream_read(&stream, buf, pixels_per_strip);
         if (got <= 0) {
             ESP_LOGE(TAG, "lcd_render_lz4: stream ended early at y=%d", y);
+            strips_end();
             return -1;
         }
-        send_strip(y, s_linebuf);
+        send_strip(y, buf);
+        parity ^= 1;
     }
+    strips_end();
     return 0;
 }
 
@@ -178,7 +266,7 @@ int lcd_render_delta(const uint8_t *data, size_t len, uint32_t *out_new_crc)
         }
 
         int dec = lz4_block_decompress(data + pos, (int)comp_size,
-                                        s_linebuf, (int)sizeof(s_linebuf));
+                                        (uint8_t *)s_linebuf, (int)sizeof(s_linebuf));
         pos += comp_size;
 
         if (dec != (int)pixel_bytes) {
@@ -192,7 +280,7 @@ int lcd_render_delta(const uint8_t *data, size_t len, uint32_t *out_new_crc)
         /* ILI9486: raw 16-bit SPI path */
         ili9486_blit((int)rx, (int)ry,
                      (int)(rx + rw), (int)(ry + rh),
-                     s_linebuf, (size_t)pixel_bytes);
+                     (const uint8_t *)s_linebuf, (size_t)pixel_bytes);
 #else
         ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io_handle, LCD_CMD_CASET,
             (uint8_t[]){
@@ -211,7 +299,7 @@ int lcd_render_delta(const uint8_t *data, size_t len, uint32_t *out_new_crc)
             }, 4));
 
         ESP_ERROR_CHECK(esp_lcd_panel_io_tx_color(io_handle, LCD_CMD_RAMWR,
-                                                   s_linebuf, (int)pixel_bytes));
+                                                   (uint8_t *)s_linebuf, (int)pixel_bytes));
         ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io_handle, 0x00, NULL, 0));
 #endif
     }
@@ -254,15 +342,22 @@ int lcd_render_from_flash(const esp_partition_t *partition,
     } else if (comp[0] == FRAME_FLAG_PALETTE) {
         rc = lcd_render_palette(comp, comp_size);
     } else if (comp[0] == FRAME_FLAG_RAW) {
-        /* Raw flash render: read sequentially from mmap'd pointer into s_linebuf. */
+        /* Raw flash render: copy strips from the mmap'd pointer into the
+         * ping-pong buffers.  strips_end() drains all transfers before the
+         * caller munmaps the source below. */
         const uint8_t *pixels = comp + 1; /* skip flag byte */
-        rc = 0;
-        for (int y = 0; y < LCD_V_RES && rc == 0; y += LCD_H_LINES) {
-            memcpy(s_linebuf,
+        strips_begin();
+        int parity = 0;
+        for (int y = 0; y < LCD_V_RES; y += LCD_H_LINES) {
+            uint8_t *buf = strip_acquire(parity);
+            memcpy(buf,
                    pixels + (uint32_t)y * LCD_H_RES * sizeof(uint16_t),
                    LCD_BUFFER_SIZE);
-            send_strip(y, s_linebuf);
+            send_strip(y, buf);
+            parity ^= 1;
         }
+        strips_end();
+        rc = 0;
     } else {
         ESP_LOGE(TAG, "lcd_render_from_flash: unsupported flag 0x%02X", comp[0]);
     }

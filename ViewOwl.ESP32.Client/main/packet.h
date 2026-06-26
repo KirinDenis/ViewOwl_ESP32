@@ -103,16 +103,20 @@ typedef struct {
  * stream into individual frames when writing to the flash partition.
  *
  * Must stay binary-identical to BatchStartPayload (ViewOwl.UDP.Utils, C#).
- * Total size: 4 + BATCH_MAX_FRAMES * 4 = 68 bytes.
+ * Total size: 4 + BATCH_MAX_FRAMES * 4 = 132 bytes.
+ *
+ * Raised 16→32 for longer Class-C loops (e.g. the 30-frame trench).  Devices use
+ * a "payload_length < sizeof" guard, so ≤16-frame batches stay wire-compatible
+ * with older (BATCH_MAX_FRAMES=16) firmware; >16-frame batches need this build.
  */
-#define BATCH_MAX_FRAMES 16
+#define BATCH_MAX_FRAMES 32
 
 typedef struct {
     uint8_t  frame_count;                   /* number of frames  (1..BATCH_MAX_FRAMES) */
     uint8_t  fps;                           /* playback frame-rate in frames/second     */
     uint16_t reserved;                      /* padding — must be zero                  */
     uint32_t frame_sizes[BATCH_MAX_FRAMES]; /* compressed byte length of each frame    */
-} batch_start_payload_t; /* 68 bytes */
+} batch_start_payload_t; /* 132 bytes */
 
 /* Error codes sent as a single byte in PACKET_ERROR payload.
  * Must stay in sync with ErrorCodes enum in ViewOwl.UDP.Utils (C#). */

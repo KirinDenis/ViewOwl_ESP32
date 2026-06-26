@@ -32,6 +32,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly SharedConfig _sharedConfig;
         private readonly IFrameRefreshQueue _refreshQueue;
+        private readonly DisplayTypeCatalog _catalog;
         private readonly ILogger<DeviceTemplateRefreshWorker> _logger;
 
         /// <summary>
@@ -47,6 +48,10 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
         /// grab so Class-C devices receive an early AUTH trigger rather than waiting up to
         /// 5 minutes for the idle timer to expire.
         /// </param>
+        /// <param name="catalog">
+        /// Display-type registry used to resolve the per-device output frame format
+        /// (BGR565 for LCDs, 1-bit monochrome for e-paper).
+        /// </param>
         /// <param name="logger">Logger.</param>
         public DeviceTemplateRefreshWorker(
             IGrabber grabber,
@@ -54,6 +59,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             IServiceScopeFactory scopeFactory,
             IOptions<SharedConfig> sharedOptions,
             IFrameRefreshQueue refreshQueue,
+            DisplayTypeCatalog catalog,
             ILogger<DeviceTemplateRefreshWorker> logger)
         {
             ArgumentNullException.ThrowIfNull(sharedOptions);
@@ -62,6 +68,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             _scopeFactory = scopeFactory;
             _sharedConfig = sharedOptions.Value;
             _refreshQueue = refreshQueue;
+            _catalog      = catalog;
             _logger       = logger;
         }
 
@@ -189,22 +196,36 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             IReadOnlyList<Device> assignedDevices =
                 await deviceRepo.GetByActiveTemplateIdAsync(template.Id, ct).ConfigureAwait(false);
 
+            // Group by (width, height, frameFormat) so an e-paper device (mono1bit) and an
+            // LCD device (bgr565) at the same resolution each get a frame in their own format.
+            // The format is template-aware: a template may request an alternate output format
+            // via data-vow-render (e.g. "mono-CGA" → mono4gray).  The request is honoured only
+            // when the device's display type supports it; otherwise the device falls back to its
+            // default display-type format from the registry.
+            string? requestedFormat = meta.RenderFormat;
             var resolutions = assignedDevices
                 .Where(d => d.DisplayWidth.HasValue && d.DisplayHeight.HasValue)
-                .Select(d => (W: d.DisplayWidth!.Value, H: d.DisplayHeight!.Value))
+                .Select(d => (
+                    W: d.DisplayWidth!.Value,
+                    H: d.DisplayHeight!.Value,
+                    Format: requestedFormat is not null
+                            && _catalog.IsFormatSupported(d.DisplayType, requestedFormat)
+                        ? requestedFormat
+                        : _catalog.GetFrameFormat(d.DisplayType)))
                 .Distinct()
                 .ToList();
 
             // If no device has reported dimensions yet, fall back to the last successful
             // grab dimensions so the template is still refreshed on every cycle.
+            // The fallback uses an empty format so ScreenShotParamDTO keeps its BGR565 default.
             if (resolutions.Count == 0)
             {
                 GrabLog? lastLog =
                     await grabLogRepo.GetLastSuccessfulAsync(template.Id, ct).ConfigureAwait(false);
-                resolutions.Add((W: lastLog?.Width ?? 480, H: lastLog?.Height ?? 320));
+                resolutions.Add((W: lastLog?.Width ?? 480, H: lastLog?.Height ?? 320, Format: string.Empty));
             }
 
-            foreach ((int width, int height) in resolutions)
+            foreach ((int width, int height, string format) in resolutions)
             {
                 if (ct.IsCancellationRequested)
                     break;
@@ -245,13 +266,13 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
                     }
 
                     await GrabMultiframeAtResolutionAsync(
-                        template, meta, grabLogRepo, width, height, ct, hashSidecarPath)
+                        template, meta, grabLogRepo, width, height, format, ct, hashSidecarPath)
                         .ConfigureAwait(false);
                 }
                 else
                 {
                     await GrabAtResolutionAsync(
-                        template, grabLogRepo, sitesFolder, htmlFileName, width, height, ct)
+                        template, grabLogRepo, sitesFolder, htmlFileName, width, height, format, ct)
                         .ConfigureAwait(false);
                 }
             }
@@ -367,9 +388,13 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             IGrabLogRepository grabLogRepo,
             int width,
             int height,
+            string frameFormat,
             CancellationToken ct,
             string? htmlHashSidecarPath = null)
         {
+            // Empty format (no-device fallback path) means "use the BGR565 default".
+            string converterId = string.IsNullOrEmpty(frameFormat) ? "bgr565" : frameFormat;
+
             Guid tokenGuid = Guid.NewGuid();
 
             // Base file path: {ExchangeFolder}/{guid}
@@ -385,7 +410,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             {
                 framePaths = await _grabber
                     .TakeMultiframeScreenshotAsync(
-                        templateUrl, meta.FrameCount, width, height, basePath, ct)
+                        templateUrl, meta.FrameCount, width, height, basePath, converterId, ct)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -425,8 +450,8 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
 
             _logger.LogInformation(
                 "[DeviceTemplateRefreshWorker] Class-C multiframe grab complete: template {TemplateId} ({Name}), " +
-                "{FrameCount} frames at {W}x{H}, token={TokenGuid}, batchCrc=0x{BatchCrc:X8}",
-                template.Id, template.Name, framePaths.Length, width, height, tokenGuid, batchCrc);
+                "{FrameCount} frames at {W}x{H} format={Format}, token={TokenGuid}, batchCrc=0x{BatchCrc:X8}",
+                template.Id, template.Name, framePaths.Length, width, height, converterId, tokenGuid, batchCrc);
 
             // Persist the HTML hash so subsequent 5-minute cycles can detect that the content
             // has not changed and skip the Chrome re-render.  Written after a successful grab
@@ -506,6 +531,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             string htmlFileName,
             int width,
             int height,
+            string frameFormat,
             CancellationToken ct)
         {
             _ = sitesFolder; // HTML already written by caller; parameter kept for logging clarity
@@ -542,12 +568,19 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
                 Monochrome           = template.Monochrome,
             };
 
+            // Select the output pixel format from the device's display type. When empty
+            // (no-device fallback path) keep the DTO's BGR565 default unchanged.
+            if (!string.IsNullOrEmpty(frameFormat))
+            {
+                param.ConverterId = frameFormat;
+            }
+
             await _grabChannel.EnqueueAsync(param, ct).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "[DeviceTemplateRefreshWorker] Queued refresh for template {TemplateId} ({Name}), " +
-                "token={TokenGuid} resolution={W}x{H}",
-                template.Id, template.Name, tokenGuid, width, height);
+                "token={TokenGuid} resolution={W}x{H} format={Format}",
+                template.Id, template.Name, tokenGuid, width, height, param.ConverterId);
         }
 
         /// <summary>

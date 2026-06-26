@@ -58,5 +58,8 @@ namespace ViewOwl.UDP.Utils
 
         /// <summary>Galaxycore GC9A01 (240x240 round, ESP32-C3 client).</summary>
         GC9A01 = 5,
+
+        /// <summary>Solomon Systech SSD1683 (400x300 4.2" e-paper, ESP32-S3 client).</summary>
+        EPD = 6,
     }
 }

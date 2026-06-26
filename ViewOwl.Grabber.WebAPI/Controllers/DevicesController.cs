@@ -123,31 +123,37 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
             var created = await _devices.CreateAsync(device, ct).ConfigureAwait(false);
 
             // Auto-create a device-status template and trigger an immediate grab.
+            // Disabled by default (Shared.AutoCreateDeviceStatusTemplate): these per-device
+            // templates leaked into the public gallery and some crashed the headless grabber
+            // browser. Gated behind config so the behaviour can be revived once hardened.
             // Runs in a new DI scope — the request scope (and its DbContext) will be
             // disposed before this task completes, so we must not reuse scoped services.
-            int capturedId       = created.Id;
-            string capturedToken = created.Token;
-            string capturedName  = created.Name;
-            int capturedW        = created.DisplayWidth  ?? 480;
-            int capturedH        = created.DisplayHeight ?? 320;
-            _ = Task.Run(async () =>
+            if (_sharedConfig.AutoCreateDeviceStatusTemplate)
             {
-                using IServiceScope scope = _scopeFactory.CreateScope();
-                try
+                int capturedId       = created.Id;
+                string capturedToken = created.Token;
+                string capturedName  = created.Name;
+                int capturedW        = created.DisplayWidth  ?? 480;
+                int capturedH        = created.DisplayHeight ?? 320;
+                _ = Task.Run(async () =>
                 {
-                    await CreateDeviceStatusTemplateAsync(
-                        scope.ServiceProvider, capturedId, capturedToken, capturedName, userId,
-                        capturedW, capturedH)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(
-                        ex,
-                        "Failed to create device-status template for device {DeviceId} ({Token})",
-                        capturedId, capturedToken);
-                }
-            });
+                    using IServiceScope scope = _scopeFactory.CreateScope();
+                    try
+                    {
+                        await CreateDeviceStatusTemplateAsync(
+                            scope.ServiceProvider, capturedId, capturedToken, capturedName, userId,
+                            capturedW, capturedH)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(
+                            ex,
+                            "Failed to create device-status template for device {DeviceId} ({Token})",
+                            capturedId, capturedToken);
+                    }
+                });
+            }
 
             return CreatedAtAction(nameof(GetAll), DeviceDto.From(created));
         }

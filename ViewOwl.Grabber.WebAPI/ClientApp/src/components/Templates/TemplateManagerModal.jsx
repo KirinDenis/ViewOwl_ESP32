@@ -909,7 +909,7 @@ function TemplateManagerModal({ onClose }) {
                         <div className="tmm-meta-group">
                           <span className="tmm-meta-key">FRAMES</span>
                           <input
-                            type="number" min="1" max="16"
+                            type="number" min="1" max="32"
                             className="tmm-meta-num"
                             value={meta.frameCount}
                             onChange={e => setMeta('frames', e.target.value)}

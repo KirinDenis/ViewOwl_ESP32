@@ -158,6 +158,6 @@ ViewOwl.Config
 
 ## Deployment
 
-Both server components publish as `linux-arm64` self-contained single-file binaries. CI builds them on push to `dev` and deploys to a Linux ARM64 server via SSH.
+Both server components publish as `linux-arm64` self-contained single-file binaries. A CI pipeline builds them and deploys to a Linux ARM64 server over SSH.
 
 See [Self-hosting](server/self-hosting.md) for manual deployment instructions.

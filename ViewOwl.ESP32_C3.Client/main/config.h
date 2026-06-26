@@ -18,7 +18,7 @@
 #define FIRMWARE_VERSION_MINOR 1
 #endif
 #ifndef FIRMWARE_VERSION_PATCH
-#define FIRMWARE_VERSION_PATCH 0
+#define FIRMWARE_VERSION_PATCH 3
 #endif
 #ifndef FIRMWARE_BUILD_NUMBER
 #define FIRMWARE_BUILD_NUMBER 0
@@ -29,6 +29,12 @@
     STRINGIFY(FIRMWARE_VERSION_MINOR) "." \
     STRINGIFY(FIRMWARE_VERSION_PATCH)
 #define FIRMWARE_VERSION "OWLVIEW-C3-" FIRMWARE_VERSION_NUMVER "-b" STRINGIFY(FIRMWARE_BUILD_NUMBER)
+
+/* Class-C playback pacing (mirrors the classic client):
+ *   1 = FREE-RUN — render as fast as the decode + SPI path allows.
+ *   0 = PACED — honour the template's encoded fps (render-time compensated).
+ * Default 1 for the measurement build so the device shows its real max speed. */
+#define PLAYER_FREE_RUN 1
 
 /* -- Protocol timing (mirror of the classic client - keep in sync) ----------- */
 #define PING_INTERVAL_S       30
