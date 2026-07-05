@@ -63,7 +63,8 @@ bool provision_wait(uint32_t timeout_ms)
     }
 
     /* Route stdin/stdout through the interrupt driver - without this the console
-     * read path returns nothing on IDF >= 5.1.2 (known regression). */
+     * read path returns nothing on IDF >= 5.1.2 (known regression). This is the
+     * same path the C3 client uses to provision successfully over USB-Serial-JTAG. */
     usb_serial_jtag_vfs_use_driver();
     int fl = fcntl(STDIN_FILENO, F_GETFL, 0);
     fcntl(STDIN_FILENO, F_SETFL, fl | O_NONBLOCK);   /* non-blocking poll reads */

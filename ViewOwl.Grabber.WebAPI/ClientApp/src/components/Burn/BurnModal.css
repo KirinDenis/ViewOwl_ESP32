@@ -1,3 +1,7 @@
+/* BURN wizard modal — styled from the shared ISA-101 design tokens
+   (src/styles/scifi-globals.css). Full ISA-101: cyan accent, NO ambient glow,
+   healthy = white, success = green, errors = red. Layout/sizing unchanged. */
+
 .burn-overlay {
   position: fixed;
   inset: 0;
@@ -11,9 +15,9 @@
 
 .burn-modal {
   width: min(560px, 94vw);
-  border: 2px solid rgba(255, 140, 0, 0.7);
-  box-shadow: 0 0 48px rgba(255, 140, 0, 0.2), 0 0 16px rgba(255, 140, 0, 0.1);
-  background: rgba(20, 12, 0, 0.99);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  background: var(--bg-panel);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -26,8 +30,8 @@
   justify-content: space-between;
   padding: 0 20px;
   height: 54px;
-  border-bottom: 1px solid rgba(255, 140, 0, 0.25);
-  background: rgba(40, 20, 0, 0.95);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-header);
   flex-shrink: 0;
 }
 
@@ -48,14 +52,13 @@
   font-weight: bold;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(255, 160, 0, 0.95);
-  text-shadow: 0 0 8px rgba(255, 140, 0, 0.5);
+  color: var(--primary);
 }
 
 .burn-close-btn {
-  background: rgba(180, 20, 20, 0.9);
-  border: 1px solid #ff3333;
-  color: #fff;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
   font-family: var(--font);
   font-size: 1rem;
   font-weight: bold;
@@ -66,12 +69,10 @@
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  box-shadow: 0 0 8px rgba(255, 51, 51, 0.35);
 }
 .burn-close-btn:hover {
-  background: #ff2222;
-  border-color: #ff5555;
-  box-shadow: 0 0 16px rgba(255, 51, 51, 0.65);
+  border-color: var(--status-error);
+  color: var(--status-error);
 }
 
 /* ── Body ────────────────────────────────────────────────────────────── */
@@ -89,8 +90,8 @@
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  background: rgba(255, 140, 0, 0.06);
-  border: 1px solid rgba(255, 140, 0, 0.2);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
   font-family: var(--font);
 }
 
@@ -98,7 +99,7 @@
 .burn-fw-res,
 .burn-fw-name {
   font-size: 0.7rem;
-  color: rgba(255, 200, 80, 0.9);
+  color: var(--text-dim);
   font-weight: bold;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -106,13 +107,13 @@
 
 .burn-fw-ver {
   font-size: 0.7rem;
-  color: rgba(255, 140, 0, 0.85);
+  color: var(--primary);
   font-weight: bold;
   letter-spacing: 0.1em;
 }
 
 .burn-fw-sep {
-  color: rgba(255, 140, 0, 0.3);
+  color: var(--neutral-line);
   font-size: 0.8rem;
 }
 
@@ -129,20 +130,20 @@
   font-weight: bold;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255, 160, 0, 0.85);
-  border-bottom: 1px solid rgba(255, 140, 0, 0.15);
+  color: var(--neutral-text);
+  border-bottom: 1px solid var(--border);
   padding-bottom: 5px;
 }
 
 .burn-section-hint {
   font-family: var(--font);
   font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-dim);
   line-height: 1.6;
   letter-spacing: 0.03em;
 }
 .burn-section-hint strong {
-  color: rgba(255, 200, 80, 0.95);
+  color: var(--text);
 }
 
 /* ── Unified field row (SSID / PASS / TOKEN) ───────────────────────────── */
@@ -160,20 +161,19 @@
   font-weight: bold;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(255, 160, 0, 0.7);
+  color: var(--text-dim);
   text-align: right;
 }
 
 .burn-field-input {
   flex: 1;
-  font-family: 'Courier New', Consolas, monospace;
+  font-family: var(--font);
   font-size: 0.78rem;
-  color: rgba(255, 200, 80, 0.95);
-  background: rgba(255, 140, 0, 0.07);
-  border: 1px solid rgba(255, 140, 0, 0.3);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
   padding: 7px 12px;
   letter-spacing: 0.04em;
-  text-shadow: 0 0 8px rgba(255, 140, 0, 0.3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -182,14 +182,12 @@
 }
 
 .burn-field-input::placeholder {
-  color: rgba(255, 160, 0, 0.3);
-  text-shadow: none;
+  color: var(--neutral-text);
 }
 
 .burn-field-input:focus {
-  border-color: rgba(255, 180, 0, 0.7);
-  background: rgba(255, 140, 0, 0.12);
-  box-shadow: 0 0 8px rgba(255, 140, 0, 0.2);
+  border-color: var(--primary);
+  background: var(--bg-hover);
 }
 
 .burn-field-input-ro {
@@ -199,9 +197,9 @@
 
 /* Icon action buttons (copy / regen) */
 .burn-icon-btn {
-  background: rgba(255, 140, 0, 0.15);
-  border: 1px solid rgba(255, 140, 0, 0.5);
-  color: rgba(255, 200, 80, 0.9);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
   font-size: 0.85rem;
   width: 34px;
   height: 34px;
@@ -213,17 +211,15 @@
   transition: all 0.2s;
 }
 .burn-icon-btn:hover {
-  background: rgba(255, 140, 0, 0.3);
-  border-color: rgba(255, 160, 0, 0.8);
-  box-shadow: 0 0 8px rgba(255, 140, 0, 0.35);
+  border-color: var(--primary);
+  color: var(--text);
 }
 .burn-icon-btn-ok {
-  background: rgba(0, 185, 85, 0.25);
-  border-color: rgba(0, 229, 100, 0.7);
-  color: #00e566;
+  border-color: var(--accent-success);
+  color: var(--accent-success);
 }
 .burn-icon-btn-warn {
-  color: rgba(255, 220, 80, 0.9);
+  color: var(--status-warn);
 }
 
 /* Requirements checklist */
@@ -239,8 +235,8 @@
   letter-spacing: 0.06em;
   padding: 4px 0;
 }
-.burn-req-ok  { color: rgba(0, 229, 100, 0.9); }
-.burn-req-err { color: #ff5555; font-weight: bold; }
+.burn-req-ok  { color: var(--accent-success); }
+.burn-req-err { color: var(--status-error); font-weight: bold; }
 
 /* Flash button section */
 .burn-flash-section {
@@ -259,9 +255,9 @@ esp-web-install-button {
 
 .burn-flash-btn {
   width: 100%;
-  background: rgba(200, 100, 0, 0.85);
-  border: 2px solid rgba(255, 160, 0, 0.9);
-  color: #fff;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  color: var(--bg);
   font-family: var(--font);
   font-size: 0.8rem;
   font-weight: bold;
@@ -269,37 +265,34 @@ esp-web-install-button {
   text-transform: uppercase;
   padding: 14px 32px;
   cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 0 12px rgba(255, 140, 0, 0.3);
+  transition: filter 0.2s;
 }
 .burn-flash-btn:hover {
-  background: rgba(255, 140, 0, 0.95);
-  border-color: #fff;
-  box-shadow: 0 0 24px rgba(255, 160, 0, 0.55);
+  filter: brightness(1.12);
 }
 
 .burn-no-serial {
   font-family: var(--font);
   font-size: 0.72rem;
-  color: var(--danger);
+  color: var(--status-error);
   text-align: center;
   padding: 16px;
-  border: 1px solid rgba(255, 51, 51, 0.3);
-  background: rgba(255, 51, 51, 0.05);
+  border: 1px solid var(--status-error);
+  background: rgba(204, 51, 51, 0.07);
   line-height: 1.7;
   letter-spacing: 0.04em;
 }
 .burn-no-serial strong {
-  color: rgba(255, 150, 150, 0.9);
+  color: var(--status-error);
 }
 
 .burn-reg-error {
   font-family: var(--font);
   font-size: 0.68rem;
-  color: var(--danger);
+  color: var(--status-error);
   padding: 10px 14px;
-  border: 1px solid rgba(255, 51, 51, 0.35);
-  background: rgba(255, 51, 51, 0.07);
+  border: 1px solid var(--status-error);
+  background: rgba(204, 51, 51, 0.07);
   letter-spacing: 0.04em;
   line-height: 1.6;
   margin-bottom: 8px;
@@ -319,10 +312,10 @@ esp-web-install-button {
   justify-content: center;
   gap: 2px;
   padding: 4px 8px;
-  border: 1px solid rgba(255, 140, 0, 0.35);
+  border: 1px solid var(--border);
   font-family: var(--font);
-  color: rgba(255, 140, 0, 0.6);
-  background: rgba(255, 140, 0, 0.04);
+  color: var(--text-dim);
+  background: var(--bg-hover);
 }
 
 .burn-step-num {
@@ -339,16 +332,15 @@ esp-web-install-button {
 }
 
 .burn-step-dot.active {
-  border-color: rgba(255, 160, 0, 0.9);
-  color: rgba(255, 200, 80, 1);
-  background: rgba(255, 140, 0, 0.15);
-  box-shadow: 0 0 8px rgba(255, 140, 0, 0.4);
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--bg-hover);
 }
 
 .burn-step-dot.done {
-  border-color: rgba(0, 200, 80, 0.7);
-  color: #00e566;
-  background: rgba(0, 185, 85, 0.1);
+  border-color: var(--accent-success);
+  color: var(--accent-success);
+  background: var(--bg-hover);
 }
 
 /* ── Display type selector ───────────────────────────────────────────────── */
@@ -365,28 +357,27 @@ esp-web-install-button {
   justify-content: center;
   gap: 4px;
   padding: 14px 10px;
-  background: rgba(255, 140, 0, 0.05);
-  border: 1px solid rgba(255, 140, 0, 0.25);
+  background: var(--bg);
+  border: 1px solid var(--border);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .burn-display-btn:hover {
-  background: rgba(255, 140, 0, 0.12);
-  border-color: rgba(255, 160, 0, 0.6);
+  background: var(--bg-hover);
+  border-color: var(--primary);
 }
 
 .burn-display-btn.selected {
-  background: rgba(255, 140, 0, 0.18);
-  border-color: rgba(255, 180, 0, 0.9);
-  box-shadow: 0 0 10px rgba(255, 140, 0, 0.3);
+  background: var(--bg-hover);
+  border-color: var(--primary);
 }
 
 .burn-display-res {
   font-family: var(--font);
   font-size: 0.82rem;
   font-weight: bold;
-  color: rgba(255, 200, 80, 0.95);
+  color: var(--text);
   letter-spacing: 0.08em;
 }
 
@@ -394,32 +385,29 @@ esp-web-install-button {
   font-family: var(--font);
   font-size: 0.6rem;
   letter-spacing: 0.12em;
-  color: rgba(255, 140, 0, 0.75);
+  color: var(--text-dim);
   text-transform: uppercase;
 }
 
-/* Alt flash button — same shape as primary, slightly dimmer */
+/* Alt flash button — ghost variant of the primary */
 .burn-flash-btn-alt {
-  background: rgba(160, 80, 0, 0.65);
-  border-color: rgba(255, 140, 0, 0.6);
-  box-shadow: 0 0 8px rgba(255, 140, 0, 0.15);
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text);
 }
 .burn-flash-btn-alt:hover {
-  background: rgba(200, 100, 0, 0.85);
-  border-color: rgba(255, 160, 0, 0.9);
-  box-shadow: 0 0 16px rgba(255, 140, 0, 0.4);
+  border-color: var(--primary);
+  filter: none;
 }
 
 /* ── Done / return button ────────────────────────────────────────────────── */
 .burn-done-btn {
-  background: rgba(0, 185, 85, 0.85) !important;
-  border-color: rgba(0, 229, 100, 0.9) !important;
-  box-shadow: 0 0 14px rgba(0, 200, 80, 0.35) !important;
+  background: var(--accent-success) !important;
+  border-color: var(--accent-success) !important;
+  color: var(--bg) !important;
 }
 .burn-done-btn:hover {
-  background: rgba(0, 220, 100, 0.95) !important;
-  border-color: #00e566 !important;
-  box-shadow: 0 0 24px rgba(0, 220, 100, 0.55) !important;
+  filter: brightness(1.12);
 }
 
 /* ── Provision status messages ───────────────────────────────────────────── */
@@ -434,43 +422,43 @@ esp-web-install-button {
 }
 
 .burn-prov-info {
-  color: rgba(255, 200, 80, 0.85);
-  border-color: rgba(255, 140, 0, 0.3);
-  background: rgba(255, 140, 0, 0.07);
+  color: var(--text-dim);
+  border-color: var(--border);
+  background: var(--bg-hover);
 }
 
 .burn-prov-ok {
-  color: rgba(0, 229, 100, 0.9);
-  border-color: rgba(0, 200, 80, 0.4);
-  background: rgba(0, 185, 85, 0.07);
+  color: var(--accent-success);
+  border-color: var(--accent-success);
+  background: rgba(0, 204, 102, 0.07);
 }
 
 .burn-prov-err {
-  color: var(--danger);
-  border-color: rgba(255, 51, 51, 0.35);
-  background: rgba(255, 51, 51, 0.05);
+  color: var(--status-error);
+  border-color: var(--status-error);
+  background: rgba(204, 51, 51, 0.07);
 }
 
 /* ── Reflash / Reburn mode ───────────────────────────────────────────── */
 .burn-field-locked {
   opacity: 0.55;
   cursor: default;
-  background: rgba(255, 140, 0, 0.04) !important;
+  background: var(--bg) !important;
 }
 
 .burn-locked-badge {
   font-family: var(--font);
   font-size: 0.6rem;
   letter-spacing: 0.12em;
-  color: rgba(255, 140, 0, 0.55);
-  border: 1px solid rgba(255, 140, 0, 0.25);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
   padding: 2px 6px;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .burn-section-hint-reburn {
-  color: rgba(255, 200, 80, 0.75) !important;
+  color: var(--text-dim) !important;
 }
 
 /* ── Display card — board name (third line) ──────────────────────────────── */
@@ -478,7 +466,7 @@ esp-web-install-button {
   font-family: var(--font);
   font-size: 0.55rem;
   letter-spacing: 0.08em;
-  color: rgba(255, 120, 0, 0.6);
+  color: var(--neutral-text);
   text-transform: uppercase;
 }
 
@@ -495,9 +483,9 @@ esp-web-install-button {
   font-size: 0.62rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(255, 160, 0, 0.75);
-  background: rgba(255, 140, 0, 0.06);
-  border: 1px solid rgba(255, 140, 0, 0.25);
+  color: var(--text-dim);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
   padding: 5px 10px;
   cursor: pointer;
   transition: all 0.15s;
@@ -505,16 +493,15 @@ esp-web-install-button {
 }
 
 .burn-profile-btn:hover {
-  background: rgba(255, 140, 0, 0.14);
-  border-color: rgba(255, 160, 0, 0.55);
-  color: rgba(255, 200, 80, 0.9);
+  background: var(--bg-hover);
+  border-color: var(--primary);
+  color: var(--text);
 }
 
 .burn-profile-btn.selected {
-  background: rgba(255, 140, 0, 0.2);
-  border-color: rgba(255, 180, 0, 0.85);
-  color: rgba(255, 220, 80, 1);
-  box-shadow: 0 0 6px rgba(255, 140, 0, 0.25);
+  background: var(--bg-hover);
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 /* ── Pin value grid ──────────────────────────────────────────────────────── */
@@ -536,18 +523,18 @@ esp-web-install-button {
   font-size: 0.58rem;
   font-weight: bold;
   letter-spacing: 0.1em;
-  color: rgba(255, 160, 0, 0.7);
+  color: var(--text-dim);
   text-transform: uppercase;
 }
 
 .burn-pin-input {
   width: 100%;
-  font-family: 'Courier New', Consolas, monospace;
+  font-family: var(--font);
   font-size: 0.75rem;
   text-align: center;
-  color: rgba(255, 200, 80, 0.95);
-  background: rgba(255, 140, 0, 0.07);
-  border: 1px solid rgba(255, 140, 0, 0.3);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
   padding: 5px 2px;
   outline: none;
   /* Hide browser spin buttons — value is still editable via keyboard */
@@ -561,9 +548,8 @@ esp-web-install-button {
 }
 
 .burn-pin-input:focus {
-  border-color: rgba(255, 180, 0, 0.7);
-  background: rgba(255, 140, 0, 0.13);
-  box-shadow: 0 0 6px rgba(255, 140, 0, 0.2);
+  border-color: var(--primary);
+  background: var(--bg-hover);
 }
 
 /* ── Pin hint line ───────────────────────────────────────────────────────── */
@@ -571,7 +557,7 @@ esp-web-install-button {
   font-family: var(--font);
   font-size: 0.6rem;
   letter-spacing: 0.06em;
-  color: rgba(255, 140, 0, 0.45);
+  color: var(--neutral-text);
   text-align: right;
   margin-top: 2px;
 }

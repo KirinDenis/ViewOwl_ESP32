@@ -11,7 +11,7 @@
 #include "packet.h"
 #include "config.h"
 #include "nvs_storage.h"
-#include "epd_4in2.h"
+#include "epd_panel.h"
 
 #include <errno.h>
 #include <string.h>
@@ -110,10 +110,12 @@ static void send_ack(int sock, const struct sockaddr_in *dest, uint8_t *buf,
 
 /* ── frame receive + render ───────────────────────────────────────────────── */
 
-/* Invert the 1-bit frame before display: dark-themed templates render as black-on-e-ink;
- * inverting gives the natural white-paper look. Blanket stopgap — becomes a per-template
- * light/dark flag (server-side) with template tagging. */
-#define EPD_INVERT 1
+/* EPD templates are authored black-on-white (the natural e-paper look), and the mono /
+ * 4-gray converters preserve that polarity (white = bit 1, black = bit 0) — the panel's
+ * B/W RAM is 1 = white as well, so frames render exactly as drawn with NO inversion.
+ * Set to 1 only if you deliberately ship dark-themed (white-on-black) templates;
+ * mixing both needs a per-template light/dark flag from the server. */
+#define EPD_INVERT 0
 
 /* Frame buffer — holds either a 1-bit mono (15000 B) or a 2-bit 4-gray (30000 B)
  * frame. Static, off-stack. */
@@ -124,7 +126,14 @@ static uint8_t s_frame[EPD_BUF_SIZE_4GRAY + 16];
  * EPD_BUF_SIZE bytes each). They are held in RAM (frame counts are small here,
  * no flash needed) and looped by a player task that whole-screen partial-refreshes
  * each frame — fast playback with a periodic full refresh to clear ghosting. */
+#if defined(EPD_792x272)
+/* Wide frames are ~27 KB each — 9 would not fit S3 SRAM alongside the cascade RAM scratch
+ * and WiFi. Class-C playback is not a v1 target for the wide panel (full-refresh only), so
+ * cap small; the server ships single mono frames here. */
+#define RAM_BATCH_CAP     (2 * (EPD_BUF_SIZE + 8))
+#else
 #define RAM_BATCH_CAP     (9 * (EPD_BUF_SIZE + 8))  /* up to ~9 mono frames (~135 KB) */
+#endif
 #define PLAYER_FULL_EVERY 0                          /* periodic full refresh every N partials; 0 = OFF (partial-only). e-ink refresh draws current spikes — a weak USB supply can brown out the waveform; the epd_init-clean-full path stays ready if re-enabled (>0). */
 
 static uint8_t  s_batch[RAM_BATCH_CAP];

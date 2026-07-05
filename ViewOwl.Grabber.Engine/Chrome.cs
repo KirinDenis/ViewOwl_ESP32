@@ -429,7 +429,12 @@ namespace ViewOwl.Grabber.Engine
             CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(templateUrl);
-            if (frameCount <= 0 || frameCount > 16)
+
+            // Upper bound must match BatchStartPayload.MaxFrames (UDPUtils.cs) and
+            // BATCH_MAX_FRAMES (packet.h), both raised 16→32 for long Class-C loops.
+            // This guard was the one place left at 16 — it silently killed every
+            // >16-frame template (e.g. the 30-frame trench) before a single render.
+            if (frameCount <= 0 || frameCount > 32)
                 throw new ArgumentOutOfRangeException(nameof(frameCount));
 
             // Resolve local template paths through SiteTemplateController (same as AddUrlAsync)

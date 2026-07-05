@@ -15,12 +15,12 @@
 
   /* ── Neutral (healthy state — NO color) ──────────────────────────────────── */
   --neutral-idle:  #7070a0;   /* inactive node border */
-  --neutral-text:  #b0b0d0;   /* secondary labels */
+  --neutral-text:  #cacae6;   /* secondary labels — brightened */
   --neutral-line:  #5a5a80;   /* edge / divider */
 
   /* ── Typography ──────────────────────────────────────────────────────────── */
-  --text:          #e8e8ff;   /* primary text — bright white-lavender */
-  --text-dim:      #9898b8;   /* timestamps, secondary metrics */
+  --text:          #f2f2ff;   /* primary text — bright white-lavender */
+  --text-dim:      #bcbcda;   /* timestamps, secondary metrics — brightened */
   --text-bright:   #ffffff;   /* selected / focused text — pure white */
 
   /* ── Status — ONLY for abnormal states ───────────────────────────────────── */

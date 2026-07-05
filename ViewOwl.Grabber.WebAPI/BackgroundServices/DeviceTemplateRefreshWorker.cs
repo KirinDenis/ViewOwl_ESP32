@@ -1,12 +1,15 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using ViewOwl.Config;
 using ViewOwl.Data.Models;
 using ViewOwl.Data.Repositories.Interfaces;
 using ViewOwl.DTO;
 using ViewOwl.Grabber.Engine;
+using ViewOwl.Grabber.WebAPI.DTOs;
+using ViewOwl.Grabber.WebAPI.Hubs;
 using ViewOwl.Grabber.WebAPI.Services;
 
 namespace ViewOwl.Grabber.WebAPI.BackgroundServices
@@ -33,6 +36,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
         private readonly SharedConfig _sharedConfig;
         private readonly IFrameRefreshQueue _refreshQueue;
         private readonly DisplayTypeCatalog _catalog;
+        private readonly IHubContext<ViewOwlHub> _hub;
         private readonly ILogger<DeviceTemplateRefreshWorker> _logger;
 
         /// <summary>
@@ -52,6 +56,10 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
         /// Display-type registry used to resolve the per-device output frame format
         /// (BGR565 for LCDs, 1-bit monochrome for e-paper).
         /// </param>
+        /// <param name="hub">
+        /// SignalR hub used to push a live <c>GrabberUpdate</c> after each Class-C batch grab
+        /// so the dashboard reflects grab success/failure without waiting for a page reload.
+        /// </param>
         /// <param name="logger">Logger.</param>
         public DeviceTemplateRefreshWorker(
             IGrabber grabber,
@@ -60,6 +68,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             IOptions<SharedConfig> sharedOptions,
             IFrameRefreshQueue refreshQueue,
             DisplayTypeCatalog catalog,
+            IHubContext<ViewOwlHub> hub,
             ILogger<DeviceTemplateRefreshWorker> logger)
         {
             ArgumentNullException.ThrowIfNull(sharedOptions);
@@ -69,6 +78,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             _sharedConfig = sharedOptions.Value;
             _refreshQueue = refreshQueue;
             _catalog      = catalog;
+            _hub          = hub;
             _logger       = logger;
         }
 
@@ -395,6 +405,7 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
             // Empty format (no-device fallback path) means "use the BGR565 default".
             string converterId = string.IsNullOrEmpty(frameFormat) ? "bgr565" : frameFormat;
 
+            DateTime grabStartedAt = DateTime.UtcNow;
             Guid tokenGuid = Guid.NewGuid();
 
             // Base file path: {ExchangeFolder}/{guid}
@@ -419,6 +430,14 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
                     ex,
                     "[DeviceTemplateRefreshWorker] Multiframe grab failed for template {TemplateId} ({Name}) {W}x{H}",
                     template.Id, template.Name, width, height);
+
+                // Make the failure observable: without this a broken Class-C template
+                // (e.g. a heavy 3D scene that times out) silently degrades to a frozen
+                // frame while the UDP lane keeps reporting not_modified — the device node
+                // would misleadingly read RENDERING. Emit the grabber-lane failure edge.
+                int failMs = (int)(DateTime.UtcNow - grabStartedAt).TotalMilliseconds;
+                await EmitGrabOutcomeAsync(template, success: false, failMs, ex.Message, ct)
+                    .ConfigureAwait(false);
                 return;
             }
 
@@ -452,6 +471,11 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
                 "[DeviceTemplateRefreshWorker] Class-C multiframe grab complete: template {TemplateId} ({Name}), " +
                 "{FrameCount} frames at {W}x{H} format={Format}, token={TokenGuid}, batchCrc=0x{BatchCrc:X8}",
                 template.Id, template.Name, framePaths.Length, width, height, converterId, tokenGuid, batchCrc);
+
+            // Grabber-lane success edge — clears any prior GRAB FAIL state on the device node.
+            int okMs = (int)(DateTime.UtcNow - grabStartedAt).TotalMilliseconds;
+            await EmitGrabOutcomeAsync(template, success: true, okMs, error: null, ct)
+                .ConfigureAwait(false);
 
             // Persist the HTML hash so subsequent 5-minute cycles can detect that the content
             // has not changed and skip the Chrome re-render.  Written after a successful grab
@@ -516,6 +540,69 @@ namespace ViewOwl.Grabber.WebAPI.BackgroundServices
                     "[DeviceTemplateRefreshWorker] ScheduleRefreshForTemplateAsync failed " +
                     "for template {TemplateId}",
                     templateId);
+            }
+        }
+
+        /// <summary>
+        /// Records a Class-C batch grab outcome on the grabber lane so it is observable
+        /// end-to-end: writes a <c>grab_completed</c>/<c>grab_failed</c> pipeline event
+        /// (mirrors <c>GrabWorker</c> for the single-frame path, which the multiframe path
+        /// bypasses) and pushes a live <c>GrabberUpdate</c> to the template owner's dashboard
+        /// group. Both writes are best-effort — a telemetry failure must never break the
+        /// refresh loop.
+        /// </summary>
+        /// <param name="template">The template that was grabbed.</param>
+        /// <param name="success">Whether the multiframe capture succeeded.</param>
+        /// <param name="durationMs">Wall-clock duration of the capture attempt.</param>
+        /// <param name="error">Failure message, or <c>null</c> on success.</param>
+        /// <param name="ct">Cancellation token.</param>
+        private async Task EmitGrabOutcomeAsync(
+            Template template, bool success, int durationMs, string? error, CancellationToken ct)
+        {
+            try
+            {
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var pipelineEvents =
+                    scope.ServiceProvider.GetRequiredService<IPipelineEventRepository>();
+
+                await pipelineEvents.AddAsync(new PipelineEvent
+                {
+                    Ts           = DateTime.UtcNow,
+                    EventType    = success ? PipelineEventTypes.GrabCompleted : PipelineEventTypes.GrabFailed,
+                    TemplateId   = template.Id,
+                    Success      = success,
+                    DurationMs   = durationMs,
+                    ErrorMessage = error,
+                }, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "[DeviceTemplateRefreshWorker] Failed to log grab pipeline event for template {TemplateId}",
+                    template.Id);
+            }
+
+            // Live nudge so DeviceNode/GrabberNode reflect the outcome without a dashboard reload.
+            if (template.UserId > 0)
+            {
+                try
+                {
+                    await _hub.Clients
+                        .Group(ViewOwlHub.UserGroup(template.UserId))
+                        .SendAsync(
+                            "GrabberUpdate",
+                            new GrabberUpdateEvent(template.Id, success, error, DateTime.UtcNow),
+                            ct)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "[DeviceTemplateRefreshWorker] Failed to push GrabberUpdate for template {TemplateId}",
+                        template.Id);
+                }
             }
         }
 

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import 'esp-web-tools'
 import { authFetch } from '../../utils/auth'
+import SerialTerminalModal from '../Serial/SerialTerminalModal'
 import './BurnModal.css'
 
 const STEP_LABELS = ['CONFIG', 'FLASH', 'TOKEN']
@@ -51,6 +53,15 @@ const DISPLAY_TYPES = [
     width:    400,
     height:   300,
     manifest: '/firmware/v1/manifest-epd-400x300.json',
+  },
+  {
+    id:       'epdwide',
+    label:    '792 × 272 wide e-paper',
+    driver:   'SSD1683 ×2',
+    board:    '5.79" wide e-paper (ESP32-S3)',
+    width:    792,
+    height:   272,
+    manifest: '/firmware/v1/manifest-epd-792x272.json',
   },
 ]
 
@@ -117,6 +128,15 @@ const PIN_PROFILES = {
       pins: { sclk: 12, mosi: 11, miso: -1, dc: 46, rst: 47, cs: 45, bl: -1 },
     },
   ],
+  // 5.79" wide e-paper (two SSD1683 in master/slave cascade) on ESP32-S3 — same fixed
+  // bit-bang wiring as the 4.2"; one CS drives both controllers. Pin config is ignored.
+  epdwide: [
+    {
+      id:   'epdwide-s3',
+      name: '5.79" wide e-paper (fixed)',
+      pins: { sclk: 12, mosi: 11, miso: -1, dc: 46, rst: 47, cs: 45, bl: -1 },
+    },
+  ],
 }
 
 const PIN_LABELS = ['SCLK', 'MOSI', 'MISO', 'DC', 'RST', 'CS', 'BL']
@@ -133,47 +153,11 @@ function generateUUID() {
 }
 
 /**
- * Converts a UUID string to the 32-char hex representation of its
- * Windows GUID binary layout (Data1/2/3 little-endian, Data4 big-endian).
- */
-function uuidToGuidHex(uuid) {
-  const h = uuid.replace(/-/g, '')
-  const d1 = h.slice(6, 8) + h.slice(4, 6) + h.slice(2, 4) + h.slice(0, 2)
-  const d2 = h.slice(10, 12) + h.slice(8, 10)
-  const d3 = h.slice(14, 16) + h.slice(12, 14)
-  const d4 = h.slice(16, 32)
-  return d1 + d2 + d3 + d4
-}
-
-/**
  * Converts a 32-char hex token back to RFC-4122 UUID format.
  */
 function hexToUUID(hex) {
   const h = hex.replace(/-/g, '')
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`
-}
-
-/**
- * Reads from a Web Serial reader until the accumulated buffer contains
- * `pattern`, or until the timeout expires (throws Error('timeout')).
- */
-async function readUntil(reader, pattern, timeoutMs) {
-  const decoder  = new TextDecoder()
-  let   buf      = ''
-  const deadline = Date.now() + timeoutMs
-
-  while (Date.now() < deadline) {
-    const remaining = deadline - Date.now()
-    const result = await Promise.race([
-      reader.read(),
-      new Promise((_, rej) =>
-        setTimeout(() => rej(new Error('timeout')), Math.max(remaining, 1))),
-    ])
-    if (result.done) throw new Error('port_closed')
-    buf += decoder.decode(result.value, { stream: true })
-    if (buf.includes(pattern)) return buf
-  }
-  throw new Error('timeout')
 }
 
 /** Returns the first profile for the given display id. */
@@ -205,8 +189,8 @@ function BurnModal({ onClose, onDone, prefillToken = null, prefillName = null, i
   // Step 3 provision state
   const [wifiSsid,    setWifiSsid]    = useState('')
   const [wifiPass,    setWifiPass]    = useState('')
-  const [provState,   setProvState]   = useState('idle')
-  const [provError,   setProvError]   = useState('')
+  const [provState,   setProvState]   = useState('idle')   // idle | done (set by the Serial Terminal)
+  const [termOpen,    setTermOpen]    = useState(false)
   const [regState,    setRegState]    = useState('idle')
   const [deviceName,  setDeviceName]  = useState(prefillName ?? '')
 
@@ -293,75 +277,9 @@ function BurnModal({ onClose, onDone, prefillToken = null, prefillName = null, i
     }
   }
 
-  // Serial provisioning — sends pin config before WiFi/token (best-effort;
-  // current firmware ignores unknown commands gracefully and continues).
-  const handleSendToken = async () => {
-    setProvState('connecting')
-    setProvError('')
-
-    let port   = null
-    let reader = null
-    let writer = null
-
-    try {
-      port = await navigator.serial.requestPort()
-      await port.open({ baudRate: 115200 })
-      reader = port.readable.getReader()
-      writer = port.writable.getWriter()
-
-      setProvState('waiting')
-      await readUntil(reader, 'VIEWOWL_READY', 30000)
-
-      setProvState('sending')
-      const enc = new TextEncoder()
-
-      // Send pin configuration first (best-effort — processed by firmware when supported).
-      // Current firmware responds "unexpected_line" to each; those responses are silently
-      // absorbed by subsequent readUntil calls which look for specific patterns.
-      for (const key of PIN_KEYS) {
-        await writer.write(enc.encode(`VIEWOWL_PIN_${key.toUpperCase()}:${pinValues[key]}\n`))
-      }
-
-      // Send Wi-Fi SSID
-      await writer.write(enc.encode(`VIEWOWL_WIFI_SSID:${wifiSsid.trim()}\n`))
-      const ssidResp = await readUntil(reader, 'VIEWOWL_WIFI_SSID', 5000)
-      if (!ssidResp.includes('VIEWOWL_WIFI_SSID_OK')) {
-        const m = ssidResp.match(/VIEWOWL_WIFI_SSID_ERR:(\S+)/)
-        throw new Error(m ? `ssid_${m[1]}` : 'ssid_rejected')
-      }
-
-      // Send Wi-Fi password
-      await writer.write(enc.encode(`VIEWOWL_WIFI_PASS:${wifiPass}\n`))
-      const passResp = await readUntil(reader, 'VIEWOWL_WIFI_PASS', 5000)
-      if (!passResp.includes('VIEWOWL_WIFI_PASS_OK')) {
-        const m = passResp.match(/VIEWOWL_WIFI_PASS_ERR:(\S+)/)
-        throw new Error(m ? `pass_${m[1]}` : 'pass_rejected')
-      }
-
-      // Send token
-      const guidHex = uuidToGuidHex(token)
-      await writer.write(enc.encode(`VIEWOWL_TOKEN:${guidHex}\n`))
-      const tokenResp = await readUntil(reader, 'VIEWOWL_TOKEN', 5000)
-      if (!tokenResp.includes('VIEWOWL_TOKEN_OK')) {
-        const m = tokenResp.match(/VIEWOWL_TOKEN_ERR:(\S+)/)
-        throw new Error(m ? m[1] : 'device_rejected')
-      }
-
-      if (!tokenResp.includes('VIEWOWL_PROV_DONE')) {
-        await readUntil(reader, 'VIEWOWL_PROV_DONE', 5000)
-      }
-
-      setProvState('done')
-
-    } catch (err) {
-      setProvState('error')
-      setProvError(err.message || 'unknown_error')
-    } finally {
-      try { if (reader) { await reader.cancel(); reader.releaseLock() } } catch (_) { /* ignore */ }
-      try { if (writer) { writer.releaseLock() } }                        catch (_) { /* ignore */ }
-      try { if (port)   { await port.close() } }                          catch (_) { /* ignore */ }
-    }
-  }
+  // Provisioning is handled by the Serial Terminal popup (robust continuous reader +
+  // live device console). It sends token / Wi-Fi / pins and reports VIEWOWL_PROV_DONE.
+  const openTerminal = () => setTermOpen(true)
 
   const isStepDone   = (n) => step > n || (n === 3 && provState === 'done')
   const isStepActive = (n) => step === n && !isStepDone(n)
@@ -379,6 +297,7 @@ function BurnModal({ onClose, onDone, prefillToken = null, prefillName = null, i
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
+    <>
     <div className="burn-overlay" onClick={e => e.target === e.currentTarget && handleClose()}>
       <div className="burn-modal">
 
@@ -643,22 +562,14 @@ function BurnModal({ onClose, onDone, prefillToken = null, prefillName = null, i
                   <div className="burn-flash-section">
                     <button
                       className="burn-flash-btn"
-                      onClick={handleSendToken}
+                      onClick={openTerminal}
                       disabled={wifiSsid.trim().length === 0}
                       title={wifiSsid.trim().length === 0 ? 'Enter Wi-Fi SSID first' : undefined}
                     >
-                      ⚡&nbsp;&nbsp;CONNECT &amp; SEND TO DEVICE
+                      ⚡&nbsp;&nbsp;OPEN SERIAL TERMINAL &amp; PROVISION
                     </button>
                   </div>
                 </>
-              )}
-
-              {(provState === 'connecting' || provState === 'waiting' || provState === 'sending') && (
-                <div className="burn-prov-status burn-prov-info">
-                  {provState === 'connecting' && 'Connecting to device…'}
-                  {provState === 'waiting'    && 'Waiting for device ready signal… (up to 30 s)'}
-                  {provState === 'sending'    && 'Sending credentials…'}
-                </div>
               )}
 
               {provState === 'done' && (
@@ -671,19 +582,26 @@ function BurnModal({ onClose, onDone, prefillToken = null, prefillName = null, i
                   </button>
                 </>
               )}
-
-              {provState === 'error' && (
-                <>
-                  <div className="burn-prov-status burn-prov-err">✗ {provError}</div>
-                  <button className="burn-flash-btn" onClick={handleSendToken}>RETRY</button>
-                </>
-              )}
             </>
           )}
 
         </div>
       </div>
     </div>
+
+    {termOpen && createPortal(
+      <SerialTerminalModal
+        prefillToken={token}
+        prefillSsid={wifiSsid}
+        prefillPass={wifiPass}
+        pins={pinValues}
+        deviceName={deviceName}
+        onClose={() => setTermOpen(false)}
+        onProvisioned={() => { setProvState('done'); setTermOpen(false) }}
+      />,
+      document.body
+    )}
+    </>
   )
 }
 

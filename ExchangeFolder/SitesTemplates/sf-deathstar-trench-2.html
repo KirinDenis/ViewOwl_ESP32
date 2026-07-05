@@ -8,7 +8,7 @@
   data-vow-category="scifi"
   data-vow-description="Slower, deeper flight down an open-top battle-station trench — fine compound greebles (cubes built from cubes) on walls and floor, hidden-surface removal, raking sun on the upper-right wall, long relief shadows, tiny blue ports, cinematic letterbox"
   data-vow-class="C"
-  data-vow-frames="30"
+  data-vow-frames="24"
   data-vow-fps="12"
   data-vow-refresh="0">
 <canvas id="screen"></canvas>
@@ -22,7 +22,7 @@ const VW=window.innerWidth||W, VH=window.innerHeight||H
 cv.width=VW; cv.height=VH
 const cx=cv.getContext('2d')
 
-const FRAME_COUNT=30
+const FRAME_COUNT=24
 
 function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
 function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}

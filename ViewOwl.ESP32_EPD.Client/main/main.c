@@ -16,7 +16,7 @@
 #include "esp_system.h"
 
 #include "config.h"
-#include "epd_4in2.h"
+#include "epd_panel.h"
 #include "epd_text.h"
 #include "provision.h"
 #include "nvs_storage.h"   /* shared from the classic client */
@@ -75,7 +75,7 @@ static void epd_boot_screen(void)
 
     /* build info — black text on white */
     epd_draw_text(s_buf, 24, 78, FIRMWARE_VERSION, 1);
-    epd_draw_text(s_buf, 24, 96, "4.2\" 400x300 SSD1683", 1);
+    epd_draw_text(s_buf, 24, 96, PANEL_DESC, 1);
 
     /* status line */
     epd_draw_text(s_buf, 24, STATUS_Y, "STATUS:", 1);
@@ -162,7 +162,7 @@ static void epd_gray_partial_demo(void)
 void app_main(void)
 {
     ESP_LOGI(TAG, "=== ViewOwl EPD client %s ===", FIRMWARE_VERSION);
-    ESP_LOGI(TAG, "Display: 4.2\" e-paper %dx%d (SSD1683)", EPD_W, EPD_H);
+    ESP_LOGI(TAG, "Display: e-paper %dx%d [%s]", EPD_W, EPD_H, PANEL_DESC);
 
     epd_gpio_init();
     epd_boot_screen();

@@ -14,10 +14,13 @@
 #define FIRMWARE_VERSION_MAJOR 0
 #endif
 #ifndef FIRMWARE_VERSION_MINOR
-#define FIRMWARE_VERSION_MINOR 1
+/* 0.3.0 (2026-07-04): 4-gray on the 792x272 cascade — verbatim Waveshare
+ * EPD_5in79 port (register LUT, row-major dual-controller addressing, 0xCF),
+ * verified on hardware by the diagnostics-wide probe v4. 4.2" path unchanged. */
+#define FIRMWARE_VERSION_MINOR 3
 #endif
 #ifndef FIRMWARE_VERSION_PATCH
-#define FIRMWARE_VERSION_PATCH 1
+#define FIRMWARE_VERSION_PATCH 0
 #endif
 #ifndef FIRMWARE_BUILD_NUMBER
 #define FIRMWARE_BUILD_NUMBER 0
@@ -46,13 +49,22 @@
 
 #define FRAMES_PARTITION_LABEL "frames"
 
-/* -- Display: 4.2" e-paper 400x300, 1-bit B/W (+ optional 4-gray "mono CGA") -- */
+/* -- Display ----------------------------------------------------------------
+ * Two panels, selected by the EPD_792x272 build flag (-DEPD_792x272=1 from CI /
+ * idf.py). Default = 4.2" 400x300 single SSD1683 (DisplayType 6). The wide variant =
+ * 5.79" 792x272 SSD1683 master/slave cascade (DisplayType 7). DisplayType ids on the
+ * server: ILI9341=2, ST7796=3, ILI9486=4, GC9A01=5, EPD=6, EPDWIDE=7. */
+#if defined(EPD_792x272)
+#define LCD_H_RES 792
+#define LCD_V_RES 272
+#define DISPLAY_TYPE_ID 7
+#define PANEL_DESC "5.79\" 792x272 cascade"
+#else
 #define LCD_H_RES 400
 #define LCD_V_RES 300
-
-/* DisplayType id for the server - 4.2" e-paper = 6 (ILI9341=2, ST7796=3,
- * ILI9486=4, GC9A01=5). Add EPD=6 to the server DisplayType enum when wiring M3. */
 #define DISPLAY_TYPE_ID 6
+#define PANEL_DESC "4.2\" 400x300 SSD1683"
+#endif
 
 /* Per-device token (demo placeholder GUID - replace per provisioned unit). */
 #define TOKEN "c2e6a4d0-9b3f-4e1a-8d72-1f5b3c7e9a04"

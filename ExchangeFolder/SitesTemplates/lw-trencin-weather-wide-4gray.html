@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{margin:0;padding:0}html,body{background:#fff;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body"
+  data-vow-name="Trenčín Weather Wide (Ink 4-gray)"
+  data-vow-description="Open-Meteo weather dashboard for Trenčín on the 792×272 wide e-paper (SSD1683 ×2 cascade) in 4-level grayscale. Three-column layout: current conditions + stat cards with soft shadows + sun/moon on the left, past→now→forecast temperature / humidity / pressure (mmHg) graphs with gradient fills in the middle, wind rose + 4-day forecast with gray-tinted weekends on the right."
+  data-vow-category="weather"
+  data-vow-class="A"
+  data-vow-render="4gray"
+  data-vow-refresh="20">
+<canvas id="screen"></canvas>
+<script>
+'use strict'
+/* Wide 792×272 4-gray e-paper: 4 levels 0/85/170/255 (BK/GD/GL/WH), quantised by the
+ * server's FourGrayConverter. Layout mirrors lw-trencin-weather-wide.html (keep both);
+ * shading techniques mirror lw-trencin-weather-4gray.html (400×300). Until the wide
+ * firmware ships 4-gray the grabber falls back to mono1bit — the design stays legible
+ * when thresholded (grays only ever tint, never carry sole meaning). */
+const W=792,H=272
+const cv=document.getElementById('screen')
+const VW=window.innerWidth||W, VH=window.innerHeight||H
+cv.width=VW; cv.height=VH
+const x=cv.getContext('2d')
+x.setTransform(VW/W,0,0,VH/H,0,0)
+
+/* ── LOCATION — change LAT/LON/CITY for your city ──────────────────────
+ *   Kyiv:      50.4501, 30.5234  'KYIV'
+ *   Tirana:    41.3275, 19.8187  'TIRANA'
+ *   Tel Aviv:  32.0853, 34.7818  'TEL AVIV'                              */
+const LAT=48.8945, LON=18.0444, CITY='TRENČÍN'
+const BK='#000', GD='#555', GL='#aaaaaa', WH='#fff'   /* 4 levels: 0/85/170/255 */
+const MM=(hpa)=>hpa*0.750062                          /* hPa → mmHg */
+
+function fill(a,b,w,h,c){x.fillStyle=c;x.fillRect(a,b,w,h)}
+function ln(a,b,c,d,lw=1,col=BK,dash=null){x.strokeStyle=col;x.lineWidth=lw;x.setLineDash(dash||[]);x.beginPath();x.moveTo(a,b);x.lineTo(c,d);x.stroke();x.setLineDash([])}
+function box(a,b,w,h,lw=1,col=BK){x.strokeStyle=col;x.lineWidth=lw;x.setLineDash([]);x.strokeRect(a,b,w,h)}
+function txt(s,a,b,sz,al='left',bold=false,col=BK){x.fillStyle=col;x.font=`${bold?'bold ':''}${sz}px Arial,Helvetica,sans-serif`;x.textAlign=al;x.fillText(s,a,b);x.textAlign='left'}
+function dot(a,b,r,c=BK){x.beginPath();x.arc(a,b,r,0,7);x.fillStyle=c;x.fill()}
+/* card with a soft GD drop shadow — the signature 4-gray touch */
+function card(a,b,w,h){fill(a+2,b+2,w,h,GD);fill(a,b,w,h,WH);box(a,b,w,h,1,BK)}
+const hm=(t)=>String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0')
+
+/* ── icons (GL fills for volume) ───────────────────────────────────────── */
+function iSun(cx,cy,s){const r=s*0.30;x.lineWidth=1.6;x.strokeStyle=BK;x.beginPath();x.arc(cx,cy,r,0,7);x.fillStyle=GL;x.fill();x.stroke();for(let i=0;i<8;i++){const a=i*Math.PI/4,r1=r+s*0.10,r2=r+s*0.26;ln(cx+Math.cos(a)*r1,cy+Math.sin(a)*r1,cx+Math.cos(a)*r2,cy+Math.sin(a)*r2,1.4)}}
+function iCloud(cx,cy,s){const w=s*0.9,h=s*0.42;x.lineWidth=1.6;x.beginPath();x.arc(cx-w*0.22,cy,h*0.55,Math.PI*0.5,Math.PI*1.5);x.arc(cx-w*0.05,cy-h*0.30,h*0.62,Math.PI*1.0,Math.PI*2.0);x.arc(cx+w*0.28,cy-h*0.05,h*0.5,Math.PI*1.5,Math.PI*0.5);x.closePath();x.fillStyle=GL;x.fill();x.strokeStyle=BK;x.stroke()}
+function iSunCloud(cx,cy,s){iSun(cx-s*0.20,cy-s*0.18,s*0.7);iCloud(cx+s*0.05,cy+s*0.10,s)}
+function iRain(cx,cy,s){iCloud(cx,cy-s*0.10,s);for(let i=-1;i<2;i++)ln(cx+i*s*0.22,cy+s*0.26,cx+i*s*0.22-2,cy+s*0.40,1.4,GD)}
+function iSnow(cx,cy,s){iCloud(cx,cy-s*0.10,s);for(let i=-1;i<2;i++){const px=cx+i*s*0.22,py=cy+s*0.34;ln(px-3,py,px+3,py,1.2,GD);ln(px,py-3,px,py+3,1.2,GD)}}
+function iThunder(cx,cy,s){iCloud(cx,cy-s*0.10,s);x.beginPath();x.moveTo(cx,cy+s*0.20);x.lineTo(cx-4,cy+s*0.36);x.lineTo(cx+2,cy+s*0.36);x.lineTo(cx-3,cy+s*0.50);x.lineWidth=1.6;x.strokeStyle=BK;x.stroke()}
+function iFog(cx,cy,s){iCloud(cx,cy-s*0.12,s);for(let i=0;i<3;i++)ln(cx-s*0.34,cy+s*0.20+i*5,cx+s*0.34,cy+s*0.20+i*5,1.3,GD)}
+function iMoonClear(cx,cy,s){const r=s*0.32;x.lineWidth=1.6;x.strokeStyle=BK;x.beginPath();x.arc(cx,cy,r,0,7);x.fillStyle=GL;x.fill();x.stroke();x.beginPath();x.arc(cx+r*0.5,cy-r*0.35,r*0.85,0,7);x.fillStyle=WH;x.fill();}
+function wIcon(code,cx,cy,s,isDay){
+  if(code===0){isDay?iSun(cx,cy,s):iMoonClear(cx,cy,s);return}
+  if(code<=2){isDay?iSunCloud(cx,cy,s):iCloud(cx,cy,s);return}
+  if(code===3){iCloud(cx,cy,s);return}
+  if(code===45||code===48){iFog(cx,cy,s);return}
+  if(code>=51&&code<=67){iRain(cx,cy,s);return}
+  if(code>=71&&code<=77){iSnow(cx,cy,s);return}
+  if(code>=80&&code<=82){iRain(cx,cy,s);return}
+  if(code>=85&&code<=86){iSnow(cx,cy,s);return}
+  if(code>=95){iThunder(cx,cy,s);return}
+  iCloud(cx,cy,s)
+}
+function wText(code){const m={0:'Clear',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Fog',48:'Rime fog',51:'Light drizzle',53:'Drizzle',55:'Dense drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',80:'Showers',81:'Showers',82:'Violent showers',85:'Snow showers',86:'Snow showers',95:'Thunderstorm',96:'Thunder+hail',99:'Thunder+hail'};return m[code]||'—'}
+
+/* ── moon (GD dark side) ───────────────────────────────────────────────── */
+function moonPhase(){const syn=29.53058867,jd=Date.now()/86400000+2440587.5;let age=(jd-2451550.1)%syn;if(age<0)age+=syn;const illum=(1-Math.cos(2*Math.PI*age/syn))/2,waxing=age<syn/2;let name='New Moon';if(age<1.0||age>=28.5)name='New Moon';else if(age<6.4)name='Waxing Crescent';else if(age<8.4)name='First Quarter';else if(age<13.8)name='Waxing Gibbous';else if(age<15.8)name='Full Moon';else if(age<21.1)name='Waning Gibbous';else if(age<23.1)name='Last Quarter';else name='Waning Crescent';return {illum,waxing,name}}
+function drawMoon(cx,cy,r,illum,waxing){x.save();x.beginPath();x.arc(cx,cy,r,0,7);x.fillStyle=WH;x.fill();x.clip();const dx=(waxing?-1:1)*2*r*illum;x.beginPath();x.arc(cx+dx,cy,r,0,7);x.fillStyle=GD;x.fill();x.restore();x.beginPath();x.arc(cx,cy,r,0,7);x.lineWidth=1.5;x.strokeStyle=BK;x.stroke()}
+
+/* ── wind rose ─────────────────────────────────────────────────────────── */
+const CARD8=['N','NE','E','SE','S','SW','W','NW']
+function cardinal(deg){return CARD8[Math.round(((deg%360)+360)%360/45)%8]}
+function windRose(cx,cy,r,dir,spd){
+  /* GL disc face gives the rose gentle depth on gray-capable panels */
+  x.lineWidth=1;x.strokeStyle=BK;x.beginPath();x.arc(cx,cy,r,0,7);x.fillStyle=GL;x.fill();x.stroke()
+  x.beginPath();x.arc(cx,cy,r-4,0,7);x.fillStyle=WH;x.fill();x.stroke()
+  ;[['N',0],['E',1],['S',2],['W',3]].forEach(p=>{const a=p[1]*Math.PI/2,dx=Math.sin(a),dy=-Math.cos(a);ln(cx+dx*(r-3),cy+dy*(r-3),cx+dx*r,cy+dy*r,1);txt(p[0],cx+dx*(r+6),cy+dy*(r+6)+3,8,'center')})
+  /* needle = filled triangle pointing where the wind blows TO (dir+180) */
+  const th=(dir+180)*Math.PI/180,ax=Math.sin(th),ay=-Math.cos(th),bx=Math.sin(th+Math.PI/2),by=-Math.cos(th+Math.PI/2)
+  x.beginPath();x.moveTo(cx+ax*(r-2),cy+ay*(r-2));x.lineTo(cx-ax*(r-6)+bx*4,cy-ay*(r-6)+by*4);x.lineTo(cx-ax*(r-6)-bx*4,cy-ay*(r-6)-by*4);x.closePath();x.fillStyle=BK;x.fill()
+}
+
+/* ── graph: past→now→forecast, GL grid, gradient fill, dashed NOW ──────── */
+function graph(label,unit,vals,nowI,gx,gy,gw,gh){
+  txt(label,gx-4,gy+gh*0.5-3,11,'right',true);txt(unit,gx-4,gy+gh*0.5+10,7,'right',false,GD)
+  box(gx,gy,gw,gh,1)
+  const v=vals.filter(n=>n!=null);if(!v.length){txt('no data',gx+gw/2,gy+gh/2+3,9,'center');return}
+  let mn=Math.min(...v),mx=Math.max(...v);if(mx-mn<1e-6){mn-=1;mx+=1}
+  const pad=(mx-mn)*0.12;mn-=pad;mx+=pad
+  const px=(i)=>gx+i/(vals.length-1)*gw,py=(n)=>gy+gh-(n-mn)/(mx-mn)*gh
+  for(let g=1;g<3;g++)ln(gx+1,gy+gh*g/3,gx+gw-1,gy+gh*g/3,0.6,GL)
+  /* gradient fill under the curve — the 4-gray signature */
+  const grad=x.createLinearGradient(0,gy,0,gy+gh);grad.addColorStop(0,GL);grad.addColorStop(1,WH)
+  x.save();x.beginPath();x.rect(gx,gy,gw,gh);x.clip();x.beginPath();let st=false
+  vals.forEach((n,i)=>{if(n==null)return;if(!st){x.moveTo(px(i),py(n));st=true}else x.lineTo(px(i),py(n))})
+  x.lineTo(gx+gw,gy+gh);x.lineTo(gx,gy+gh);x.closePath();x.fillStyle=grad;x.fill();x.restore()
+  if(nowI>=0){const nx=px(nowI);ln(nx,gy,nx,gy+gh,1,GD,[2,2])}
+  x.strokeStyle=BK;x.lineWidth=1.7;x.setLineDash([]);x.beginPath();st=false
+  vals.forEach((n,i)=>{if(n==null)return;if(!st){x.moveTo(px(i),py(n));st=true}else x.lineTo(px(i),py(n))})
+  x.stroke()
+  const cur=vals[nowI];if(cur!=null)dot(px(nowI),py(cur),2.4)
+  txt(Math.round(mx)+'',gx+gw+3,gy+7,7,'left',false,GD)
+  txt(Math.round(mn)+'',gx+gw+3,gy+gh-1,7,'left',false,GD)
+  if(cur!=null)txt((Math.round(cur*10)/10)+'',gx+gw+3,gy+gh*0.5+4,12,'left',true)
+}
+
+function arrow(t){return t>0?'↑':t<0?'↓':'→'}
+function analyse(d,ni){
+  const h=d.hourly,out=[]
+  const p0=d.current.surface_pressure,p6=h.surface_pressure[ni+6],dp=(p6!=null)?p6-p0:0
+  if(dp<=-3)out.push('PRESSURE FALLING');else if(dp>=3)out.push('PRESSURE RISING')
+  let rainK=-1,storm=false
+  for(let k=1;k<=8;k++){const wc=h.weather_code[ni+k],pp=h.precipitation_probability?h.precipitation_probability[ni+k]:0;if(wc>=95)storm=true;if(rainK<0&&(wc>=51||pp>=70))rainK=k}
+  if(storm)out.push('STORM RISK');else if(rainK>0)out.push('RAIN ~'+hm(new Date(h.time[ni+rainK])))
+  let minT=999;for(let k=1;k<=24;k++){const t=h.temperature_2m[ni+k];if(t!=null&&t<minT)minT=t}
+  if(minT<=0)out.push('FROST TONIGHT');else if(minT<=2)out.push('NEAR FROST')
+  const t3=h.temperature_2m[ni+3]
+  return {alerts:out,pTrend:Math.sign(Math.round(dp)),tTrend:(t3!=null)?Math.sign(Math.round(t3-d.current.temperature_2m)):0}
+}
+
+function render(d){
+  fill(0,0,W,H,WH);box(3,3,W-6,H-6,2)
+  const c=d.current,h=d.hourly,dl=d.daily
+  let ni=0;const nowT=Date.now();for(let i=0;i<h.time.length;i++){if(new Date(h.time[i]).getTime()>=nowT){ni=i;break}}
+  const win=(arr)=>arr.slice(Math.max(0,ni-12),ni+13),nowI=Math.min(12,ni)
+  const an=analyse(d,ni)
+  let td=0;const todayStr=new Date().toISOString().slice(0,10);for(let i=0;i<dl.time.length;i++){if(dl.time[i]===todayStr){td=i;break}}
+  const now=new Date(),days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+  /* ── HEADER (full width, GL band) ── */
+  fill(5,5,W-10,55,GL)
+  txt(CITY,16,38,28,'left',true)
+  txt(`${days[now.getDay()]} ${now.getDate()} ${mon[now.getMonth()]} · ${hm(now)}`,16,53,11)
+  wIcon(c.weather_code,592,32,40,c.is_day===1)
+  txt(Math.round(c.temperature_2m)+'°',640,50,38,'left',true)
+  txt(wText(c.weather_code),726,34,12,'left')
+  txt('feels '+Math.round(c.apparent_temperature)+'°',726,52,11,'left',false,GD)
+  ln(5,60,W-5,60,1)
+
+  /* ── ALERT LINE ── */
+  if(an.alerts.length)txt('⚠ '+an.alerts.join('   ·   '),W/2,75,13,'center',true)
+  else txt(wText(c.weather_code)+'   ·   steady',W/2,74,12,'center',false,GD)
+  ln(10,84,W-10,84,1)
+
+  /* ── COLUMN 1: stat cards (2×2, shadowed) + sun/moon ── */
+  const cells=[['FEELS',Math.round(c.apparent_temperature)+'° '+arrow(an.tTrend)],['HUMIDITY',c.relative_humidity_2m+'%'],
+    ['PRESSURE',Math.round(MM(c.surface_pressure))+' mm '+arrow(an.pTrend)],['WIND',Math.round(c.wind_speed_10m)+' '+cardinal(c.wind_direction_10m)]]
+  const cw=132,ch=42
+  cells.forEach((cc,i)=>{const col=i%2,row=(i/2)|0,cx0=10+col*(cw+4),cy0=90+row*(ch+4);card(cx0,cy0,cw,ch);const m=cx0+cw/2;txt(cc[0],m,cy0+14,8,'center',false,GD);txt(cc[1],m,cy0+32,14,'center',true)})
+  /* sun + moon */
+  const sr=new Date(dl.sunrise[td]),ss=new Date(dl.sunset[td])
+  iSun(38,214,20);txt('RISE '+hm(sr),60,210,10,'left',true);txt('SET  '+hm(ss),60,226,10,'left',true)
+  const mp=moonPhase();drawMoon(176,214,17,mp.illum,mp.waxing)
+  txt(mp.name,200,210,10,'left',true);txt(Math.round(mp.illum*100)+'% lit',200,226,9,'left',false,GD)
+  ln(292,88,292,H-10,1,GL)
+
+  /* ── COLUMN 2: graphs past→now→forecast ── */
+  graph('TEMP','°C',win(h.temperature_2m),nowI,334,92,226,46)
+  graph('HUM','%',win(h.relative_humidity_2m),nowI,334,150,226,42)
+  graph('PRES','mm',win(h.surface_pressure).map(p=>p==null?null:MM(p)),nowI,334,204,226,42)
+  txt('◀ past',334,258,8,'left',false,GD);txt('now',447,258,8,'center',false,GD);txt('forecast ▶',560,258,8,'right',false,GD)
+  ln(598,88,598,H-10,1,GL)
+
+  /* ── COLUMN 3: wind rose + 4-day forecast (weekends GL-tinted) ── */
+  windRose(694,128,30,c.wind_direction_10m)
+  txt(Math.round(c.wind_speed_10m)+' km/h '+cardinal(c.wind_direction_10m),694,172,9,'center',true)
+  for(let i=1;i<=4;i++){const di=td+i,ry=184+(i-1)*20,dow=new Date(dl.time[di]).getDay()
+    if(dow===0||dow===6)fill(610,ry,176,18,GL)
+    box(610,ry,176,18,1)
+    txt(days[dow],618,ry+13,10,'left',true)
+    wIcon(dl.weather_code[di],672,ry+9,12,true)
+    txt(Math.round(dl.temperature_2m_max[di])+'°',742,ry+13,13,'right',true)
+    txt(Math.round(dl.temperature_2m_min[di])+'°',780,ry+13,10,'right',false,GD)}
+}
+function renderError(msg){fill(0,0,W,H,WH);box(3,3,W-6,H-6,2);txt(CITY+' WEATHER',W/2,120,22,'center',true);txt('Open-Meteo unavailable',W/2,150,13,'center');txt(msg||'',W/2,172,9,'center',false,GD)}
+
+const URL='https://api.open-meteo.com/v1/forecast?latitude='+LAT+'&longitude='+LON
+  +'&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,precipitation,cloud_cover'
+  +'&hourly=temperature_2m,relative_humidity_2m,surface_pressure,weather_code,precipitation_probability'
+  +'&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset'
+  +'&timezone=auto&past_days=1&forecast_days=5'
+fetch(URL).then(r=>r.json()).then(d=>{if(!d||!d.current||!d.hourly||!d.daily)throw new Error('bad payload');render(d)}).catch(e=>renderError(String(e&&e.message||e)))
+</script></body></html>

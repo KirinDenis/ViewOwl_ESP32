@@ -3,7 +3,7 @@
  * @brief 1-bit ASCII text rendering into the e-paper mono framebuffer.
  */
 #include "epd_text.h"
-#include "epd_4in2.h"   /* EPD_W, EPD_H, EPD_ROW_BYTES */
+#include "epd_panel.h"   /* EPD_W, EPD_H, EPD_ROW_BYTES (panel-agnostic) */
 #include "lcd_font.h"   /* LCD_FONT_8X8 — shared from the classic client (on the include path) */
 
 /* Set one pixel in the mono framebuffer (1 = white, 0 = black). */

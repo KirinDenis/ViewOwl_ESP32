@@ -1413,6 +1413,10 @@
             <div class="fm-display-size">400 × 300</div>
             <div class="fm-display-model">SSD1683 · e-paper</div>
           </div>
+          <div class="fm-display-card" data-size="epdwide" onclick="fmSelectDisplay('epdwide')">
+            <div class="fm-display-size">792 × 272</div>
+            <div class="fm-display-model">SSD1683 ×2 · wide e-paper</div>
+          </div>
         </div>
         <button id="fm-next-step1" class="fm-btn" disabled onclick="fmGoStep(2)">▸ Continue</button>
       </div>
@@ -2901,6 +2905,7 @@
         'ili9486': '/firmware/v1/manifest-ili9486-480x320.json',
         'gc9a01':  '/firmware/v1/manifest-gc9a01-240x240.json',
         'epd':     '/firmware/v1/manifest-epd-400x300.json',
+        'epdwide': '/firmware/v1/manifest-epd-792x272.json',
       };
 
       // Display physical size map: used to report correct dimensions to the server.
@@ -2910,6 +2915,7 @@
         'ili9486': [480, 320],
         'gc9a01':  [240, 240],
         'epd':     [400, 300],
+        'epdwide': [792, 272],
       };
 
       // Pin profiles per display variant — same presets as the admin BurnModal.
@@ -2939,6 +2945,11 @@
         // pins hardwired in firmware), so pin config sent over serial is ignored. One profile.
         'epd': [
           { id: 'epd-s3', name: '4.2" e-paper (S3)', pins: { sclk:12,mosi:11,miso:-1,dc:46,rst:47,cs:45,bl:-1 } },
+        ],
+        // 5.79" wide e-paper (two SSD1683 in master/slave cascade) on ESP32-S3 — same
+        // fixed bit-bang wiring as the 4.2"; one CS drives both controllers. Config ignored.
+        'epdwide': [
+          { id: 'epdwide-s3', name: '5.79" wide e-paper (S3)', pins: { sclk:12,mosi:11,miso:-1,dc:46,rst:47,cs:45,bl:-1 } },
         ],
       };
       const PIN_KEYS   = ['sclk','mosi','miso','dc','rst','cs','bl'];

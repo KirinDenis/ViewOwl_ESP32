@@ -1,3 +1,8 @@
+/* Controller config modal — ISA-101 design tokens (src/styles/scifi-globals.css).
+   No glow / no healthy-state motion; colour = meaning; golden-ratio spacing.
+   Buttons: SAVE = success, RESTART = caution (amber outline), CANCEL/REBURN/
+   TERMINAL = neutral, close = neutral. */
+
 .cc-overlay {
   position: fixed;
   inset: 0;
@@ -14,9 +19,9 @@
   max-height: 88vh;
   display: grid;
   grid-template-rows: 60px 1fr 62px;
-  border: 2px solid var(--secondary);
-  box-shadow: 0 0 40px rgba(0, 221, 255, 0.3);
-  background: rgba(0, 28, 58, 0.99);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  background: var(--bg-panel);
   overflow: hidden;
 }
 
@@ -25,12 +30,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 var(--space-lg);
   border-bottom: 1px solid var(--border);
-  background: rgba(0, 45, 85, 0.95);
-  gap: 12px;
+  background: var(--bg-header);
+  gap: var(--space-md);
 }
-.cc-header-left { display: flex; align-items: center; gap: 12px; }
+.cc-header-left { display: flex; align-items: center; gap: var(--space-md); }
 
 .cc-status-dot {
   width: 10px;
@@ -38,16 +43,15 @@
   border-radius: 50%;
   flex-shrink: 0;
 }
-.cc-dot-online  { background: var(--primary); box-shadow: 0 0 8px rgba(0,255,136,0.8); animation: cc-pulse 2s infinite; }
-.cc-dot-offline { background: var(--danger); }
-@keyframes cc-pulse { 0%,100% { box-shadow: 0 0 5px rgba(0,255,136,0.8); } 50% { box-shadow: 0 0 12px rgba(0,255,136,1); } }
+.cc-dot-online  { background: var(--status-ok); }
+.cc-dot-offline { background: var(--status-offline); }
 
 .cc-title {
   font-family: var(--font);
   font-size: 0.72rem;
   font-weight: bold;
   letter-spacing: 0.2em;
-  color: var(--secondary);
+  color: var(--neutral-text);
 }
 .cc-device-name {
   font-family: var(--font);
@@ -55,15 +59,14 @@
   font-weight: bold;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #fff;
-  text-shadow: 0 0 8px rgba(0, 221, 255, 0.45);
+  color: var(--text-bright);
 }
 
-/* Close button — inverted: solid red fill, white ✕ */
+/* Close button — neutral, red only on hover */
 .cc-close-btn {
-  background: rgba(180, 20, 20, 0.9);
-  border: 1px solid #ff3333;
-  color: #fff;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
   font-family: var(--font);
   font-size: 1rem;
   font-weight: bold;
@@ -75,12 +78,10 @@
   justify-content: center;
   transition: all 0.2s;
   flex-shrink: 0;
-  box-shadow: 0 0 8px rgba(255, 51, 51, 0.35);
 }
 .cc-close-btn:hover {
-  background: #ff2222;
-  border-color: #ff5555;
-  box-shadow: 0 0 16px rgba(255, 51, 51, 0.65);
+  border-color: var(--status-error);
+  color: var(--status-error);
 }
 
 /* Body — two columns */
@@ -92,16 +93,16 @@
   gap: 0;
 }
 .cc-body::-webkit-scrollbar { width: 4px; }
-.cc-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.cc-body::-webkit-scrollbar-thumb { background: var(--border); }
 
-.cc-left  { border-right: 1px solid var(--border); padding: 16px; display: flex; flex-direction: column; gap: 16px; }
-.cc-right { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.cc-left  { border-right: 1px solid var(--border); padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-md); }
+.cc-right { padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-md); }
 
 /* Sections */
 .cc-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 .cc-section-full { flex: 1; }
 .cc-section-title {
@@ -109,10 +110,9 @@
   font-size: 0.72rem;
   font-weight: bold;
   letter-spacing: 0.2em;
-  color: var(--secondary);
-  text-shadow: 0 0 6px rgba(0, 221, 255, 0.4);
+  color: var(--neutral-text);
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(0, 221, 255, 0.3);
+  border-bottom: 1px solid var(--border);
   text-transform: uppercase;
 }
 
@@ -121,16 +121,16 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
-.cc-field { display: flex; flex-direction: column; gap: 5px; }
-.cc-field-row { display: flex; gap: 8px; align-items: center; }
+.cc-field { display: flex; flex-direction: column; gap: var(--space-xs); }
+.cc-field-row { display: flex; gap: var(--space-sm); align-items: center; }
 
 .cc-label {
   font-family: var(--font);
   font-size: 0.7rem;
   letter-spacing: 0.1em;
-  color: rgba(0, 221, 255, 0.85);
+  color: var(--text-dim);
   text-transform: uppercase;
   flex-shrink: 0;
 }
@@ -143,8 +143,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cc-online  { color: var(--primary) !important; }
-.cc-offline { color: var(--danger) !important; }
+.cc-online  { color: var(--status-ok) !important; }
+.cc-offline { color: var(--status-error) !important; }
 .cc-dim     { color: var(--text-dim) !important; }
 .cc-token {
   font-size: 0.6rem;
@@ -167,9 +167,9 @@
 }
 
 .cc-copy-btn {
-  background: rgba(0, 221, 255, 0.15);
-  border: 1px solid rgba(0, 221, 255, 0.7);
-  color: var(--secondary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
   font-family: var(--font);
   font-size: 0.6rem;
   font-weight: bold;
@@ -181,17 +181,15 @@
   text-transform: uppercase;
 }
 .cc-copy-btn:hover {
-  background: rgba(0, 221, 255, 0.28);
-  border-color: var(--secondary);
-  box-shadow: 0 0 8px rgba(0, 221, 255, 0.35);
+  border-color: var(--primary);
+  color: var(--text);
 }
 
 /* Inputs */
 .cc-input {
   flex: 1;
-  background: rgba(0, 20, 40, 0.6);
+  background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 2px;
   color: var(--text);
   font-family: var(--font);
   font-size: 0.8rem;
@@ -199,14 +197,13 @@
   outline: none;
   transition: border-color 0.2s;
 }
-.cc-input:focus { border-color: var(--secondary); }
-.cc-input-mono  { font-family: 'Courier New', Consolas, monospace; font-size: 0.7rem; letter-spacing: 0.02em; }
+.cc-input:focus { border-color: var(--primary); }
+.cc-input-mono  { font-family: var(--font); font-size: 0.7rem; letter-spacing: 0.02em; }
 
 .cc-select {
   flex: 1;
-  background: rgba(0, 20, 40, 0.6);
+  background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 2px;
   color: var(--text);
   font-family: var(--font);
   font-size: 0.75rem;
@@ -216,10 +213,10 @@
   transition: border-color 0.2s;
   -webkit-appearance: none;
 }
-.cc-select:focus { border-color: var(--secondary); }
-.cc-select option { background: #0a1020; color: var(--text); }
+.cc-select:focus { border-color: var(--primary); }
+.cc-select option { background: var(--bg-panel); color: var(--text); }
 
-/* Buttons — base */
+/* Buttons — base (neutral ghost) */
 .cc-btn {
   background: transparent;
   border: 1px solid var(--border);
@@ -234,69 +231,51 @@
   transition: all 0.2s;
   white-space: nowrap;
 }
+.cc-btn:hover:not(:disabled) { border-color: var(--primary); }
 .cc-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* SAVE / APPLY — inverted: solid green, white label */
+/* SAVE / APPLY — success, solid green */
 .cc-btn-save {
-  background: rgba(0, 200, 100, 0.82);
-  border-color: var(--primary);
-  color: #fff;
+  background: var(--accent-success);
+  border-color: var(--accent-success);
+  color: var(--bg);
   padding: 7px 14px;
-  box-shadow: 0 0 6px rgba(0, 255, 136, 0.3);
 }
 .cc-btn-save:hover:not(:disabled) {
-  background: var(--primary);
-  box-shadow: 0 0 12px rgba(0, 255, 136, 0.55);
+  filter: brightness(1.12);
 }
 
-/* RESTART — inverted: solid amber, white label */
+/* RESTART — caution, amber outline */
 .cc-btn-restart {
-  background: rgba(200, 155, 0, 0.85);
-  border-color: #ffc800;
-  color: #fff;
-  box-shadow: 0 0 6px rgba(255, 200, 0, 0.3);
+  border-color: var(--status-warn);
+  color: var(--status-warn);
 }
 .cc-btn-restart:hover:not(:disabled) {
-  background: #ffc800;
-  color: #fff;
-  box-shadow: 0 0 14px rgba(255, 200, 0, 0.55);
+  background: var(--bg-hover);
+  border-color: var(--status-warn);
 }
 
-/* REBURN — orange outline, matches BurnModal theme */
-.cc-btn-reburn {
-  background: rgba(255, 100, 0, 0.12);
-  border-color: rgba(255, 120, 0, 0.6);
-  color: #ff8800;
-  box-shadow: 0 0 6px rgba(255, 100, 0, 0.2);
-}
-.cc-btn-reburn:hover:not(:disabled) {
-  background: rgba(255, 120, 0, 0.25);
-  border-color: #ff8800;
-  color: #fff;
-  box-shadow: 0 0 12px rgba(255, 120, 0, 0.45);
+/* REBURN / TERMINAL — neutral ghost (inherit .cc-btn) */
+.cc-btn-reburn:hover:not(:disabled),
+.cc-btn-terminal:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--text);
 }
 
-/* CANCEL — inverted: solid red, white label */
-.cc-btn-cancel {
-  background: rgba(180, 20, 20, 0.85);
-  border-color: #ff3333;
-  color: #fff;
-  box-shadow: 0 0 6px rgba(255, 51, 51, 0.3);
-}
+/* CANCEL — neutral (closes without saving; red is reserved for destructive) */
 .cc-btn-cancel:hover {
-  background: #ff2222;
-  border-color: #ff5555;
-  box-shadow: 0 0 14px rgba(255, 51, 51, 0.55);
+  border-color: var(--status-error);
+  color: var(--status-error);
 }
 
 /* Footer */
 .cc-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 20px;
+  gap: var(--space-sm);
+  padding: 0 var(--space-lg);
   border-top: 1px solid var(--border);
-  background: rgba(0, 45, 85, 0.95);
+  background: var(--bg-header);
 }
 .cc-spacer { flex: 1; }
 
@@ -307,25 +286,24 @@
   gap: 6px;
   flex: 1;
   min-height: 0;
-  border-top: 1px solid rgba(0, 221, 255, 0.15);
-  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-sm);
 }
 .cc-chart-label {
   font-family: var(--font);
   font-size: 0.65rem;
   letter-spacing: 0.1em;
-  color: rgba(0, 221, 255, 0.75);
+  color: var(--text-dim);
   text-transform: uppercase;
 }
 .cc-chart-wrap {
-  background: rgba(0, 10, 20, 0.6);
+  background: var(--bg);
   border: 1px solid var(--border);
   padding: 4px;
-  border-radius: 2px;
 }
 .cc-chart-stats {
   display: flex;
-  gap: 12px;
+  gap: var(--space-md);
   font-family: var(--font);
   font-size: 0.65rem;
   font-weight: bold;
@@ -341,5 +319,5 @@
   letter-spacing: 0.15em;
   color: var(--text-dim);
   text-align: center;
-  padding: 16px 0;
+  padding: var(--space-md) 0;
 }

@@ -42,6 +42,11 @@ const DeviceNode = ({ data }) => {
   const [wifiRssi, setRssi]         = useState(() => data.initialWifiRssi ?? null)   // dBm — seeded from DB, updated by live pings
   const [configOpen, setConfigOpen] = useState(false)
   const [delivery, setDelivery]     = useState(null)   // { phase, durationMs, errorMessage, imageSizeBytes, retries }
+  // Grabber-lane health for the active template: null = ok/unknown, { error } = latest grab failed.
+  // Seeded from the dashboard payload (data.grabOk) so a frozen device reads GRAB FAIL on load,
+  // then updated live by GrabberUpdate events routed through FlowCanvas.
+  const [grabFail, setGrabFail]     = useState(() =>
+    data.grabOk === false ? { error: data.grabError ?? null } : null)
   const [pingHistory, setPingHistory] = useState(() => [...EMPTY_HISTORY])
   const [transferHistory, setTransferHistory] = useState([]) // last 24 completed transfers
   const [initPhase, setInitPhase]   = useState('idle') // idle | loading | done | error
@@ -110,6 +115,12 @@ const DeviceNode = ({ data }) => {
     }
   }, [data.deliveryEvent, recordHistorySlot])
 
+  // Sync live grabber-lane outcome from FlowCanvas (GrabberUpdate for the active template).
+  useEffect(() => {
+    if (!data.grabEvent) return
+    setGrabFail(data.grabEvent.success ? null : { error: data.grabEvent.errorMessage ?? null })
+  }, [data.grabEvent])
+
   // Clean up timer on unmount
   useEffect(() => () => { if (clearTimerRef.current) clearTimeout(clearTimerRef.current) }, [])
 
@@ -144,6 +155,21 @@ const DeviceNode = ({ data }) => {
     ? (isWarning ? 'dot-warning' : 'dot-online')
     : 'dot-offline'
 
+  // Pipeline status — the single "why is this device (not) rendering?" answer, derived
+  // from data the node already holds. Colour = meaning (ISA-101). This is the fleet-
+  // observability line: a device stuck for days reads its cause at a glance.
+  // Grab-lane failure takes precedence over the UDP-delivery verdict: a device can be
+  // "delivering" a stale frame (not_modified) while its template's grab is broken — the
+  // frozen-content root cause is the grab, so surface it first.
+  const pipeline =
+    !isOnline                                                  ? { t: 'OFFLINE',           c: 'pipe-off'  }
+    : !data.activeTemplateId                                   ? { t: 'NO TEMPLATE',       c: 'pipe-warn' }
+    : grabFail                                                 ? { t: 'GRAB FAIL',         c: 'pipe-err'  }
+    : delivery?.phase === 'fail'                               ? { t: 'DELIVERY FAIL',     c: 'pipe-err'  }
+    : (delivery?.phase === 'success' || delivery?.phase === 'not_modified')
+                                                               ? { t: 'RENDERING',         c: 'pipe-ok'   }
+    :                                                            { t: 'LINKED · NO FRAME', c: 'pipe-dim'  }
+
   return (
     <>
       {/* Outer wrapper carries the glow drop-shadow; chamfer lives on the inner. */}
@@ -162,6 +188,12 @@ const DeviceNode = ({ data }) => {
               title="Delete this controller"
             >✕</button>
           </div>
+
+          {/* Pipeline status — why this device is (not) rendering, at a glance */}
+          <div
+            className={`device-pipeline ${pipeline.c}`}
+            title={grabFail?.error ? `Grab failed: ${grabFail.error}` : undefined}
+          >{pipeline.t}</div>
 
           {/* HUD row: signal gauge (left) + 24h ping history (right) */}
           <div className="device-hud-row">

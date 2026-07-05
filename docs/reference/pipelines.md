@@ -118,7 +118,7 @@ bool shouldRefresh = result.HasPendingFrameRefresh;
 How the UDP Server turns a device token into a file path:
 
 ```
-Device HELLO: token = "b2c3d4e5f6a74b8c9d0e1f2a3b4c5d6e"
+Device HELLO: token = "57ca9af66f3840059521009e340141e2"
         │
         ▼
 GET /api/internal/device/{token}/frame

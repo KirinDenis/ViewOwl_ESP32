@@ -57,7 +57,7 @@ Registers a freshly flashed device. Idempotent: if the GUID already exists, retu
 Request body:
 ```json
 {
-  "guid": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+  "guid": "57ca9af6-6f38-4005-9521-009e340141e2",
   "templateName": "sf-nostromo-boot.html",
   "templateId": 42,
   "displayWidth": 480,

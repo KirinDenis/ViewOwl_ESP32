@@ -523,10 +523,24 @@ void udp_client_task(void *pvParameters)
                 if (ferr != ESP_OK) {
                     ESP_LOGE(TAG, "flash_frames_write_begin: %s", esp_err_to_name(ferr));
                     udp_protocol_send_ack(sock, &dest_addr, sendbuf, session_id, 0);
-                    /* write_begin failed — player was stopped but won't be restarted.
-                     * Clear after_batch_commit so the next HELLO fires in ~1 s. */
+                    /* write_begin failed — player was stopped but won't be restarted. */
                     after_batch_commit      = false;
                     s_player_stop_requested = false;
+                    /* This is a persistent condition (typically ESP_ERR_NO_MEM: the
+                     * batch exceeds the flash partition) — an immediate retry cannot
+                     * succeed.  Without a pause this branch re-HELLOs instantly and
+                     * the server re-sends BATCH_START: a hot loop of ~5 requests per
+                     * second observed in the field (30-frame batch vs 2.4 MB
+                     * partition).  Surface the reason on the TUI and back off
+                     * BATCH_RETRY_DELAY_S, the same pacing used after a batch that
+                     * exited without COMMIT. */
+                    lcd_log_show_wait("BATCH TOO BIG",
+                                      "Frames exceed flash size",
+                                      "Reduce template frames");
+                    for (int w = 0; w < BATCH_RETRY_DELAY_S * 5; w++) {
+                        vTaskDelay(pdMS_TO_TICKS(200));
+                        lcd_log_spin();
+                    }
                     continue;
                 }
 

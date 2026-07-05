@@ -9,6 +9,8 @@ import TemplateManagerModal from './components/Templates/TemplateManagerModal'
 import ControllerConfigModal from './components/Controllers/ControllerConfigModal'
 import BurnModal from './components/Burn/BurnModal'
 import ConfirmModal from './components/ConfirmModal/ConfirmModal'
+import UsersModal from './components/Admin/UsersModal'
+import SecurityModal from './components/Admin/SecurityModal'
 import { authFetch, getToken } from './utils/auth'
 import './App.css'
 
@@ -55,6 +57,10 @@ function App() {
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false)
 
   const [burnOpen, setBurnOpen] = useState(false)
+
+  // Admin popups — fold the old vanilla /dashboard.html admin into the React app
+  const [usersOpen, setUsersOpen] = useState(false)
+  const [securityOpen, setSecurityOpen] = useState(false)
 
   const [createdDevice, setCreatedDevice] = useState(null)
 
@@ -228,6 +234,8 @@ function App() {
         alarmCounts={alarmCounts}
         onEditTemplates={handleEditTemplates}
         onBurn={() => setBurnOpen(true)}
+        onUsers={() => setUsersOpen(true)}
+        onSecurity={() => setSecurityOpen(true)}
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onLogout={handleLogout}
@@ -301,6 +309,18 @@ function App() {
           liveRssi={null}
           onClose={() => setCreatedDevice(null)}
         />,
+        document.body
+      )}
+
+      {/* Admin — user management (folds /dashboard.html Users into the React app) */}
+      {usersOpen && createPortal(
+        <UsersModal onClose={() => setUsersOpen(false)} />,
+        document.body
+      )}
+
+      {/* Admin — security event log + IP blocking (folds /admin/security.html in) */}
+      {securityOpen && createPortal(
+        <SecurityModal onClose={() => setSecurityOpen(false)} />,
         document.body
       )}
 

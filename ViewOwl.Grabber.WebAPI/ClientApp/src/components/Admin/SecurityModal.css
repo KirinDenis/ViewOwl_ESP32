@@ -1,0 +1,117 @@
+/* Security popup — ISA-101 tokens (src/styles/scifi-globals.css).
+   No glow; colour = meaning; golden-ratio spacing. */
+
+.sm-overlay {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(10, 14, 26, 0.88);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--space-lg);
+}
+
+.sm-modal {
+  width: min(880px, 97vw);
+  max-height: 90vh;
+  display: flex; flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  font-family: var(--font);
+  color: var(--text);
+  overflow: hidden;
+}
+
+/* Header */
+.sm-header {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+}
+.sm-title { color: var(--neutral-text); font-weight: 700; letter-spacing: 0.2em; font-size: var(--text-sm); }
+.sm-grow  { flex: 1; }
+.sm-close {
+  background: var(--bg-hover); border: 1px solid var(--border); color: var(--text-dim);
+  width: 28px; height: 28px; cursor: pointer; font-size: var(--text-md);
+}
+.sm-close:hover { border-color: var(--status-error); color: var(--status-error); }
+
+/* Lock screen */
+.sm-lock { padding: var(--space-xl); display: flex; flex-direction: column; gap: var(--space-md); align-items: center; }
+.sm-lock-title { color: var(--neutral-text); font-weight: 700; letter-spacing: 0.18em; font-size: var(--text-sm); }
+.sm-lock-note  { color: var(--text-dim); font-size: var(--text-xs); text-align: center; max-width: 380px; line-height: 1.6; }
+.sm-lock-row   { display: flex; gap: var(--space-sm); }
+
+/* Body */
+.sm-body { padding: var(--space-md); overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-lg); }
+
+.sm-error {
+  color: var(--status-error); border: 1px solid var(--status-error);
+  background: rgba(204, 51, 51, 0.07); padding: var(--space-sm) var(--space-md);
+  font-size: var(--text-xs);
+}
+
+/* Sections */
+.sm-section { display: flex; flex-direction: column; gap: var(--space-sm); }
+.sm-section-head { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
+.sm-section-title {
+  color: var(--neutral-text); font-weight: 700; letter-spacing: 0.16em; font-size: var(--text-xs);
+  text-transform: uppercase; flex-shrink: 0;
+}
+
+/* Block form */
+.sm-block-form { display: flex; gap: var(--space-sm); align-items: center; flex-wrap: wrap; }
+
+/* Inputs */
+.sm-input {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--font); font-size: var(--text-sm); padding: 6px 9px; outline: none; min-width: 110px;
+}
+.sm-input:focus { border-color: var(--primary); }
+.sm-input-num { min-width: 64px; width: 64px; }
+.sm-input-ip  { min-width: 120px; }
+.sm-select {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--font); font-size: var(--text-xs); padding: 6px 9px; outline: none; cursor: pointer;
+}
+.sm-select option { background: var(--bg-panel); color: var(--text); }
+
+/* Buttons */
+.sm-btn-primary {
+  font-family: var(--font); font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.12em;
+  background: var(--primary); border: 1px solid var(--primary); color: var(--bg);
+  padding: 6px 16px; cursor: pointer; transition: filter 0.15s;
+}
+.sm-btn-primary:hover { filter: brightness(1.12); }
+.sm-btn-warn {
+  font-family: var(--font); font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.12em;
+  background: transparent; border: 1px solid var(--status-warn); color: var(--status-warn);
+  padding: 6px 16px; cursor: pointer; transition: all 0.15s;
+}
+.sm-btn-warn:hover { background: var(--bg-hover); }
+
+/* Tables */
+.sm-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.sm-table th {
+  text-align: left; color: var(--text-dim); font-weight: 700;
+  letter-spacing: 0.08em; font-size: var(--text-xs);
+  padding: var(--space-xs) var(--space-sm); border-bottom: 1px solid var(--border);
+}
+.sm-table td { padding: 5px var(--space-sm); border-bottom: 1px solid var(--neutral-line); vertical-align: middle; }
+.sm-table tbody tr:hover { background: var(--bg-hover); }
+.sm-ip   { color: var(--text); white-space: nowrap; }
+.sm-dim  { color: var(--text-dim); }
+.sm-endpoint { color: var(--text-dim); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Event type severity (colour = meaning) */
+.sm-t-err  { color: var(--status-error); font-weight: 700; }
+.sm-t-warn { color: var(--status-warn); font-weight: 700; }
+.sm-t-dim  { color: var(--text-dim); }
+
+/* Unblock — neutral, red on hover (lifts an enforcement) */
+.sm-unblock {
+  font-family: var(--font); font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.1em;
+  background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+  padding: 2px 10px; cursor: pointer; transition: all 0.15s;
+}
+.sm-unblock:hover { border-color: var(--primary); color: var(--text); }
+.sm-actions { text-align: right; }

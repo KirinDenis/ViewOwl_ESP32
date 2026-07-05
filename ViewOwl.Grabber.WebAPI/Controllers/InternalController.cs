@@ -32,6 +32,7 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
         private readonly IGrabber _grabber;
         private readonly GrabChannel _grabChannel;
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly DisplayTypeCatalog _catalog;
         private readonly ILogger<InternalController> _logger;
 
         // Tracks when an immediate re-grab was last triggered per template.
@@ -57,6 +58,7 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
             IGrabber grabber,
             GrabChannel grabChannel,
             IServiceScopeFactory scopeFactory,
+            DisplayTypeCatalog catalog,
             ILogger<InternalController> logger)
         {
             ArgumentNullException.ThrowIfNull(sharedOptions);
@@ -76,6 +78,7 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
             _grabber        = grabber;
             _grabChannel    = grabChannel;
             _scopeFactory   = scopeFactory;
+            _catalog        = catalog;
             _logger         = logger;
         }
 
@@ -206,7 +209,8 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
                     device.ActiveTemplateId.Value,
                     device.UserId,
                     device.DisplayWidth  ?? 480,
-                    device.DisplayHeight ?? 320);
+                    device.DisplayHeight ?? 320,
+                    _catalog.GetFrameFormat(device.DisplayType));
 
                 return NotFound(new { rejectCode = 4 }); /* ERR_NO_FRAME — no successful grab yet */
             }
@@ -283,7 +287,8 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
                     device.ActiveTemplateId.Value,
                     device.UserId,
                     device.DisplayWidth  ?? 480,
-                    device.DisplayHeight ?? 320);
+                    device.DisplayHeight ?? 320,
+                    _catalog.GetFrameFormat(device.DisplayType));
 
                 return NotFound(new { rejectCode = 4 }); /* ERR_NO_FRAME — .bin missing, re-grab triggered */
             }
@@ -810,7 +815,7 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
                 return;
             }
 
-            await _grabChannel.EnqueueAsync(new ScreenShotParamDTO
+            var regrabParam = new ScreenShotParamDTO
             {
                 TokenGuid            = tokenGuid,
                 TabName              = loadResult.TabName,
@@ -821,7 +826,19 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
                 UserId               = device.UserId,
                 CloseTabAfterCapture = true,
                 Monochrome           = false,
-            }).ConfigureAwait(false);
+            };
+
+            // Render in the device's native frame format (e.g. mono1bit for e-paper).
+            // Without this the re-grab fell back to the BGR565 default, and the freshest
+            // GrabLog at the device's resolution became a frame the device cannot render —
+            // an endless wrong-format serve loop for non-BGR565 displays.
+            string regrabFormat = _catalog.GetFrameFormat(device.DisplayType);
+            if (!string.IsNullOrEmpty(regrabFormat))
+            {
+                regrabParam.ConverterId = regrabFormat;
+            }
+
+            await _grabChannel.EnqueueAsync(regrabParam).ConfigureAwait(false);
 
             _logger.LogInformation(
                 "Resolution re-grab enqueued for device {DeviceId} at {W}×{H} (was {OldW}×{OldH})",
@@ -836,7 +853,8 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
         /// no successful grab log. Debounced to at most once per 60 seconds per template so a
         /// burst of HELLO packets from the same device does not flood the grab channel.
         /// </summary>
-        private async Task TriggerGrabIfIdleAsync(int templateId, int userId, int width, int height)
+        private async Task TriggerGrabIfIdleAsync(
+            int templateId, int userId, int width, int height, string? frameFormat = null)
         {
             var now = DateTime.UtcNow;
             if (_lastGrabTriggerUtc.TryGetValue(templateId, out DateTime last) &&
@@ -898,8 +916,7 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
                     .CreateAsync(templateId, tokenGuid, width, height, CancellationToken.None)
                     .ConfigureAwait(false);
 
-                // CancellationToken.None: fire-and-forget, no caller CT available.
-                await _grabChannel.EnqueueAsync(new ScreenShotParamDTO
+                var triggerParam = new ScreenShotParamDTO
                 {
                     TokenGuid            = tokenGuid,
                     TabName              = loadResult.TabName,
@@ -910,7 +927,18 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
                     UserId               = userId,
                     CloseTabAfterCapture = true,
                     Monochrome           = false,
-                }, CancellationToken.None).ConfigureAwait(false);
+                };
+
+                // Honour the requesting device's frame format (mono1bit for e-paper etc.);
+                // empty keeps the DTO's BGR565 default.
+                if (!string.IsNullOrEmpty(frameFormat))
+                {
+                    triggerParam.ConverterId = frameFormat;
+                }
+
+                // CancellationToken.None: fire-and-forget, no caller CT available.
+                await _grabChannel.EnqueueAsync(triggerParam, CancellationToken.None)
+                    .ConfigureAwait(false);
 
                 _logger.LogInformation(
                     "TriggerGrab: enqueued immediate re-grab for template {TemplateId} at {W}×{H}",

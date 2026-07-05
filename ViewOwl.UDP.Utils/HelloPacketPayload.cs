@@ -61,5 +61,8 @@ namespace ViewOwl.UDP.Utils
 
         /// <summary>Solomon Systech SSD1683 (400x300 4.2" e-paper, ESP32-S3 client).</summary>
         EPD = 6,
+
+        /// <summary>Two Solomon Systech SSD1683 in master/slave cascade (792x272 5.79" wide e-paper, ESP32-S3 client).</summary>
+        EPDWIDE = 7,
     }
 }

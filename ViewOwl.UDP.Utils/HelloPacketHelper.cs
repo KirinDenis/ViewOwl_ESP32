@@ -113,6 +113,7 @@ namespace ViewOwl.UDP.Utils
             DisplayType.ILI9486 => "ILI9486",
             DisplayType.GC9A01  => "GC9A01",
             DisplayType.EPD     => "EPD",
+            DisplayType.EPDWIDE => "EPDWIDE",
             _                   => "Unknown"
         };
 

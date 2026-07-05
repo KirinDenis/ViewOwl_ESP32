@@ -3,7 +3,7 @@
 **Language:** C99  
 **Framework:** ESP-IDF 5.5  
 **Build system:** CMake (ESP-IDF native)  
-**Directory:** [`ViewOwl.ESP32.Client/main/`](../../ViewOwl.ESP32.Client/main/) (classic rectangular boards), [`ViewOwl.ESP32_C3.Client/main/`](../../ViewOwl.ESP32_C3.Client/main/) (round display)
+**Directory:** [`ViewOwl.ESP32.Client/main/`](../../ViewOwl.ESP32.Client/main/) (classic rectangular boards), [`ViewOwl.ESP32_C3.Client/main/`](../../ViewOwl.ESP32_C3.Client/main/) (round display), [`ViewOwl.ESP32_EPD.Client/main/`](../../ViewOwl.ESP32_EPD.Client/main/) (e-paper)
 
 Rectangular variants are built from the classic source tree:
 - **320×240** — ILI9341 driver, GPIO 21 backlight (default build)
@@ -15,6 +15,27 @@ The variant is selected at compile time via a CMake flag that must appear in **b
 
 The 240×240 round GC9A01 display has its **own firmware client**, [`ViewOwl.ESP32_C3.Client`](../../ViewOwl.ESP32_C3.Client/), because it runs on an ESP32-C3 (RISC-V, single core, 2 MB flash, no PSRAM) rather than the classic ESP32. The SoC-agnostic logic — UDP protocol, frame decode, WiFi, NVS — is **shared** from the classic client; only the LCD layer and board config are C3-specific. The wire protocol (`packet.h`) is byte-for-byte identical across both clients, so the server treats every device the same. Class C animation playback works on the round too: the frame batch streams to a dedicated flash partition and plays from flash (the whole batch does not fit the C3's RAM), so playback survives a network drop.
 
+### E-paper client — ESP32-S3, two panel variants
+
+The e-paper displays run a third client, [`ViewOwl.ESP32_EPD.Client`](../../ViewOwl.ESP32_EPD.Client/) (ESP32-S3, USB-Serial-JTAG). One source tree builds two panel variants, selected by a build flag through the [`epd_panel.h`](../../ViewOwl.ESP32_EPD.Client/main/epd_panel.h) shim:
+
+- **400×300** — single SSD1683, driver [`epd_4in2.c`](../../ViewOwl.ESP32_EPD.Client/main/epd_4in2.c) (default build)
+- **792×272 wide** — dual SSD1683 master/slave cascade, driver [`epd_wide.c`](../../ViewOwl.ESP32_EPD.Client/main/epd_wide.c) (`-DEPD_792x272=1`)
+
+Both drivers expose the identical API (`epd_display`, `epd_display_4gray`, …), so `main.c`/`udp_client.c` build unchanged for either panel. Frames arrive in the display's native format — mono 1-bit, or 2-bit **4-gray** when the template opts in — and the client picks the render path from the payload size alone.
+
+The wide cascade is the interesting one: the two controllers share one SPI bus and one chip-select and are addressed by command opcode (slave = master opcode with bit 7 set, e.g. RAM write `0x24`→`0xA4`; register `0x91` is the slave's data-entry mode, the mirrored twin of the master's `0x11`). The 4-gray mode loads a custom grayscale waveform LUT — a sequence the panel vendor never shipped; it is derived from Waveshare's open driver for the same glass and was verified pixel-by-pixel in the bring-up polygon before landing in the client.
+
+### Bring-up polygons — the hardware test grounds
+
+Every new panel is brought up in a **polygon**: a small standalone ESP-IDF project, flashed locally with `idf.py flash monitor`, that draws deterministic test patterns (borders, diagonals, tone bars, seam markers) so each hardware hypothesis is answered by looking at the glass. The polygons stay in the repo as living documentation of how each panel actually works:
+
+| Polygon | Panel | What it proved |
+|---|---|---|
+| [`ViewOwl.ESP32.Client/diagnostics/gc9a01/`](../../ViewOwl.ESP32.Client/diagnostics/) | 240×240 round | GC9A01 init, rotation, round-mask geometry |
+| [`ViewOwl.ESP32_EPD.Client/diagnostics/`](../../ViewOwl.ESP32_EPD.Client/diagnostics/) | 4.2" e-paper | SSD1683 init, partial-refresh waveform |
+| [`ViewOwl.ESP32_EPD.Client/diagnostics-wide/`](../../ViewOwl.ESP32_EPD.Client/diagnostics-wide/) | 5.79" wide cascade | master/slave opcode addressing, seam geometry, 4-gray LUT (see its README for the full experiment log) |
+
 ### `display-types.json` — display registry (single source of truth)
 
 **File:** [`display-types.json`](../../display-types.json) (repo root)
@@ -25,7 +46,7 @@ Every display type is described once in this registry (`firmwareFamilies` + `dis
 - the esp-web-tools manifests used by the browser flasher,
 - the flasher UI target list.
 
-To add a future display, you add one entry here. Current `DisplayType` ids: `ILI9341 = 2`, `ST7796 = 3`, `ILI9486 = 4`, `GC9A01 = 5` (the round display).
+To add a future display, you add one entry here. Current `DisplayType` ids: `ILI9341 = 2`, `ST7796 = 3`, `ILI9486 = 4`, `GC9A01 = 5` (round), `EPD = 6` (4.2" e-paper), `EPDWIDE = 7` (5.79" wide e-paper cascade).
 
 ---
 
@@ -214,9 +235,9 @@ Carried in `PACKET_CONFIG`. When `FLAG_RESTART` is set, the device calls `esp_re
 | `reserved2` | `uint32_t` | Reserved for future use |
 | `reserved3` | `uint32_t` | Reserved for future use |
 
-#### `batch_start_payload_t` — 68 bytes
+#### `batch_start_payload_t` — 132 bytes
 
-Carried in `PACKET_BATCH_START`. Tells the device how many animation frames will follow and at what FPS to play them. Must match `BatchStartPayload` in C#.
+Carried in `PACKET_BATCH_START`. Tells the device how many animation frames will follow and at what FPS to play them. Must match `BatchStartPayload` in C#. `BATCH_MAX_FRAMES` is 32 (raised from 16 for long Class C loops — the payload is wire-compatible with older 16-frame firmware for batches of ≤16 frames, but >16-frame batches require a matching build). Keep the batch's total compressed size within the device's `frames` flash partition — if it does not fit, the device shows a "BATCH TOO BIG" screen and backs off instead of accepting the transfer.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -241,7 +262,7 @@ Carried in `PACKET_BATCH_START`. Tells the device how many animation frames will
 Two binaries are built by CI on every push to `dev`:
 
 ```yaml
-# CI firmware build pipeline (simplified)
+# CI firmware build (simplified)
 - name: Build 320×240
   run: idf.py build
 
@@ -255,10 +276,24 @@ All binaries are uploaded as release assets and referenced by the web flash mani
 
 ---
 
-## Flashing and provisioning
+## Flashing, provisioning, and the serial console
 
 Devices are flashed from the browser using `esp-web-tools` (Web Serial API). No drivers or local toolchain required.
 
-After flashing, the firmware opens a serial terminal for WiFi provisioning. SSID and password are written to NVS and survive subsequent OTA updates.
+### Serial provisioning protocol
+
+After flashing, the firmware opens a serial provisioning window and announces it with `VIEWOWL_READY`. The browser (or any terminal) then sends one line per value; the firmware acknowledges each:
+
+| You send | Firmware replies |
+|---|---|
+| `VIEWOWL_TOKEN:<32 hex chars>` | `VIEWOWL_TOKEN_OK` / `VIEWOWL_TOKEN_ERR:<reason>` |
+| `VIEWOWL_WIFI_SSID:<ssid>` | `VIEWOWL_WIFI_SSID_OK` / `_ERR:<reason>` |
+| `VIEWOWL_WIFI_PASS:<password>` | `VIEWOWL_WIFI_PASS_OK` / `_ERR:<reason>` |
+
+Once all three are accepted the firmware persists them to NVS and prints `VIEWOWL_PROV_DONE`. Credentials survive reboots and re-flashes of the app partition.
+
+### The browser serial console
+
+The same Web Serial connection doubles as a **live device console** — open it from the flashing dialog's log view. It streams the firmware's full boot and runtime log (ESP-IDF `ESP_LOGx`), which makes it the first tool to reach when a device misbehaves: you see the WiFi association and RSSI, every `HELLO`/`AUTH`/`BATCH` exchange with the server, frame sizes and render decisions, and any reject reason in plain text. On C3/S3 boards the console rides the built-in USB-Serial-JTAG (note: the port re-enumerates on reset); classic boards expose it through their USB-UART bridge chip.
 
 See [`docs/getting-started.md`](../getting-started.md) for the end-user flow.

@@ -138,7 +138,7 @@ Recent grab log entries for this template.
 [
   {
     "id": 99,
-    "tokenGuid": "b2c3d4e5-...",
+    "tokenGuid": "57ca9af6-...",
     "width": 480, "height": 320,
     "requestedAt": "2026-05-17T14:20:00Z",
     "completedAt": "2026-05-17T14:20:03Z",
@@ -197,7 +197,7 @@ All devices owned by the current user.
   {
     "id": 17,
     "name": "Living Room",
-    "token": "b2c3d4e5f6a74b8c9d0e1f2a3b4c5d6e",
+    "token": "57ca9af66f3840059521009e340141e2",
     "displayType": "ST7796",
     "displayWidth": 480,
     "displayHeight": 320,
@@ -396,7 +396,7 @@ Register a newly flashed device. No auth required.
 **Request:**
 ```json
 {
-  "guid": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+  "guid": "57ca9af6-6f38-4005-9521-009e340141e2",
   "templateName": "sf-nostromo-boot.html",
   "templateId": 42,
   "displayWidth": 480,
@@ -469,9 +469,9 @@ Resolves a device token to the frame file info the UDP Server should stream.
 {
   "deviceId": 17,
   "templateId": 42,
-  "tokenGuid": "b2c3d4e5-...",
-  "filePath": "/opt/viewowl/exchange/b2c3d4e5-....bin",
-  "batchManifestPath": "/opt/viewowl/exchange/b2c3d4e5-...._batch.json"
+  "tokenGuid": "57ca9af6-...",
+  "filePath": "/opt/viewowl/exchange/57ca9af6-....bin",
+  "batchManifestPath": "/opt/viewowl/exchange/57ca9af6-...._batch.json"
 }
 ```
 

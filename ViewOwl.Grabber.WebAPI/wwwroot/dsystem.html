@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ViewOwl ISA-101 design system</title>
+<style>
+:root{
+  --bg:#12121f; --bg-panel:#22223a; --bg-hover:#2c2c48; --bg-header:#1a1a2e;
+  --neutral-idle:#7070a0; --neutral-text:#cacae6; --neutral-line:#5a5a80;
+  --text:#f2f2ff; --text-dim:#bcbcda; --text-bright:#fff;
+  --status-ok:#fff; --status-warn:#d4a017; --status-error:#cc3333; --status-unknown:#8833cc; --status-offline:#444466; --status-active:#3399ff;
+  --primary:#00c8ff; --secondary:#0099cc; --accent-success:#00cc66;
+  --border:#a0a0cc; --border-bright:#c8c8f0;
+  --font:'IBM Plex Mono','Courier New',Consolas,monospace;
+  --space-xs:5px; --space-sm:8px; --space-md:13px; --space-lg:21px; --space-xl:34px; --space-2xl:55px;
+  --text-xs:11px; --text-sm:12px; --text-base:14px; --text-md:16px; --text-lg:20px; --text-xl:24px;
+}
+*{box-sizing:border-box; font-variant-numeric:tabular-nums}
+body{margin:0; background:var(--bg); color:var(--text); font-family:var(--font); padding:var(--space-lg)}
+h1{font-size:var(--text-md); letter-spacing:.12em; text-transform:uppercase; color:var(--text); margin:0 0 var(--space-xs)}
+.sub{font-size:var(--text-xs); color:var(--text-dim); margin-bottom:var(--space-lg)}
+.grid{display:grid; grid-template-columns:1fr 1fr; gap:var(--space-lg)}
+.panel{background:var(--bg-panel); border:1px solid var(--border); overflow:hidden}
+.ptitle{font-size:var(--text-sm); font-weight:600; letter-spacing:.10em; text-transform:uppercase; color:var(--neutral-text); padding:var(--space-sm) var(--space-md); border-bottom:1px solid var(--border); background:var(--bg-header)}
+.pbody{padding:var(--space-md); display:flex; flex-direction:column; gap:var(--space-md)}
+.row{display:flex; gap:var(--space-sm); align-items:center; flex-wrap:wrap}
+.lbl{font-size:var(--text-xs); color:var(--text-dim); text-transform:uppercase; letter-spacing:.1em; min-width:62px}
+/* buttons by MEANING (not rainbow) */
+.btn{font-family:var(--font); font-size:var(--text-xs); font-weight:700; letter-spacing:.12em; text-transform:uppercase; padding:var(--space-sm) var(--space-lg); border:1px solid; cursor:pointer; background:transparent}
+.b-ghost{border-color:var(--border); color:var(--text-dim)}
+.b-primary{background:var(--bg-hover); border-color:var(--primary); color:var(--primary)}
+.b-success{background:var(--accent-success); border-color:var(--accent-success); color:var(--bg)}
+.b-warn{border-color:var(--status-warn); color:var(--status-warn)}
+.b-danger{border-color:var(--status-error); color:var(--status-error)}
+.inp{flex:1; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--font); font-size:var(--text-sm); padding:7px 10px; outline:none}
+.inp.foc{border-color:var(--primary)}
+.dot{width:10px; height:10px; border-radius:50%; display:inline-block}
+.d-ok{background:var(--status-ok)} .d-warn{background:var(--status-warn)} .d-err{background:var(--status-error)} .d-off{background:var(--status-offline)} .d-act{background:var(--status-active)}
+.stat{display:flex; align-items:center; gap:6px; font-size:var(--text-xs); color:var(--text-dim)}
+.kv{display:flex; justify-content:space-between; font-size:var(--text-sm)}
+.kv .k{color:var(--text-dim); text-transform:uppercase; font-size:var(--text-xs); letter-spacing:.08em}
+.kv .v{color:var(--text)}
+/* golden ratio bars */
+.gbar{height:13px; background:var(--primary); opacity:.85}
+.gcap{font-size:var(--text-xs); color:var(--text-dim); width:54px}
+.note{font-size:var(--text-xs); color:var(--text-dim); line-height:1.6}
+.note b{color:var(--status-ok)}
+</style></head>
+<body>
+<h1>ViewOwl · ISA-101 / EEMUA-191 design system</h1>
+<div class="sub">SILENT &amp; NEUTRAL when healthy · colour ONLY for meaning · no ambient glow · IBM Plex Mono · golden-ratio spacing</div>
+
+<div class="grid">
+
+  <!-- Buttons by meaning -->
+  <div class="panel">
+    <div class="ptitle">Buttons — colour = meaning, not decoration</div>
+    <div class="pbody">
+      <div class="row"><span class="lbl">Neutral</span><button class="btn b-ghost">CANCEL</button><button class="btn b-primary">CONTINUE</button></div>
+      <div class="row"><span class="lbl">Positive</span><button class="btn b-success">SAVE</button></div>
+      <div class="row"><span class="lbl">Caution</span><button class="btn b-warn">RESTART</button></div>
+      <div class="row"><span class="lbl">Destruct</span><button class="btn b-danger">DELETE</button></div>
+      <div class="note">A newcomer reads: grey = safe/secondary, cyan = primary action, green = confirmed-good, amber = think twice, red = irreversible.</div>
+    </div>
+  </div>
+
+  <!-- Status / health -->
+  <div class="panel">
+    <div class="ptitle">Status — healthy is WHITE, not green</div>
+    <div class="pbody">
+      <div class="row"><span class="stat"><span class="dot d-ok"></span>RUNNING</span><span class="stat"><span class="dot d-act"></span>SELECTED</span><span class="stat"><span class="dot d-warn"></span>OVERDUE</span></div>
+      <div class="row"><span class="stat"><span class="dot d-err"></span>FAULT</span><span class="stat"><span class="dot d-off"></span>OFFLINE</span></div>
+      <div class="note"><b>White</b> = normal (ISA-101: don't paint healthy green — the eye must rest until something is wrong).</div>
+    </div>
+  </div>
+
+  <!-- Sample modal -->
+  <div class="panel">
+    <div class="ptitle">Sample modal · device config</div>
+    <div class="pbody">
+      <div class="kv"><span class="k">Status</span><span class="v">RUNNING <span class="dot d-ok" style="vertical-align:middle"></span></span></div>
+      <div class="kv"><span class="k">Last seen</span><span class="v">12:04:51</span></div>
+      <div class="row"><span class="lbl">Name</span><input class="inp" value="TENT-1"></div>
+      <div class="row"><span class="lbl">Template</span><input class="inp foc" value="shelter-env-guard"></div>
+      <div class="row" style="justify-content:flex-end"><button class="btn b-ghost">CANCEL</button><button class="btn b-warn">RESTART</button><button class="btn b-success">SAVE</button></div>
+    </div>
+  </div>
+
+  <!-- Golden ratio spacing -->
+  <div class="panel">
+    <div class="ptitle">Golden-ratio spacing (φ, base 8)</div>
+    <div class="pbody">
+      <div class="row"><span class="gcap">xs 5</span><div class="gbar" style="width:5px"></div></div>
+      <div class="row"><span class="gcap">sm 8</span><div class="gbar" style="width:8px"></div></div>
+      <div class="row"><span class="gcap">md 13</span><div class="gbar" style="width:13px"></div></div>
+      <div class="row"><span class="gcap">lg 21</span><div class="gbar" style="width:21px"></div></div>
+      <div class="row"><span class="gcap">xl 34</span><div class="gbar" style="width:34px"></div></div>
+      <div class="row"><span class="gcap">2xl 55</span><div class="gbar" style="width:55px"></div></div>
+      <div class="note">Every gap / pad snaps to this scale → consistent rhythm, comfortable density, nothing arbitrary.</div>
+    </div>
+  </div>
+
+</div>
+</body></html>

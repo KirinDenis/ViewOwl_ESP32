@@ -175,6 +175,11 @@ function FlowCanvas({ dashboardState, onNodeSelect, onConnectionStateChange, onS
           ipAddress: device.ipAddress,
           activeTemplateId: device.activeTemplateId,
           activeTemplateName: device.activeTemplateName,
+          // Grabber-lane health seed for the active template (see DashboardController).
+          // Lets a frozen device read GRAB FAIL on load, before any live GrabberUpdate arrives.
+          grabOk: device.grabOk,
+          grabError: device.grabError,
+          grabAt: device.grabAt,
           onDelete: async () => {
             if (!await confirm(`Delete device "${device.name}"?`, { title: 'DELETE DEVICE', danger: true })) return
             const res = await authFetch(`/api/devices/${device.id}`, { method: 'DELETE' })
@@ -440,8 +445,23 @@ function FlowCanvas({ dashboardState, onNodeSelect, onConnectionStateChange, onS
           break
         }
 
-        case 'TemplateUpdated':
         case 'GrabberUpdate':
+          // Grabber-lane outcome for a template — reflect it on every device node whose
+          // active template is this one, so a failing Class-C grab surfaces as GRAB FAIL
+          // instead of a misleading RENDERING (the UDP lane stays not_modified on the
+          // frozen frame). data = { templateId, success, errorMessage, timestamp }.
+          setNodes(nds => nds.map(node =>
+            node.type === 'device' && node.data.activeTemplateId === data.templateId
+              ? { ...node, data: { ...node.data, grabEvent: {
+                  success:      data.success,
+                  errorMessage: data.errorMessage ?? null,
+                  ts:           Date.now(),
+                }}}
+              : node
+          ))
+          break
+
+        case 'TemplateUpdated':
           break
 
         default:

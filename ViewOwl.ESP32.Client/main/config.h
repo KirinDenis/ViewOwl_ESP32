@@ -1,6 +1,6 @@
 #pragma once
 
-/* Firmware build trigger: 2026-06-26a — v1.2.50 BATCH_MAX_FRAMES 16→32 (packet.h, matches server BatchStartPayload.MaxFrames): allows Class-C loops up to 32 frames (e.g. the 30-frame trench). Wire-compatible with ≤16-frame batches; this build is required for >16-frame templates. */
+/* Firmware build trigger: 2026-07-02a — v1.2.51 batch-overflow backoff: when flash_frames_write_begin fails (batch exceeds the frames partition), pause BATCH_RETRY_DELAY_S with a "BATCH TOO BIG" TUI screen instead of instantly re-HELLOing — kills the ~5 req/s hot loop observed with a 30-frame batch vs the 2.4 MB partition. */
 /* STRINGIFY / TOSTRING — needed to expand FIRMWARE_BUILD_NUMBER to a string literal */
 #define STRINGIFY(x) TOSTRING(x)
 #define TOSTRING(x)  #x
@@ -14,7 +14,7 @@
 #define FIRMWARE_VERSION_MINOR 2
 #endif
 #ifndef FIRMWARE_VERSION_PATCH
-#define FIRMWARE_VERSION_PATCH 50
+#define FIRMWARE_VERSION_PATCH 51
 #endif
 #ifndef FIRMWARE_BUILD_NUMBER
 #define FIRMWARE_BUILD_NUMBER 0
@@ -110,20 +110,20 @@
 #define LCD_H_RES 480
 #define LCD_V_RES 320
 #define LIGHT_PIN 27
-#define TOKEN "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"
+#define TOKEN "57ca9af66f3840059521009e340141e2"
 /* DisplayType: ST7796 = 3 */
 #define DISPLAY_TYPE_ID 3
 /*
- * TOKEN_BYTES — binary Windows GUID for "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e".
+ * TOKEN_BYTES — binary Windows GUID for "57ca9af6-6f38-4005-9521-009e340141e2".
  * Layout: Data1(LE) Data2(LE) Data3(LE) Data4(BE)
- *   B2C3D4E5 -> E5 D4 C3 B2
- *   F6A7     -> A7 F6
- *   4B8C     -> 8C 4B
- *   9D0E1F2A3B4C5D6E -> 9D 0E 1F 2A 3B 4C 5D 6E
+ *   57CA9AF6 -> F6 9A CA 57
+ *   6F38     -> 38 6F
+ *   4005     -> 05 40
+ *   9521009E340141E2 -> 95 21 00 9E 34 01 41 E2
  */
 #define TOKEN_BYTES { \
-    0xE5, 0xD4, 0xC3, 0xB2, 0xA7, 0xF6, 0x8C, 0x4B, \
-    0x9D, 0x0E, 0x1F, 0x2A, 0x3B, 0x4C, 0x5D, 0x6E  \
+    0xF6, 0x9A, 0xCA, 0x57, 0x38, 0x6F, 0x05, 0x40, \
+    0x95, 0x21, 0x00, 0x9E, 0x34, 0x01, 0x41, 0xE2  \
 }
 #else
 #define LCD_H_RES 320

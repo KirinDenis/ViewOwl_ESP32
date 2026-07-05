@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { authFetch } from '../../utils/auth'
 import { confirm } from '../../utils/confirm'
 import BurnModal from '../Burn/BurnModal'
+import SerialTerminalModal from '../Serial/SerialTerminalModal'
 import MiniLineChart from './MiniLineChart'
 import './ControllerConfigModal.css'
 
@@ -32,6 +33,7 @@ function ControllerConfigModal({ device, liveUptime, liveRssi, onClose, onNameSa
   const [saveStatus, setSaveStatus]         = useState(null)  // null | 'saved' | 'error'
   const [restarting, setRestarting]         = useState(false)
   const [reburnOpen, setReburnOpen]         = useState(false)
+  const [termOpen,   setTermOpen]           = useState(false)
   const [tokenInput, setTokenInput]         = useState(device.token ?? '')
   const [tokenSaving, setTokenSaving]       = useState(false)
   const [tokenStatus, setTokenStatus]       = useState(null)  // null | 'saved' | 'error'
@@ -346,6 +348,13 @@ function ControllerConfigModal({ device, liveUptime, liveRssi, onClose, onNameSa
               ↺ REBURN
             </button>
           )}
+          <button
+            className="cc-btn cc-btn-terminal"
+            onClick={() => setTermOpen(true)}
+            title="Open a serial terminal to (re)send Wi-Fi / token over USB"
+          >
+            ⌨ TERMINAL
+          </button>
           <span className="cc-spacer" />
           <button className="cc-btn cc-btn-cancel" onClick={onClose}>✕ CANCEL</button>
         </div>
@@ -359,6 +368,15 @@ function ControllerConfigModal({ device, liveUptime, liveRssi, onClose, onNameSa
         prefillToken={device.token}
         prefillName={savedName}
         onClose={() => setReburnOpen(false)}
+      />,
+      document.body
+    )}
+
+    {termOpen && createPortal(
+      <SerialTerminalModal
+        prefillToken={device.token}
+        deviceName={savedName}
+        onClose={() => setTermOpen(false)}
       />,
       document.body
     )}

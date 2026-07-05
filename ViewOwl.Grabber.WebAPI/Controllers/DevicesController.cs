@@ -142,7 +142,7 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
                     {
                         await CreateDeviceStatusTemplateAsync(
                             scope.ServiceProvider, capturedId, capturedToken, capturedName, userId,
-                            capturedW, capturedH)
+                            capturedW, capturedH, immediateGrab: false)
                             .ConfigureAwait(false);
                     }
                     catch (Exception ex)
@@ -167,7 +167,7 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
         /// </summary>
         private async Task CreateDeviceStatusTemplateAsync(
             IServiceProvider services, int deviceId, string deviceToken, string deviceName, int userId,
-            int displayWidth = 480, int displayHeight = 320)
+            int displayWidth = 480, int displayHeight = 320, bool immediateGrab = true)
         {
             var devices     = services.GetRequiredService<IDeviceRepository>();
             var templates   = services.GetRequiredService<ITemplateRepository>();
@@ -198,6 +198,7 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
                 Name        = $"STATUS — {deviceName}",
                 HtmlContent = html,
                 UserId      = userId,
+                IsPublic    = false,   // device-status templates never belong on the public gallery
             };
 
             var savedTemplate = await templates.CreateAsync(template).ConfigureAwait(false);
@@ -224,6 +225,13 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
             string htmlFileName = $"t{savedTemplate.Id}.html";
             string htmlFilePath = Path.Combine(sitesFolder, htmlFileName);
             await System.IO.File.WriteAllTextAsync(htmlFilePath, html).ConfigureAwait(false);
+
+            // Registration path skips the immediate grab: it opens a tab in the shared Chromium
+            // (the historical grabber-crash reason this feature was disabled). The assignment above
+            // already saved the device from "no template"; the first frame arrives on the normal
+            // grab cycle, which also resolves the correct frame format per display type.
+            if (!immediateGrab)
+                return;
 
             // Create a GrabLog row and open an ephemeral browser tab.
             Guid tokenGuid = Guid.NewGuid();
@@ -291,13 +299,16 @@ namespace ViewOwl.Grabber.WebAPI.Controllers
             int capturedId2      = device.Id;
             string capturedToken2 = device.Token;
             string capturedName2  = device.Name;
+            int capturedW2       = device.DisplayWidth  ?? 480;
+            int capturedH2       = device.DisplayHeight ?? 320;
             _ = Task.Run(async () =>
             {
                 using IServiceScope scope = _scopeFactory.CreateScope();
                 try
                 {
                     await CreateDeviceStatusTemplateAsync(
-                        scope.ServiceProvider, capturedId2, capturedToken2, capturedName2, userId)
+                        scope.ServiceProvider, capturedId2, capturedToken2, capturedName2, userId,
+                        capturedW2, capturedH2)
                         .ConfigureAwait(false);
                 }
                 catch (Exception ex)

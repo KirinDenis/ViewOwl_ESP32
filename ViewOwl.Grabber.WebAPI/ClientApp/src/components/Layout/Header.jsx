@@ -3,7 +3,7 @@ import StatusLED from '../HUD/StatusLED'
 import { useAuth } from '../../utils/AuthContext'
 import './Header.css'
 
-function Header({ connectionState, devicesOnline, devicesTotal, alarmCounts, onEditTemplates, onBurn, theme, onToggleTheme, onLogout }) {
+function Header({ connectionState, devicesOnline, devicesTotal, alarmCounts, onEditTemplates, onBurn, onUsers, onSecurity, theme, onToggleTheme, onLogout }) {
   const { isAdmin } = useAuth()
   const [time, setTime] = useState(new Date())
 
@@ -68,7 +68,11 @@ function Header({ connectionState, devicesOnline, devicesTotal, alarmCounts, onE
       {/* ── Action buttons ─────────────────────────────── */}
       <div className="header-toolbar">
         {isAdmin && (
-          <button className="header-tool-btn header-tool-btn-templates" onClick={onEditTemplates}>⊞ TEMPLATES</button>
+          <>
+            <button className="header-tool-btn header-tool-btn-templates" onClick={onEditTemplates}>⊞ TEMPLATES</button>
+            <button className="header-tool-btn" onClick={onUsers}>USERS</button>
+            <button className="header-tool-btn" onClick={onSecurity}>SECURITY</button>
+          </>
         )}
         <button className="header-tool-btn header-tool-btn-burn" onClick={onBurn}>⚡ BURN</button>
         <a className="header-tool-btn header-tool-btn-admin" href="/dashboard.html">

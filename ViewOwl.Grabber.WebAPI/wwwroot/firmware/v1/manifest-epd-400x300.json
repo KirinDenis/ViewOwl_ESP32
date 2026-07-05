@@ -1,6 +1,6 @@
 {
   "name": "ViewOwl 400×300 e-paper (SSD1683)",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "builds": [
     {
       "chipFamily": "ESP32-S3",

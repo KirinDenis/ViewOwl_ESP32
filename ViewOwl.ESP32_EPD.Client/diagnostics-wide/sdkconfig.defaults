@@ -1,0 +1,10 @@
+# Target is the ESP32-S3 (the e-paper board wires the EPD control lines to GPIO
+# 45-48, which only the S3 has). If a stale sdkconfig exists, delete it or run:
+#   idf.py set-target esp32s3
+# NOTE: the VS Code ESP-IDF extension's active target overrides this — set it to
+# esp32s3 in the status bar too, otherwise it builds for the wrong chip.
+CONFIG_IDF_TARGET="esp32s3"
+
+# Larger main-task stack — the two 15 KB framebuffers live in static .bss, but give
+# the bring-up task headroom for logging.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144

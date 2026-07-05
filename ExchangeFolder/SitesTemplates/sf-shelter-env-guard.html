@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body"
+  data-vow-name="Shelter Env Guard"
+  data-vow-category="safety"
+  data-vow-description="Winter tent / small-shelter life-support monitor for fire or gas heating. Watches the four competing hazards at once — CO poisoning, combustible gas (LEL), bad air (CO2 / low O2) and freezing temperature — and shows ONE prioritised action (per EEMUA 191) plus zone bars, trends and a balance verdict. Sci-Fi console look but ISO 9241 / IEC 60073 safety-colour UX: status is shown by word + shape + colour (never colour alone). Class-C demo cycles a full hazard scenario: cosy → stuffy → CO rising → CO+gas evacuate → vented-but-freezing → recovering."
+  data-vow-tags="safety,co,gas,tent,life-support,monitor,scifi,environment"
+  data-vow-class="C"
+  data-vow-frames="16"
+  data-vow-fps="1"
+  data-vow-refresh="0">
+<canvas id="screen"></canvas>
+<script>
+'use strict'
+/* Logical design space 480x320; canvas matches the real viewport and is scaled, so a
+ * 320x240 grab renders natively (no cropping). Colours are snapped to the BGR565 grid so
+ * they survive the panel; UI is flat fills + crisp text (NO dithering — for a safety
+ * readout legibility beats gradient smoothness). */
+const W=480,H=320
+const cv=document.getElementById('screen')
+const VW=window.innerWidth||W, VH=window.innerHeight||H
+cv.width=VW; cv.height=VH
+const cx=cv.getContext('2d')
+
+const FRAME_COUNT=16
+
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+
+/* Palette — deep teal console chrome; vivid, unambiguous safety colours. */
+const P={
+  bg:  css(6,10,16),  pan: css(14,20,30), pan2:css(22,30,44),
+  bdr: css(40,120,150),bdr2:css(22,56,74),
+  gn:  css(60,230,120),gnZ: css(18,66,40),
+  am:  css(255,182,60),amZ: css(86,60,18),
+  rd:  css(255,72,60), rdZ: css(92,28,24),
+  cy:  css(96,212,250),bl: css(86,142,255),
+  tx:  css(226,236,246),tx2:css(150,176,196),tx3:css(96,122,142),wh:css(252,253,255),
+}
+const SEVC=[P.gn,P.am,P.rd]          /* severity 0/1/2 -> colour              */
+const SEVW=['OK','WARN','DANGER']    /* severity -> word (never colour alone) */
+
+function fill(x,y,w,h,c){cx.fillStyle=c;cx.fillRect(x,y,w,h)}
+function ln(x1,y1,x2,y2,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()}
+function box(x,y,w,h,c,lw=1){cx.strokeStyle=c;cx.lineWidth=lw;cx.strokeRect(x,y,w,h)}
+function dot(x,y,r,c){cx.beginPath();cx.arc(x,y,r,0,Math.PI*2);cx.fillStyle=c;cx.fill()}
+function txt(s,x,y,c,sz=9,al='left',bold=false){cx.font=`${bold?'bold ':''}${sz}px monospace`;cx.fillStyle=c;cx.textAlign=al;cx.fillText(s,x,y);cx.textAlign='left'}
+
+/* Zone bar: green(safe)|amber(warn)|red(danger) band with a white needle at the value —
+ * shows "where in the safe range am I" at a glance (ISO 9241-112 discriminability). */
+function zonebar(x,y,w,h,val,warnAt,dangerAt,max){
+  const wf=warnAt/max,df=dangerAt/max
+  fill(x,y,w*wf,h,P.gnZ)
+  fill(x+w*wf,y,w*(df-wf),h,P.amZ)
+  fill(x+w*df,y,w*(1-df),h,P.rdZ)
+  const px=x+w*Math.max(0,Math.min(1,val/max))
+  fill(px-1,y-2,2,h+4,P.wh)
+  box(x,y,w,h,P.bdr2,0.6)
+}
+const sevHi =(v,w,d)=>v>=d?2:v>=w?1:0      /* high value is bad (CO, gas, CO2)  */
+const sevLo =(v,w,d)=>v<=d?2:v<=w?1:0      /* low value is bad  (O2)            */
+const sevTmp=(t)=>(t<=0||t>=32)?2:(t<10||t>=28)?1:0
+const arr=(d)=>d>0.4?'▲':d<-0.4?'▼':'—'
+
+/* ── Scenario: 16 deterministic states walking the full hazard space ──────────
+ * co ppm | gas %LEL | co2 ppm | o2 % | temp °C | rh % */
+const SCEN=[
+  [  3, 1,  650,20.9,21.5,45],[  4, 1,  760,20.8,21.8,46],[  6, 2,  980,20.6,22.0,48],[  8, 2, 1700,20.4,22.2,52],
+  [ 11, 3, 2400,20.0,21.8,56],[ 16, 4, 3100,19.7,21.2,59],[ 30, 6, 3500,19.5,20.6,61],[ 58, 8, 3200,19.6,20.0,61],
+  [ 98,11, 2700,19.8,19.4,60],[155,15, 2300,20.0,18.9,58],[210,20, 2000,20.2,18.4,56],[244,27, 1800,20.3,18.0,55],
+  [125,14, 1500,20.5,13.5,54],[ 42, 6, 1150,20.7, 6.5,53],[ 11, 3,  900,20.8,-1.0,52],[  6, 2,  780,20.9, 9.0,49],
+]
+
+/* CO / gas / CO2 / O2 thresholds chosen for a tent (conservative — CO especially). */
+function assess(s){
+  const[co,gas,co2,o2,temp]=s
+  const hz=[
+    {k:'CO',  s:sevHi(co,50,150),     a2:'EVACUATE · CO POISON',     a1:'VENTILATE · CO RISING'},
+    {k:'GAS', s:sevHi(gas,10,25),     a2:'EVACUATE · GAS / EXPLOSIVE',a1:'VENT · GAS DETECTED'},
+    {k:'O2',  s:sevLo(o2,19.5,18),    a2:'VENTILATE · O₂ LOW',  a1:'VENTILATE · O₂ LOW'},
+    {k:'CO2', s:sevHi(co2,1500,4000), a2:'VENTILATE · AIR TOXIC',    a1:'STUFFY · CRACK A VENT'},
+    {k:'TEMP',s:sevTmp(temp),         a2:temp>=28?'TOO HOT · EASE FIRE':'FREEZING · ADD HEAT',
+                                      a1:temp>=28?'WARM · EASE FIRE':'COLD · ADD HEAT'},
+  ]
+  /* Highest severity wins; ties break by list order = hazard priority (CO first). */
+  let top=hz[0]
+  for(const h of hz)if(h.s>top.s)top=h
+  let word='SAFE',sub='ALL IN BALANCE'
+  if(top.s===2){word=(top.k==='CO'||top.k==='GAS')?'EVACUATE':'DANGER';sub=top.a2}
+  else if(top.s===1){word='CAUTION';sub=top.a1}
+  return{sev:top.s,word,sub,hz}
+}
+
+function render(frame){
+  frame=((frame%FRAME_COUNT)+FRAME_COUNT)%FRAME_COUNT
+  cx.setTransform(VW/W,0,0,VH/H,0,0)
+  const s=SCEN[frame],pv=SCEN[(frame-1+FRAME_COUNT)%FRAME_COUNT]
+  const[co,gas,co2,o2,temp,rh]=s
+  const A=assess(s),sc=SEVC[A.sev]
+  const blink=A.sev===2&&(frame%2===0)        /* flash the worst alarm (EEMUA 191) */
+
+  fill(0,0,W,H,P.bg)
+  box(2,2,W-4,H-4,P.bdr,1.4);box(6,6,W-12,H-12,P.bdr2,0.7)
+
+  /* ── Header ── */
+  fill(7,7,W-14,15,css(8,14,22))
+  txt('SHELTER ENV GUARD · TENT 1',13,18,P.tx,10,'left',true)
+  txt('FIRE/GAS HEAT MODE',W/2+40,18,P.tx3,8)
+  const mm=16*3600+frame*47,hts=`${String(~~(mm/3600)%24).padStart(2,'0')}:${String(~~(mm/60)%60).padStart(2,'0')}`
+  txt(hts,W-13,18,P.tx2,9,'right',true)
+  ln(7,24,W-7,24,P.bdr2)
+
+  /* ══ HERO — the single prioritised verdict + action (largest element) ══ */
+  const hy=28,hh=52
+  fill(9,hy,W-18,hh,[P.gnZ,P.amZ,P.rdZ][A.sev])
+  fill(9,hy,4,hh,sc)
+  box(9,hy,W-18,hh,sc,blink?1.6:0.9)
+  /* status glyph: check (safe) / triangle (warn/danger) — shape, not colour alone */
+  const gx=20,gy=hy+hh/2
+  if(A.sev===0){cx.strokeStyle=sc;cx.lineWidth=3;cx.beginPath();cx.moveTo(gx-8,gy);cx.lineTo(gx-2,gy+7);cx.lineTo(gx+10,gy-9);cx.stroke()}
+  else{cx.fillStyle=blink?sc:[null,P.amZ,P.rdZ][A.sev];cx.strokeStyle=sc;cx.lineWidth=2
+       cx.beginPath();cx.moveTo(gx,gy-11);cx.lineTo(gx+12,gy+10);cx.lineTo(gx-12,gy+10);cx.closePath();cx.fill();cx.stroke()
+       txt('!',gx,gy+7,A.sev===2?P.wh:P.am,15,'center',true)}
+  txt(A.word,44,hy+26,sc,26,'left',true)
+  txt(A.sub,44,hy+44,P.tx,12,'left',true)
+  /* driving readout big on the right */
+  const drv=A.hz.reduce((p,h)=>h.s>p.s?h:p,A.hz[0])
+  const dv={CO:co+' ppm',GAS:gas+'% LEL',O2:o2.toFixed(1)+'% O₂',CO2:co2+' ppm',TEMP:temp.toFixed(1)+'°'}[drv.k]
+  txt(drv.k,W-16,hy+20,P.tx3,9,'right')
+  txt(dv,W-16,hy+42,sc,18,'right',true)
+
+  /* ══ PRIMARY HAZARDS — CO / GAS / CO2 (life-threatening) ══ */
+  const py=86,pw=150,ph=66,gpx=[9,165,321]
+  const prim=[
+    {lab:'CARBON MONOXIDE',u:'ppm',v:co, pv:pv[0],w:50,  d:150, mx:250, sev:A.hz[0].s},
+    {lab:'COMBUST. GAS',   u:'%LEL',v:gas,pv:pv[1],w:10,  d:25,  mx:50,  sev:A.hz[1].s},
+    {lab:'CO₂ / AIR', u:'ppm',v:co2,pv:pv[2],w:1500,d:4000,mx:5000, sev:A.hz[3].s},
+  ]
+  prim.forEach((c,i)=>{
+    const x=gpx[i],col=SEVC[c.sev]
+    fill(x,py,pw,ph,P.pan);box(x,py,pw,ph,P.bdr2,0.7);fill(x,py,pw,2,col)
+    txt(c.lab,x+7,py+13,P.tx3,8)
+    dot(x+pw-10,py+10,3,col)
+    const vs=(c.v>=100?c.v.toFixed(0):c.v.toFixed(c.u==='%LEL'?0:0))
+    txt(vs,x+7,py+38,P.wh,22,'left',true)
+    txt(c.u,x+9+cx.measureText(vs).width,py+38,col,10,'left',true)
+    txt(arr(c.v-c.pv),x+pw-9,py+38,P.tx2,12,'right')
+    zonebar(x+7,py+45,pw-14,7,c.v,c.w,c.d,c.mx)
+    txt(SEVW[c.sev],x+7,py+62,col,8,'left',true)
+  })
+
+  /* ══ SECONDARY — O2 / TEMP / HUMIDITY ══ */
+  const sy=158,sh=42
+  const sec=[
+    {lab:'OXYGEN O₂',u:'%', v:o2,  sev:A.hz[2].s, lo:17,hi:21,col:SEVC[A.hz[2].s]},
+    {lab:'TEMPERATURE', u:'°C',v:temp,sev:A.hz[4].s, lo:-5,hi:30,col:temp<10?P.cy:(A.hz[4].s?SEVC[A.hz[4].s]:P.gn)},
+    {lab:'HUMIDITY',    u:'%', v:rh,  sev:0,        lo:0,hi:100,col:P.bl},
+  ]
+  sec.forEach((c,i)=>{
+    const x=gpx[i],col=c.col
+    fill(x,sy,pw,sh,P.pan);box(x,sy,pw,sh,P.bdr2,0.7);fill(x,sy,2,sh,col)
+    txt(c.lab,x+8,sy+13,P.tx3,8)
+    const vs=c.v.toFixed(1)
+    txt(vs,x+8,sy+34,P.wh,17,'left',true)
+    txt(c.u,x+10+cx.measureText(vs).width,sy+34,col,9,'left',true)
+    const f=(c.v-c.lo)/(c.hi-c.lo)
+    fill(x+96,sy+24,46,7,css(10,16,26));fill(x+96,sy+24,46*Math.max(0.04,Math.min(1,f)),7,col);box(x+96,sy+24,46,7,P.bdr2,0.5)
+  })
+
+  /* ══ TREND — CO (poison) vs TEMP (cold): the core dilemma, +CO2 dotted ══ */
+  const ty=206,th=92,plx=42,ply=ty+18,plw=W-plx-58,plh=th-34
+  fill(9,ty,W-18,th,P.pan);box(9,ty,W-18,th,P.bdr2,0.7);fill(9,ty,W-18,2,P.bdr)
+  txt('TREND · SCENARIO',16,ty+13,P.tx3,8)
+  txt('— CO',W-150,ty+13,P.rd,8,'left',true)
+  txt('— TEMP',W-108,ty+13,P.cy,8,'left',true)
+  txt('·· CO₂',W-58,ty+13,P.am,8,'left',true)
+  cx.strokeStyle=P.bdr2;cx.lineWidth=0.5
+  for(let i=0;i<=3;i++){const yy=ply+plh*i/3;cx.beginPath();cx.moveTo(plx,yy);cx.lineTo(plx+plw,yy);cx.stroke()}
+  txt('CO',plx-6,ply+4,P.rd,7,'right');txt('250',plx-6,ply+4,P.tx3,7,'right')
+  txt('0',plx-6,ply+plh+2,P.tx3,7,'right')
+  txt('30',plx+plw+6,ply+4,P.cy,7,'left');txt('-5',plx+plw+6,ply+plh+2,P.cy,7,'left')
+  const coY=v=>ply+plh*(1-Math.min(1,v/250)),tmY=v=>ply+plh*(1-(v+5)/35),c2Y=v=>ply+plh*(1-Math.min(1,v/5000))
+  const PX=i=>plx+plw*i/(FRAME_COUNT-1)
+  /* CO2 dotted */
+  cx.fillStyle=P.am;for(let i=0;i<FRAME_COUNT;i++){const x=PX(i);cx.fillRect(x,c2Y(SCEN[i][2]),1.6,1.6)}
+  /* TEMP cyan */
+  cx.strokeStyle=P.cy;cx.lineWidth=1.2;cx.beginPath();SCEN.forEach((v,i)=>{i?cx.lineTo(PX(i),tmY(v[4])):cx.moveTo(PX(i),tmY(v[4]))});cx.stroke()
+  /* CO red (the killer) bright */
+  cx.strokeStyle=P.rd;cx.lineWidth=1.8;cx.beginPath();SCEN.forEach((v,i)=>{i?cx.lineTo(PX(i),coY(v[0])):cx.moveTo(PX(i),coY(v[0]))});cx.stroke()
+  /* sweep cursor at current frame */
+  const cxr=PX(frame);ln(cxr,ply,cxr,ply+plh,P.wh,1);dot(cxr,coY(co),2.6,P.rd);dot(cxr,tmY(temp),2.4,P.cy)
+
+  /* ══ Footer — sensor health + balance hint + loop sync ══ */
+  const fy=H-15
+  const sens=[['CO',1],['GAS',1],['CO2',1],['O2',1],['T',1],['RH',1]]
+  sens.forEach((t,i)=>{const x=13+i*40;fill(x,fy,7,7,t[1]?P.gn:css(10,16,26));box(x,fy,7,7,t[1]?P.gn:P.bdr2,0.6);txt(t[0],x+10,fy+7,P.tx2,8)})
+  txt(`SYNC ${String(frame+1).padStart(2,'0')}/${FRAME_COUNT}`,W-14,fy+7,P.tx2,8,'right')
+  if(A.sev===2){dot(W-104,fy+3,3,blink?P.rd:P.rdZ)}
+}
+
+/* ── Driver: grab path renders the requested frame; preview self-animates ── */
+const vf=new URLSearchParams(location.search).get('vow_frame')
+if(vf!==null){render(parseInt(vf,10)||0)}
+else{let pf=0;render(pf);setInterval(()=>{pf=(pf+1)%FRAME_COUNT;render(pf)},900)}
+</script></body></html>

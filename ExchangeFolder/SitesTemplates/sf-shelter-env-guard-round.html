@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{margin:0;padding:0}body{background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body id="body"
+  data-vow-name="Shelter Env Guard (Round)"
+  data-vow-category="safety"
+  data-vow-description="Radial winter-shelter life-support monitor for the 240x240 round display (GC9A01). Same four-hazard balance as the LCD version — CO poisoning, combustible gas, bad air (CO2/O2) and freezing — laid out radially: a centre hub shows the one prioritised verdict + action, six sector gauges around it carry each hazard (CO at 12 o'clock), and an outer ring is the overall alarm colour visible from across the tent. ISO 9241 / IEC 60073 safety-colour UX, status by word + shape + colour. Class-C demo cycles a full scenario: cosy -> stuffy -> CO rising -> CO+gas evacuate -> vented-but-freezing -> recovering."
+  data-vow-tags="safety,co,gas,tent,round,gc9a01,radial,monitor,scifi"
+  data-vow-class="C"
+  data-vow-frames="16"
+  data-vow-fps="1"
+  data-vow-refresh="0">
+<canvas id="screen"></canvas>
+<script>
+'use strict'
+/* Round 240x240 (GC9A01). Keep all content within the safe radius (~112 px from the
+ * centre); the bezel hides the corners. Logical space 240x240; canvas matches the
+ * viewport and scales. Colours snapped to BGR565; flat fills + crisp text (no dithering). */
+const W=240,H=240,CXr=120,CYr=120
+const cv=document.getElementById('screen')
+const VW=window.innerWidth||W, VH=window.innerHeight||H
+cv.width=VW; cv.height=VH
+const cx=cv.getContext('2d')
+
+const FRAME_COUNT=16
+const TAU=Math.PI*2
+
+function snap565(r,g,b){return[Math.min(248,~~(r/8)*8),Math.min(252,~~(g/4)*4),Math.min(248,~~(b/8)*8)]}
+function css(r,g,b){const[a,c,e]=snap565(r,g,b);return`rgb(${a},${c},${e})`}
+const P={
+  bg:  css(6,10,16),  hub: css(10,16,24),
+  bdr2:css(22,56,74),
+  gn:  css(60,230,120),gnZ: css(16,60,36),
+  am:  css(255,182,60),amZ: css(78,56,16),
+  rd:  css(255,72,60), rdZ: css(84,26,22),
+  cy:  css(96,212,250),bl: css(86,142,255),
+  tx:  css(226,236,246),tx2:css(160,184,202),tx3:css(96,122,142),wh:css(252,253,255),
+}
+const SEVC=[P.gn,P.am,P.rd],SEVZ=[P.gnZ,P.amZ,P.rdZ]
+
+function dot(x,y,r,c){cx.beginPath();cx.arc(x,y,r,0,TAU);cx.fillStyle=c;cx.fill()}
+function ring(x,y,r,c,lw){cx.strokeStyle=c;cx.lineWidth=lw;cx.beginPath();cx.arc(x,y,r,0,TAU);cx.stroke()}
+function arc(r,a0,a1,c,lw){cx.strokeStyle=c;cx.lineWidth=lw;cx.lineCap='butt';cx.beginPath();cx.arc(CXr,CYr,r,a0,a1);cx.stroke()}
+function txt(s,x,y,c,sz=9,al='center',bold=false){cx.font=`${bold?'bold ':''}${sz}px monospace`;cx.fillStyle=c;cx.textAlign=al;cx.textBaseline='middle';cx.fillText(s,x,y);cx.textAlign='left';cx.textBaseline='alphabetic'}
+/* Annular wedge (sector slice between two radii). */
+function wedge(rIn,rOut,a0,a1,c){cx.beginPath();cx.arc(CXr,CYr,rOut,a0,a1);cx.arc(CXr,CYr,rIn,a1,a0,true);cx.closePath();cx.fillStyle=c;cx.fill()}
+
+const sevHi =(v,w,d)=>v>=d?2:v>=w?1:0
+const sevLo =(v,w,d)=>v<=d?2:v<=w?1:0
+const sevTmp=(t)=>(t<=0||t>=32)?2:(t<10||t>=28)?1:0
+
+const SCEN=[
+  [  3, 1,  650,20.9,21.5,45],[  4, 1,  760,20.8,21.8,46],[  6, 2,  980,20.6,22.0,48],[  8, 2, 1700,20.4,22.2,52],
+  [ 11, 3, 2400,20.0,21.8,56],[ 16, 4, 3100,19.7,21.2,59],[ 30, 6, 3500,19.5,20.6,61],[ 58, 8, 3200,19.6,20.0,61],
+  [ 98,11, 2700,19.8,19.4,60],[155,15, 2300,20.0,18.9,58],[210,20, 2000,20.2,18.4,56],[244,27, 1800,20.3,18.0,55],
+  [125,14, 1500,20.5,13.5,54],[ 42, 6, 1150,20.7, 6.5,53],[ 11, 3,  900,20.8,-1.0,52],[  6, 2,  780,20.9, 9.0,49],
+]
+
+function assess(s){
+  const[co,gas,co2,o2,temp]=s
+  const hz=[
+    {k:'CO',  s:sevHi(co,50,150)},   {k:'GAS', s:sevHi(gas,10,25)},
+    {k:'O2',  s:sevLo(o2,19.5,18)},  {k:'CO2', s:sevHi(co2,1500,4000)},
+    {k:'TEMP',s:sevTmp(temp)},
+  ]
+  let top=hz[0];for(const h of hz)if(h.s>top.s)top=h
+  let word='SAFE',reason='BALANCED'
+  if(top.s===2){
+    word=(top.k==='CO'||top.k==='GAS')?'EVACUATE':'DANGER'
+    reason={CO:'CO POISON',GAS:'GAS LEAK',O2:'LOW O₂',CO2:'AIR TOXIC',TEMP:temp>=28?'TOO HOT':'FREEZING'}[top.k]
+  }else if(top.s===1){
+    word='CAUTION'
+    reason={CO:'CO RISING',GAS:'GAS',O2:'O₂ LOW',CO2:'STUFFY',TEMP:temp>=28?'WARM':'COLD'}[top.k]
+  }
+  return{sev:top.s,word,reason,top,hz}
+}
+
+function render(frame){
+  frame=((frame%FRAME_COUNT)+FRAME_COUNT)%FRAME_COUNT
+  cx.setTransform(VW/W,0,0,VH/H,0,0)
+  const s=SCEN[frame],[co,gas,co2,o2,temp,rh]=s
+  const A=assess(s),osc=SEVC[A.sev],blink=A.sev===2&&(frame%2===0)
+
+  /* field */
+  cx.fillStyle=P.bg;cx.fillRect(0,0,W,H)
+  dot(CXr,CYr,118,P.bg)
+  ring(CXr,CYr,116,P.bdr2,1)
+
+  /* ── outer alarm ring — overall severity, visible across the tent ── */
+  ring(CXr,CYr,108,SEVZ[A.sev],7)
+  if(A.sev<2||blink)ring(CXr,CYr,108,osc,7)
+  /* rotating sweep tick (alive indicator) */
+  const sw=-Math.PI/2+frame/FRAME_COUNT*TAU
+  arc(108,sw-0.05,sw+0.05,P.wh,7)
+
+  /* ── six hazard sector gauges (CO at 12 o'clock, clockwise) ── */
+  const rIn=53,rOut=101,gap=0.10
+  const H6=[
+    {lab:'CO', disp:String(co),         frac:co/250,        col:SEVC[A.hz[0].s]},
+    {lab:'GAS',disp:String(gas),        frac:gas/50,        col:SEVC[A.hz[1].s]},
+    {lab:'CO₂',disp:String(co2),        frac:co2/5000,      col:SEVC[A.hz[3].s]},
+    {lab:'O₂', disp:o2.toFixed(1),      frac:(21-o2)/4,     col:SEVC[A.hz[2].s]},
+    {lab:'TMP',disp:temp.toFixed(0)+'°',frac:(temp+5)/35,   col:temp<10?P.cy:SEVC[A.hz[4].s]},
+    {lab:'RH', disp:String(rh),         frac:rh/100,        col:P.bl},
+  ]
+  for(let i=0;i<6;i++){
+    const mid=-Math.PI/2+i*(TAU/6),a0=mid-TAU/12+gap,a1=mid+TAU/12-gap
+    const f=Math.max(0.04,Math.min(1,H6[i].frac))
+    wedge(rIn,rOut,a0,a1,P.hub)                        /* dark slot              */
+    wedge(rIn,rIn+(rOut-rIn)*f,a0,a1,H6[i].col)        /* bright radial fill bar */
+    const lx=CXr+Math.cos(mid)*64,ly=CYr+Math.sin(mid)*64
+    const vx=CXr+Math.cos(mid)*89,vy=CYr+Math.sin(mid)*89
+    txt(H6[i].lab,lx,ly,P.tx2,9,'center',true)
+    txt(H6[i].disp,vx,vy,P.wh,10,'center',true)
+  }
+
+  /* ── centre hub — the one prioritised verdict ── */
+  dot(CXr,CYr,50,P.hub)
+  ring(CXr,CYr,50,osc,blink?3:1.6)
+  const drv=A.top
+  const dv={CO:co+' ppm',GAS:gas+' %LEL',O2:o2.toFixed(1)+' %O₂',CO2:co2+' ppm',TEMP:temp.toFixed(0)+' °C'}[drv.k]
+  const dlab={CO:'CARBON MONOX',GAS:'COMBUST GAS',O2:'OXYGEN',CO2:'AIR / CO₂',TEMP:'TEMPERATURE'}[drv.k]
+  txt(dlab,CXr,CYr-28,P.tx3,7,'center')
+  txt(dv.split(' ')[0],CXr,CYr-8,P.wh,22,'center',true)
+  txt(dv.split(' ').slice(1).join(' '),CXr,CYr+9,osc,8,'center',true)
+  txt(A.word,CXr,CYr+25,osc,12,'center',true)
+  txt(A.reason,CXr,CYr+38,P.tx2,8,'center',true)
+}
+
+/* ── Driver: grab renders the requested frame; preview self-animates ── */
+const vf=new URLSearchParams(location.search).get('vow_frame')
+if(vf!==null){render(parseInt(vf,10)||0)}
+else{let pf=0;render(pf);setInterval(()=>{pf=(pf+1)%FRAME_COUNT;render(pf)},900)}
+</script></body></html>

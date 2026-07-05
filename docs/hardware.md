@@ -63,6 +63,45 @@ Tested module:
 
 > **Tip:** When buying generic modules, look for "ILI9341" or "ST7796" printed on the driver IC on the back of the board. Some sellers label the same product with different controller names — the chip marking is the ground truth.
 
+### 400×300 e-paper — SSD1683 (ESP32-S3)
+
+| Property | Value |
+|---|---|
+| Resolution | 400 × 300 px |
+| Color depth | 1-bit black/white **or 4-level grayscale** |
+| Interface | SPI (bit-banged by the firmware) |
+| SoC | ESP32-S3 |
+| Frame size | **15,000 bytes** (1-bit) / **30,000 bytes** (4-gray, 2 bits per pixel) |
+
+E-paper holds its image with the power off, so it suits dashboards that update every few minutes rather than animate. Full refresh takes 2–4 seconds with the characteristic black/white flashing; the firmware also supports a fast partial-refresh mode for Class C playback. Templates should be authored black-on-white — see the template docs.
+
+Tested module:
+
+| Module | Notes | Link |
+|---|---|---|
+| Elecrow CrowPanel 4.2" e-paper | SSD1683, integrated ESP32-S3, buttons + dial | [Elecrow](https://www.elecrow.com/) |
+
+### 792×272 wide e-paper — dual SSD1683 cascade (ESP32-S3)
+
+| Property | Value |
+|---|---|
+| Resolution | 792 × 272 px (banner aspect, ~2.9:1) |
+| Color depth | 1-bit black/white **or 4-level grayscale** |
+| Interface | SPI — **two** SSD1683 controllers in a master/slave cascade on ONE bus and ONE chip-select |
+| SoC | ESP32-S3 |
+| Frame size | **26,928 bytes** (1-bit) / **53,856 bytes** (4-gray) |
+
+A wide "shelf-strip" panel electrically made of two 396×272 halves. The two controllers share every SPI line and are addressed by *command opcode*: the slave listens on the master's opcodes with bit 7 set (RAM write 0x24 → 0xA4 and so on). The glass hides four columns on each side of the seam, and the firmware's cascade driver makes the two halves render as one seamless 792-wide surface — templates just target 792×272 and never know.
+
+Tested modules (same glass, either works):
+
+| Module | Notes | Link |
+|---|---|---|
+| Elecrow CrowPanel 5.79" e-paper | integrated ESP32-S3, buttons + dial switch | [Elecrow](https://www.elecrow.com/) |
+| Waveshare 5.79" e-Paper Module | bare panel + driver HAT | [Waveshare Wiki](https://www.waveshare.com/wiki/5.79inch_e-Paper_HAT) |
+
+> **Grayscale:** both e-paper types can render 4 gray levels (white / light gray / dark gray / black) using a custom waveform LUT. A template opts in with `data-vow-render="4gray"`; the server then ships 2-bit frames and the firmware drives the gray waveform. On the wide cascade this sequence is non-trivial (the vendor never shipped one) — the working implementation and the experiment log live in the bring-up polygon, `ViewOwl.ESP32_EPD.Client/diagnostics-wide/`.
+
 ---
 
 ## SoCs & USB flashing
@@ -73,7 +112,7 @@ ViewOwl firmware runs on three Espressif SoCs — one per display family:
 |---|---|---|---|
 | ESP32 (classic) | Xtensa, dual-core | rectangular ST7796 / ILI9341 / ILI9486 | no |
 | ESP32-C3 | RISC-V, single-core | round GC9A01 | yes — USB-Serial-JTAG |
-| ESP32-S3 | Xtensa, dual-core | 4.2" e-paper (SSD1683) | yes — USB-Serial-JTAG |
+| ESP32-S3 | Xtensa, dual-core | 4.2" e-paper (SSD1683), 5.79" wide e-paper (dual SSD1683) | yes — USB-Serial-JTAG |
 
 **Browser flashing and Wi-Fi provisioning rely on native USB.** The C3 and S3 have a built-in USB-Serial-JTAG controller, so you flash the firmware *and* send the Wi-Fi credentials and device token straight from the browser over a single USB cable — no extra hardware. The classic ESP32 has **no native USB**: it needs an external USB-to-UART bridge (a CP2102 or CH340, already fitted on most dev kits) both to flash and to receive provisioning over serial. So provisioning runs natively on the C3 and S3, while a classic board depends on that bridge chip.
 
@@ -152,14 +191,17 @@ Each packet carries a 15-byte header (magic number, type, session ID, sequence, 
 
 ---
 
-## Frame format — BGR565
+## Frame formats
 
-All frames are raw **BGR565** (16 bits per pixel, little-endian). This matches the native format expected by ILI9341 and ST7796 controllers, so the firmware sends pixel data directly to the display over SPI with no conversion step.
+The server renders each frame in the display's native format, so the firmware never converts pixels — it streams them straight to the panel:
 
-2 bytes per pixel × 480 × 320 = **307,200 bytes** per frame.  
-2 bytes per pixel × 320 × 240 = **153,600 bytes** per frame.
+| Format | Displays | Bits/px | Notes |
+|---|---|---|---|
+| **BGR565** | all LCDs (ST7796, ILI9341, ILI9486, GC9A01) | 16 | delivered **compressed** (palette+LZ4, RLE legacy) with CRC dedup — unchanged frames are never re-sent |
+| **mono 1-bit** | e-paper 400×300 and 792×272 | 1 | 15,000 / 26,928 bytes per frame |
+| **mono 4-gray** | e-paper, when the template opts in with `data-vow-render="4gray"` | 2 | 30,000 / 53,856 bytes per frame |
 
-The server also supports compressed frame delivery (palette+RLE and palette+LZ4) for Class C templates. The firmware detects the format from a flag byte at the start of the payload and decompresses on the fly.
+For BGR565 the firmware detects the compression from a flag byte at the start of the payload and decompresses on the fly; the uncompressed upper bound is 2 bytes per pixel (307,200 bytes at 480×320), but typical dashboard frames compress far below that and identical frames are skipped entirely via CRC.
 
 ---
 
