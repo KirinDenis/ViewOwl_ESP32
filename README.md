@@ -10,6 +10,8 @@
 
 **Try it live → [view.owlos.sk](https://view.owlos.sk)** — explore the dashboard and the template gallery right in your browser. *(Public demo — beta, not for production; see the on-site notice.)*
 
+### 💬 Community: [facebook.com/groups/OWLOS](https://www.facebook.com/groups/OWLOS)
+
 ---
 
 ## In one sentence
